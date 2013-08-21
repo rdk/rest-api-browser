@@ -1,0 +1,93 @@
+#* @vtlvariable name="textUtils" type="com.opensymphony.util.TextUtils" *#
+#* @vtlvariable name="webResourceManager" type="com.atlassian.plugin.webresource.WebResourceManager" *#
+#* @vtlvariable name="restDescriptors" type="java.util.List<com.atlassian.labs.restbrowser.rest.model.RestDescriptor>" *#
+#* @vtlvariable name="jsonRpcDescriptors" type="java.util.List<com.atlassian.labs.restbrowser.rest.model.RestDescriptor>" *#
+#* @vtlvariable name="applicationProperties" type="com.atlassian.sal.api.ApplicationProperties" *#
+#set($assets = "$webResourceManager.getStaticResourcePrefix()/download/resources/com.atlassian.labs.rest-api-browser:assets/rab")
+<html>
+  <head>
+    <title>REST API Browser</title>
+    <meta name="decorator" content="atl.general">
+    $webResourceManager.requireResource("com.atlassian.labs.rest-api-browser:assets")
+    <link rel="stylesheet" href="$assets/vendor/codemirror-3.15/lib/codemirror.css"/>
+    <link rel="stylesheet" href="$assets/vendor/codemirror-3.15/theme/midnight.css"/>
+    <link rel="stylesheet" href="$assets/app.css"/>
+  </head>
+  <body class="page-type-admin">
+    <script>
+window.RAB = {}
+RAB.resourcePrefix = "$assets";
+RAB.rest = {};
+RAB.rest.services = [
+    #foreach($descriptor in $restDescriptors)
+        {
+            "wadl":"$textUtils.htmlEncode($applicationProperties.baseUrl)/rest$textUtils.htmlEncode(${descriptor.basePath})/$textUtils.htmlEncode($descriptor.version)/application.wadl",
+            "path":"$textUtils.htmlEncode($applicationProperties.baseUrl)/rest$textUtils.htmlEncode(${descriptor.basePath})/$textUtils.htmlEncode($descriptor.version)",
+            "version":"$textUtils.htmlEncode($descriptor.version)",
+            "pluginCompleteKey":"$textUtils.htmlEncode(${descriptor.pluginCompleteKey})",
+            "pluginKey":"$textUtils.htmlEncode(${descriptor.pluginKey})",
+            "pluginName":"$textUtils.htmlEncode(${descriptor.pluginName})",
+            "pluginDescription":"$textUtils.htmlEncode(${descriptor.pluginDescription})"
+        }#if($velocityCount < $restDescriptors.size()),#end
+    #end
+];
+RAB.rest.jsonRpcs = [
+    #foreach($descriptor in $jsonRpcDescriptors)
+        {
+            "wadl": "$textUtils.htmlEncode($applicationProperties.baseUrl)/rest/devtools/1/jsonrpc/${descriptor.pluginKey}/wadl",
+            "path": "$textUtils.htmlEncode($applicationProperties.baseUrl)$textUtils.htmlEncode(${descriptor.basePath})/$textUtils.htmlEncode($descriptor.version)",
+            "version":"$textUtils.htmlEncode($descriptor.version)",
+            "pluginCompleteKey":"$textUtils.htmlEncode(${descriptor.pluginCompleteKey})",
+            "pluginKey":"$textUtils.htmlEncode(${descriptor.pluginKey})",
+            "pluginName":"$textUtils.htmlEncode(${descriptor.pluginName})",
+            "pluginDescription":"$textUtils.htmlEncode(${descriptor.pluginDescription})"
+        }#if($velocityCount < $jsonRpcDescriptors.size()),#end
+    #end
+];
+RAB.rest.services = RAB.rest.services.concat(RAB.rest.jsonRpcs);
+    </script>
+    <div id="rab" ng-app="RAB" ng-controller="SidebarCtrl">
+        <header class="aui-page-header rab-header">
+            <div class="aui-page-header">
+                <div class="aui-page-header-inner">
+                    <form class="aui">
+                        <input class="text rab-search" type="text" class="search" ng-model="searchQuery" placeholder="Search">
+                        <a ng-href="#/search/{{searchQuery | encodeQuery}}" ng-show="searchQuery">Link to filtered results</a>
+                    </form>
+                    <div class="aui-page-header-actions">
+                        <h4>REST API Browser</h4>
+                    </div>
+                </div>
+            </div>
+        </header>
+        <div class="aui-page-panel rab-content">
+            <div class="aui-page-panel-inner">
+                <div class="aui-page-panel-nav rab-sidebar">
+                    <nav class="aui-navgroup aui-navgroup-vertical rab-sidebar-list">
+                        <div class="rab-loading" ng-hide="resourcesLoaded"><span class="aui-icon aui-icon-wait">Wait</span></div>
+                        <div class="aui-navgroup-inner" ng-show="resourcesLoaded">
+                            <ul class="aui-nav" id="searchTextResults">
+                                <li ng-repeat="resource in resources | filter:searchQuery | orderBy:'name'" ng-class='{"aui-nav-selected": selectCurrent()}'>
+                                    <a class="rab-sidebar-item" ng-href="#/resource/{{resource.key}}" title="{{resource.name}}">{{resource.name}}</a>
+                                </li>
+                            </ul>
+                        </div>
+                    </nav>
+                </div>
+                <div class="rab-divider"></div>
+                <section class="aui-page-panel-content rab-main" ng-view></section>
+            </div>
+        </div>
+    </div>
+    <script src="$assets/vendor/angular.min.js"></script>
+    <script src="$assets/vendor/jquery-ui-1.10.3.custom.min.js"></script>
+    <script src="$assets/vendor/codemirror-3.15/lib/codemirror-compressed.js"></script>
+    <script src="$assets/vendor/ui-codemirror.min.js"></script>
+    <script src="$assets/process-wadl.js"></script>
+    <script src="$assets/app.js"></script>
+    <script src="$assets/services/rest_resources_service.js"></script>
+    <script src="$assets/controllers/sidebar_controller.js"></script>
+    <script src="$assets/controllers/main_controller.js"></script>
+    <script src="$assets/controllers/resource_controller.js"></script>
+  </body>
+</html>

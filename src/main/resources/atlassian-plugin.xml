@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<atlassian-plugin key="${project.groupId}.${project.artifactId}" name="${project.name}" plugins-version="2">
+    <plugin-info>
+        <description>${project.description}</description>
+        <version>${project.version}</version>
+        <vendor name="${project.organization.name}" url="${project.organization.url}"/>
+    </plugin-info>
+    <resource type="i18n" name="i18n" location="rest-api-browser"/>
+
+    <!--
+        Imported SAL/TemplateRenderer components for basic functionality
+     -->
+    <component-import key="template-renderer" interface="com.atlassian.templaterenderer.velocity.one.six.VelocityTemplateRenderer" />
+    <component-import key="application-properties" interface="com.atlassian.sal.api.ApplicationProperties" />
+    <component-import key="userManager" interface="com.atlassian.sal.api.user.UserManager" />
+    <component-import key="loginUriProvider" interface="com.atlassian.sal.api.auth.LoginUriProvider" />
+    <component-import key="webInterfaceManager" interface="com.atlassian.plugin.web.WebInterfaceManager" />
+
+    <!--
+        SOAP module descriptor providers for each product
+     -->
+    <component key="jiraSoapServiceProvider" application="jira"
+               class="com.atlassian.labs.restbrowser.provider.JiraSoapServiceProvider">
+        <interface>com.atlassian.labs.restbrowser.plugin.provider.SoapServiceProvider</interface>
+    </component>
+
+    <component key="confluenceSoapServiceProvider" application="confluence"
+               class="com.atlassian.labs.restbrowser.provider.ConfluenceSoapServiceProvider">
+        <interface>com.atlassian.labs.restbrowser.plugin.provider.SoapServiceProvider</interface>
+    </component>
+
+    <component key="bambooSoapServiceProvider" application="bamboo"
+               class="com.atlassian.labs.restbrowser.provider.NoopSoapServiceProvider">
+        <interface>com.atlassian.labs.restbrowser.plugin.provider.SoapServiceProvider</interface>
+    </component>
+
+    <component key="fecruSoapServiceProvider" application="fisheye"
+               class="com.atlassian.labs.restbrowser.provider.NoopSoapServiceProvider">
+        <interface>com.atlassian.labs.restbrowser.plugin.provider.SoapServiceProvider</interface>
+    </component>
+
+    <component key="crowdSoapServiceProvider" application="crowd"
+               class="com.atlassian.labs.restbrowser.provider.NoopSoapServiceProvider">
+        <interface>com.atlassian.labs.restbrowser.plugin.provider.SoapServiceProvider</interface>
+    </component>
+
+    <component key="refappSoapServiceProvider" application="refapp"
+               class="com.atlassian.labs.restbrowser.provider.NoopSoapServiceProvider">
+        <interface>com.atlassian.labs.restbrowser.plugin.provider.SoapServiceProvider</interface>
+    </component>
+
+    <component key="stashSoapServiceProvider" application="stash"
+               class="com.atlassian.labs.restbrowser.provider.NoopSoapServiceProvider">
+        <interface>com.atlassian.labs.restbrowser.plugin.provider.SoapServiceProvider</interface>
+    </component>
+
+    <!--
+        Platform components accessor
+     -->
+    <component key="platformComponentsAccessor"
+               class="com.atlassian.labs.restbrowser.plugin.PlatformComponentsImpl">
+        <interface>com.atlassian.labs.restbrowser.plugin.PlatformComponents</interface>
+    </component>
+
+    <!--
+        Customized Velocity context items
+     -->
+    <component key="textUtils" class="com.atlassian.labs.restbrowser.util.TextUtils"/>
+    <template-context-item key="textUtilsContextItem" component-ref="textUtils"
+                           context-key="textUtils" name="TextUtils Context Item"/>
+    <template-context-item key="applicationPropertiesContextItem" component-ref="application-properties"
+                           context-key="applicationProperties" name="Application Properties Context Item"/>
+
+    <!--
+        Defined REST services
+     -->
+    <rest key="rest-services" path="/devtools" version="1">
+        <description>Provides REST services to get at the bundled JSON-RPC endpoints.</description>
+    </rest>
+
+    <!--
+        MVC servlets
+     -->
+    <servlet name="Rest Browser Servlet" i18n-name-key="rest-browser-servlet.name"
+           key="rest-browser-servlet" class="com.atlassian.labs.restbrowser.servlet.RestBrowserServlet">
+        <description key="rest-browser-servlet.description">Serves the REST browser's HTML.</description>
+        <url-pattern>/restbrowser</url-pattern>
+    </servlet>
+
+    <!--
+        Web resources for the REST API Browser
+     -->
+    <resource type="download" name="rab/" location="assets/rab/"/>
+    <web-resource key="assets">
+        <context>com.atlassian.labs.restbrowser</context>
+        <dependency>com.atlassian.auiplugin:ajs</dependency>
+        <resource name="html4-defs.js" type="download" location="assets/rab/html4-defs.js"/>
+        <resource name="html-sanitizer.js" type="download" location="assets/rab/html-sanitizer.js"/>
+    </web-resource>
+
+    <!--
+        Web items for displaying the REST API Browser link in the product administration consoles.
+     -->
+    <web-item name="REST API Browser" i18n-name-key="restapi-browser.name-refapp" key="rest-browser-link-refapp"
+              section="system.admin/rest-api-browser-refapp" weight="30"
+              application="refapp">
+        <description key="restapi-browser.description">REST API Browser</description>
+        <label>REST API Browser</label>
+        <link linkId="restapi-browser-link">/plugins/servlet/restbrowser</link>
+        <!--<link linkId="restapi-browser-link">/rest</link>-->
+    </web-item>
+
+    <web-item name="REST API Browser" i18n-name-key="restapi-browser.name-jira" key="rest-browser-link-jira"
+              section="top_system_section/rest-api-browser-jira" weight="30"
+              application="jira">
+        <description key="restapi-browser.description">REST API Browser</description>
+        <label key="restapi-browser.label"/>
+        <link linkId="restapi-browser-link">/plugins/servlet/restbrowser</link>
+        <!--<link linkId="restapi-browser-link">/rest</link>-->
+    </web-item>
+
+    <web-item name="REST API Browser" i18n-name-key="restapi-browser.name-confluence" key="rest-browser-link-confluence"
+              section="system.admin/rest-api-browser-confluence" weight="30"
+              application="confluence">
+        <description key="restapi-browser.description">REST API Browser</description>
+        <label key="restapi-browser.label"/>
+        <link linkId="restapi-browser-link">/plugins/servlet/restbrowser</link>
+        <!--<link linkId="restapi-browser-link">/rest</link>-->
+    </web-item>
+
+    <web-item name="REST API Browser" i18n-name-key="restapi-browser.name-fisheye" key="rest-browser-link-fisheye"
+              section="system.admin/system" weight="15"
+              application="fisheye">
+        <description key="restapi-browser.description">REST API Browser</description>
+        <label>REST API Browser</label>
+        <link linkId="restapi-browser-link">/plugins/servlet/restbrowser</link>
+        <!--<link linkId="restapi-browser-link">/rest</link>-->
+    </web-item>
+
+    <web-item name="REST API Browser" i18n-name-key="restapi-browser.name-stash" key="rest-browser-link-stash"
+              section="atl.admin/admin-plugins-section" weight="15"
+              application="stash">
+        <description key="restapi-browser.description.stash">Discover the Stash REST APIs</description>
+        <tooltip key="stash.web.admin.settings.rab.tooltip">Interact and browse the REST resources bundled with Stash.</tooltip>
+        <label key="restapi-browser.label"/>
+        <link linkId="restapi-browser-link">/plugins/servlet/restbrowser</link>
+        <!--<link linkId="restapi-browser-link">/rest</link>-->
+    </web-item>
+
+    <web-item name="REST API Browser" key="rest-browser-link-bamboo"
+              section="system.admin/rest-api-browser-bamboo" weight="30"
+              application="bamboo">
+        <description key="restapi-browser.description">REST API Browser</description>
+        <label key="restapi-browser.label"/>
+        <link linkId="restapi-browser-link">/plugins/servlet/restbrowser</link>
+        <!--<link linkId="restapi-browser-link">/rest</link>-->
+    </web-item>
+
+    <web-item name="REST API Browser" key="rest-browser-link-devtoolbar"
+              section="dev-toolbar-menu" weight="30">
+        <description key="restapi-browser.description">REST API Browser</description>
+        <label key="restapi-browser.label"/>
+        <tooltip key="restapi-browser.description"/>
+        <link linkId="restapi-browser-link">/restbrowser</link>
+    </web-item>
+
+    <!-- END web items for displaying REST Browser link in admin consoles -->
+
+    <!-- Added to give the REST API Browser a nicer URL -->
+    <routing key="rest-browser-pretty-url" name="Pretty URL for RAB" path="/restbrowser">
+        <get from="" to="/plugins/servlet/restbrowser" />
+    </routing>
+    <sitemesh key="rest-browser-decorator" path="/restbrowser"/>
+
+
+</atlassian-plugin>

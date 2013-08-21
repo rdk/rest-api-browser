@@ -1,0 +1,79 @@
+<h2 class="rab-resource-title" ng-show="mode!='edit'" ng-click="mode='edit'">{{resource.name}}</h2>
+<form class="rab-resource-url aui" ng-show="mode=='edit'" ng-click="selectUrl($event)"><input type="text" readonly="readonly" ng-model="resource.url" class="text long-field"></form>
+<div class="aui-tabs horizontal-tabs">
+    <ul class="tabs-menu">
+        <li class="menu-item" ng-class="{'active-tab':isActive($index)}" ng-repeat="method in resource.methods">
+            <a href="#/resource/{{resource.key}}/{{method.method}}" class="">{{method.method}}</a>
+        </li>
+    </ul>
+    <div class="tabs-pane" ng-class="{'active-pane':isActive($index)}" ng-repeat='method in resource.methods' id="{{method.method}}">
+        <p ng-bind-html-unsafe="method.description"></p>
+
+        <form class="aui">
+            <h3>Request Options</h3>
+            <table class="aui rab-params">
+                <thead>
+                <tr>
+                    <th class="rab-param-name">Parameter</th>
+                    <th class="rab-param-val">Value</th>
+                    <th class="rab-param-type">Type</th>
+                    <th class="rab-param-style">Style</th>
+                    <th class="rab-param-descr">Description</th>
+                    <th class="rab-param-action">
+                        <button class="rab-param-add-param aui-button" ng-click="addCustomParam(method)">
+                            <span class="aui-icon aui-icon-small aui-iconfont-add">Add </span> Parameter
+                        </button>
+                    </th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr ng-repeat="param in method.params">
+                    <td class="rab-param-name">{{param.name}}<span class="rab-param-required" ng-class='{hidden: param.style!="template"}'>*</span></td>
+                    <td class="rab-param-val" ng-switch on="param.type">
+                        <input name="{{param.name}}" type="text" class="text" ng-switch-when="string" ng-model="param.value"/>
+                        <input name="{{param.name}}" type="number" class="text" ng-switch-when="int" ng-model="param.value"/>
+                        <select name="{{param.name}}" ng-switch-when="boolean" class="select" ng-model="param.value">
+                            <option value=""></option>
+                            <option value="true">true</option>
+                            <option value="false">false</option>
+                        </select>
+                    </td>
+                    <td class="rab-param-type">{{param.type}}</td>
+                    <td class="rab-param-style">{{param.style}}</td>
+                    <td class="rab-param-descr">{{param.description}}</td>
+                    <td class="rab-param-action"></td>
+                </tr>
+                <tr ng-repeat="param in method.customParams">
+                    <td class="rab-param-name">
+                        <input name="{{param.name}}" ng-model="param.name" type="text" class="text" />
+                    </td>
+                    <td class="rab-param-val">
+                        <input name="{{param.value}}" ng-model="param.value" type="text" class="text" />
+                    </td>
+                    <td class="rab-param-type"></td>
+                    <td class="rab-param-style"></td>
+                    <td class="rab-param-descr"></td>
+                    <td class="rab-param-action">
+                        <a href="" ng-click="removeCustomParam($index,method)" class="aui-button aui-button-subtle"><span class="aui-icon aui-icon-small aui-iconfont-remove"></span> Remove</a>
+                    </td>
+                </tr>
+                </tbody>
+            </table>
+            <div class="aui-panel rab-req-body" ng-class='{hidden: method.method=="GET"||method.method=="DELETE"}'>
+                <h3>Request Body</h3>
+                <div class="rab-req-rep" ng-class='{hidden: method.representations.requests==0}'>
+                    <label for="reqReps">Request Representation</label>
+                    <select name="reqReps" class="select" ng-model="method.reqRep">
+                        <option ng-repeat="rep in method.representations.requests" value="{{rep.mediaType}}" ng-selected="method.reqRep">{{rep.mediaType}}</option>
+                    </select>
+                </div>
+                <textarea ng-model="method.reqBody" ui-codemirror="{mode: 'javascript',theme:'midnight'}"></textarea>
+            </div>
+            <div class="aui-panel">
+                <button class="aui-button aui-button-primary" ng-click="send(method)">Send</button>
+                <a href="" ng-click="clearResults()">Clear results</a>
+            </div>
+
+        </form>
+    </div>
+</div>

@@ -1,0 +1,2085 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<ns2:application xmlns:ns2="http://research.sun.com/wadl/2006/10">
+    <ns2:doc xmlns:jersey="http://jersey.dev.java.net/" jersey:generatedBy="Jersey: 1.0.3-atlassian-1 09/10/2009 01:17 PM"/>
+    <ns2:doc xml:lang="en" title="JIRA 5.0-SNAPSHOT REST API documentation">
+        This documents the current REST API provided by JIRA.
+    </ns2:doc>
+    <ns2:grammars>
+        <ns2:include href="schema1.xsd"/>
+    </ns2:grammars>
+    <ns2:resources base="http://localhost:2990/jira/rest/api/2/">
+        <ns2:resource path="issue">
+            <ns2:method name="POST" id="createIssue">
+                <ns2:doc>Creates an issue from a JSON representation.</ns2:doc>
+                <ns2:request>
+                    <ns2:representation mediaType="application/json">
+                        <ns2:doc>
+                            <ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+<ns3:h6>Example</ns3:h6>
+<ns3:pre>
+    <ns3:code>{&quot;update&quot;:{&quot;worklog&quot;:[{&quot;add&quot;:{&quot;started&quot;:&quot;2011-07-05T11:05:00.000+0000&quot;,&quot;timeSpent&quot;:&quot;60m&quot;}}]},&quot;fields&quot;:{&quot;project&quot;:{&quot;id&quot;:&quot;10000&quot;},&quot;summary&quot;:&quot;something's wrong&quot;,&quot;issuetype&quot;:{&quot;id&quot;:&quot;10000&quot;},&quot;assignee&quot;:{&quot;name&quot;:&quot;homer&quot;},&quot;reporter&quot;:{&quot;name&quot;:&quot;smithers&quot;},&quot;priority&quot;:{&quot;id&quot;:&quot;20000&quot;},&quot;labels&quot;:[&quot;bugfix&quot;,&quot;blitz_test&quot;],&quot;timeTracking&quot;:{&quot;originalEstimate&quot;:&quot;10&quot;,&quot;remainingEstimate&quot;:&quot;5&quot;},&quot;security&quot;:{&quot;id&quot;:&quot;10000&quot;},&quot;versions&quot;:[{&quot;id&quot;:&quot;10000&quot;}],&quot;environment&quot;:&quot;environment&quot;,&quot;description&quot;:&quot;description&quot;,&quot;duedate&quot;:&quot;2011-03-11&quot;,&quot;fixVersions&quot;:[{&quot;id&quot;:&quot;10001&quot;}],&quot;components&quot;:[{&quot;id&quot;:&quot;10000&quot;}],&quot;customfield_60000&quot;:[&quot;jira-developers&quot;],&quot;customfield_20000&quot;:[&quot;06/Jul/11 3:25 PM&quot;],&quot;customfield_40000&quot;:[&quot;this is a text field&quot;],&quot;customfield_30000&quot;:[&quot;10000&quot;,&quot;10002&quot;],&quot;customfield_70000&quot;:[&quot;jira-administrators&quot;,&quot;jira-users&quot;],&quot;customfield_50000&quot;:[&quot;this is a text area. big text.&quot;],&quot;customfield_10000&quot;:[&quot;09/Jun/81&quot;]}}</ns3:code>
+</ns3:pre>
+                            </ns3:p>
+                        </ns2:doc>
+                    </ns2:representation>
+                </ns2:request>
+                <ns2:response>
+                    <ns2:representation mediaType="application/json" status="200" element="issue">
+                        <ns2:doc>
+                            <ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+<ns3:h6>Example</ns3:h6>
+<ns3:pre>
+    <ns3:code>{&quot;id&quot;:&quot;10000&quot;,&quot;key&quot;:&quot;TST-24&quot;,&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/issue/10000&quot;}</ns3:code>
+</ns3:pre>
+                            </ns3:p>
+                        </ns2:doc>
+                        <ns2:doc>Returns a link to the created issue.</ns2:doc>
+                    </ns2:representation>
+                    <ns2:representation status="400">
+                        <ns2:doc>
+                            <ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+<ns3:h6>Example</ns3:h6>
+<ns3:pre>
+    <ns3:code>{&quot;errorMessages&quot;:[&quot;Field 'priority' is required&quot;],&quot;errors&quot;:{}}</ns3:code>
+</ns3:pre>
+                            </ns3:p>
+                        </ns2:doc>
+                        <ns2:doc>Returned if the input is invalid (e.g. missing required fields, invalid field values, and so forth).</ns2:doc>
+                    </ns2:representation>
+                </ns2:response>
+            </ns2:method>
+            <ns2:resource path="/{issueIdOrKey}">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="issueIdOrKey">
+                    <ns2:doc>the issue id or key to update (i.e. JRA-1330)</ns2:doc>
+                </ns2:param>
+                <ns2:method name="GET" id="getIssue">
+                    <ns2:doc>Returns a full representation of the issue for the given issue key.
+
+  An issue JSON consists of the issue key, a collection of fields,
+  a link to the workflow transition sub-resource, and (optionally) the HTML rendered values of any fields that support it
+  (e.g. if wiki syntax is enabled for the description or comments).</ns2:doc>
+                    <ns2:request>
+                        <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="query" name="fields">
+                            <ns2:doc>the list of fields to return for the issue. If null, all fields are returned.</ns2:doc>
+                        </ns2:param>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the requested issue is not found, or the user does not have permission to view it.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200" element="issue">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;expand&quot;:&quot;html,names,schema&quot;,&quot;id&quot;:&quot;10002&quot;,&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/issue/EX-1&quot;,&quot;key&quot;:&quot;EX-1&quot;,&quot;fields&quot;:{&quot;sub-tasks&quot;:[{&quot;issueId&quot;:&quot;10003&quot;,&quot;issueKey&quot;:&quot;EX-2&quot;,&quot;issue&quot;:&quot;http://www.example.com/jira/rest/api/2/issue/EX-2&quot;,&quot;type&quot;:{&quot;name&quot;:&quot;Sub-task&quot;,&quot;direction&quot;:&quot;OUTBOUND&quot;}}],&quot;timetracking&quot;:{&quot;timeoriginalestimate&quot;:10,&quot;timeestimate&quot;:3,&quot;timespent&quot;:6},&quot;project&quot;:{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/project/EX&quot;,&quot;id&quot;:&quot;10000&quot;,&quot;key&quot;:&quot;EX&quot;,&quot;name&quot;:&quot;Example&quot;,&quot;avatarUrls&quot;:{&quot;16x16&quot;:&quot;http://www.example.com/jira/secure/projectavatar?size=small&amp;pid=10000&quot;,&quot;48x48&quot;:&quot;http://www.example.com/jira/secure/projectavatar?size=large&amp;pid=10000&quot;}},&quot;updated&quot;:1,&quot;description&quot;:&quot;example bug report&quot;,&quot;links&quot;:[{&quot;issueId&quot;:&quot;10004&quot;,&quot;issueKey&quot;:&quot;PRJ-2&quot;,&quot;issue&quot;:&quot;http://www.example.com/jira/rest/api/2/issue/PRJ-2&quot;,&quot;type&quot;:{&quot;name&quot;:&quot;Dependent&quot;,&quot;direction&quot;:&quot;OUTBOUND&quot;,&quot;description&quot;:&quot;depends on&quot;}},{&quot;issueId&quot;:&quot;10004&quot;,&quot;issueKey&quot;:&quot;PRJ-3&quot;,&quot;issue&quot;:&quot;http://www.example.com/jira/rest/api/2/issue/PRJ-3&quot;,&quot;type&quot;:{&quot;name&quot;:&quot;Dependent&quot;,&quot;direction&quot;:&quot;INBOUND&quot;,&quot;description&quot;:&quot;is depended by&quot;}}],&quot;attachment&quot;:[{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2.0/attachments/10000&quot;,&quot;filename&quot;:&quot;picture.jpg&quot;,&quot;author&quot;:{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/user?username=fred&quot;,&quot;name&quot;:&quot;fred&quot;,&quot;displayName&quot;:&quot;Fred F. User&quot;,&quot;active&quot;:false},&quot;created&quot;:&quot;2011-10-05T13:08:06.974-0700&quot;,&quot;size&quot;:23123,&quot;mimeType&quot;:&quot;image/jpeg&quot;,&quot;content&quot;:&quot;http://www.example.com/jira/attachments/10000&quot;,&quot;thumbnail&quot;:&quot;http://www.example.com/jira/secure/thumbnail/10000&quot;}],&quot;watcher&quot;:{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/issue/EX-1/watchers&quot;,&quot;isWatching&quot;:false,&quot;watchCount&quot;:1,&quot;watchers&quot;:[{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/user?username=fred&quot;,&quot;name&quot;:&quot;fred&quot;,&quot;displayName&quot;:&quot;Fred F. User&quot;,&quot;active&quot;:false}]},&quot;comment&quot;:[{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/comment/10000&quot;,&quot;id&quot;:&quot;10000&quot;,&quot;author&quot;:{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/user?username=fred&quot;,&quot;name&quot;:&quot;fred&quot;,&quot;displayName&quot;:&quot;Fred F. User&quot;,&quot;active&quot;:false},&quot;body&quot;:&quot;Lorem ipsum dolor sit amet, consectetur adipiscing elit. Pellentesque eget venenatis elit. Duis eu justo eget augue iaculis fermentum. Sed semper quam laoreet nisi egestas at posuere augue semper.&quot;,&quot;updateAuthor&quot;:{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/user?username=fred&quot;,&quot;name&quot;:&quot;fred&quot;,&quot;displayName&quot;:&quot;Fred F. User&quot;,&quot;active&quot;:false},&quot;created&quot;:&quot;2011-10-05T13:08:06.837-0700&quot;,&quot;updated&quot;:&quot;2011-10-05T13:08:06.837-0700&quot;,&quot;visibility&quot;:{&quot;type&quot;:&quot;role&quot;,&quot;value&quot;:&quot;Administrators&quot;}}],&quot;worklog&quot;:[{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2.0/worklog/10000&quot;,&quot;author&quot;:{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/user?username=fred&quot;,&quot;name&quot;:&quot;fred&quot;,&quot;displayName&quot;:&quot;Fred F. User&quot;,&quot;active&quot;:false},&quot;updateAuthor&quot;:{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/user?username=fred&quot;,&quot;name&quot;:&quot;fred&quot;,&quot;displayName&quot;:&quot;Fred F. User&quot;,&quot;active&quot;:false},&quot;comment&quot;:&quot;I did some work here.&quot;,&quot;visibility&quot;:{&quot;type&quot;:&quot;group&quot;,&quot;value&quot;:&quot;jira-developers&quot;},&quot;started&quot;:&quot;2011-10-05T13:08:06.981-0700&quot;,&quot;timeSpent&quot;:&quot;3h 20m&quot;,&quot;id&quot;:100028}]},&quot;names&quot;:{&quot;sub-tasks&quot;:&quot;sub-tasks&quot;,&quot;timetracking&quot;:&quot;timetracking&quot;,&quot;project&quot;:&quot;project&quot;,&quot;updated&quot;:&quot;updated&quot;,&quot;description&quot;:&quot;description&quot;,&quot;links&quot;:&quot;links&quot;,&quot;attachment&quot;:&quot;attachment&quot;,&quot;watcher&quot;:&quot;watcher&quot;,&quot;comment&quot;:&quot;comment&quot;,&quot;worklog&quot;:&quot;worklog&quot;},&quot;schema&quot;:{},&quot;editmeta&quot;:&quot;TODO&quot;,&quot;changelog&quot;:&quot;TODO&quot;}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returns a full representation of a JIRA issue in JSON format.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+                <ns2:method name="PUT" id="editIssue">
+                    <ns2:doc>Edits an issue from a JSON representation.
+ The issue can either be updated by setting explicit the field value(s)
+ or by using an operation to change the field value.</ns2:doc>
+                    <ns2:request>
+                        <ns2:representation mediaType="application/json">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;update&quot;:{&quot;summary&quot;:[{&quot;set&quot;:&quot;Bug in business logic&quot;}],&quot;labels&quot;:[{&quot;add&quot;:&quot;triaged&quot;},{&quot;remove&quot;:&quot;blocker&quot;}],&quot;components&quot;:[{&quot;clear&quot;:&quot;&quot;}]}}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                        </ns2:representation>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation mediaType="application/json" status="200">
+                            <ns2:doc>Returned if it updated the issue succesfully.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="400">
+                            <ns2:doc>Returned if the requested issue update failed.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+            <ns2:resource path="{issueIdOrKey}">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="issueIdOrKey">
+                    <ns2:doc>a String containing an issue id or key</ns2:doc>
+                </ns2:param>
+                <ns2:method name="DELETE" id="deleteIssue">
+                    <ns2:doc>Delete an issue.
+
+ If the issue has subtasks you must set the parameter deleteSubtasks=true to delete the issue.
+ You cannot delete an issue without its subtasks also being deleted.</ns2:doc>
+                    <ns2:request>
+                        <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="query" name="deleteSubtasks">
+                            <ns2:doc>a String of true or false indicating that any subtasks should also be deleted.  If the
+ issue has no subtasks this parameter is ignored.  If the issue has subtasks and this parameter is missing or false,
+ then the issue will not be deleted and an error will be returned.</ns2:doc>
+                        </ns2:param>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation status="204">
+                            <ns2:doc>Returned if the issue was removed successfully.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the issue does not exist.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="401">
+                            <ns2:doc>Returned if the calling user is not authenticated.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="403">
+                            <ns2:doc>Returned if the calling user does not have permission to delete the issue.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+            <ns2:resource path="{issueIdOrKey}/watchers">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="issueIdOrKey">
+                    <ns2:doc>the issue key to request (i.e. JRA-1330)</ns2:doc>
+                </ns2:param>
+                <ns2:method name="POST" id="addWatcher">
+                    <ns2:doc>Adds a user to an issue's watcher list.</ns2:doc>
+                    <ns2:request>
+                        <ns2:representation mediaType="application/json">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>&quot;fred&quot;</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                        </ns2:representation>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation status="204">
+                            <ns2:doc>Returned if the watcher was added successfully.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if either the issue or the user does not exist.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="401">
+                            <ns2:doc>Returned if the calling user does not have permission to add the watcher to the issue's list of watchers.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="400">
+                            <ns2:doc>Returned if there is a problem with the received user representation.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+                <ns2:method name="DELETE" id="removeWatcher">
+                    <ns2:doc>Removes a user from an issue's watcher list.</ns2:doc>
+                    <ns2:request>
+                        <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="query" name="username">
+                            <ns2:doc>a String containing the name of the user to remove from the watcher list</ns2:doc>
+                        </ns2:param>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation status="204">
+                            <ns2:doc>Returned if the watcher was removed successfully.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if either the issue or the user does not exist.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="401">
+                            <ns2:doc>Returned if the calling user does not have permission to remove the watcher from the issue's list of
+      watchers.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+                <ns2:method name="GET" id="getIssueWatchers">
+                    <ns2:doc>Returns the list of watchers for the issue with the given key.</ns2:doc>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the requested issue is not found, or the user does not have permission to view it.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200" element="watchers">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/issue/EX-1/watchers&quot;,&quot;isWatching&quot;:false,&quot;watchCount&quot;:1,&quot;watchers&quot;:[{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/user?username=fred&quot;,&quot;name&quot;:&quot;fred&quot;,&quot;displayName&quot;:&quot;Fred F. User&quot;,&quot;active&quot;:false}]}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returns the list of watchers for an issue.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+            <ns2:resource path="{issueIdOrKey}/remotelink/{linkId}">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="issueIdOrKey">
+                    <ns2:doc>the issue to create the remote issue link for</ns2:doc>
+                </ns2:param>
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="linkId">
+                    <ns2:doc>the id of the remote issue link</ns2:doc>
+                </ns2:param>
+                <ns2:method name="PUT" id="updateRemoteIssueLink">
+                    <ns2:doc>Updates a remote issue link from a JSON representation. Any fields not provided are set to null.</ns2:doc>
+                    <ns2:request>
+                        <ns2:representation mediaType="application/json">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;globalId&quot;:&quot;system=http://www.mycompany.com/support&amp;id=1&quot;,&quot;application&quot;:{&quot;type&quot;:&quot;com.acme.tracker&quot;,&quot;name&quot;:&quot;My Acme Tracker&quot;},&quot;relationship&quot;:&quot;causes&quot;,&quot;object&quot;:{&quot;url&quot;:&quot;http://www.mycompany.com/support?id=1&quot;,&quot;title&quot;:&quot;TSTSUP-111&quot;,&quot;summary&quot;:&quot;Crazy customer support issue&quot;,&quot;icon&quot;:{&quot;url16x16&quot;:&quot;http://www.mycompany.com/support/ticket.png&quot;,&quot;title&quot;:&quot;Support Ticket&quot;},&quot;status&quot;:{&quot;resolved&quot;:true,&quot;icon&quot;:{&quot;url16x16&quot;:&quot;http://www.mycompany.com/support/resolved.png&quot;,&quot;title&quot;:&quot;Case Closed&quot;,&quot;link&quot;:&quot;http://www.mycompany.com/support?id=1&amp;details=closed&quot;}}}}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                        </ns2:representation>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation status="204">
+                            <ns2:doc>Returned if the remote issue link was updated successfully.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="401">
+                            <ns2:doc>Returned if the calling user is not authenticated.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="400">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;errorMessages&quot;:[],&quot;errors&quot;:{&quot;title&quot;:&quot;'title' is required.&quot;}}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returned if the input is invalid (e.g. missing required fields, invalid values, and so forth).</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="403">
+                            <ns2:doc>Returned if the calling user does not have permission to update the remote issue link, or if issue linking is
+      disabled.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+                <ns2:method name="GET" id="getRemoteIssueLinkById">
+                    <ns2:doc>Get the remote issue link with the given id on the issue.</ns2:doc>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the issue or remote issue link do not exist.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;id&quot;:10000,&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/issue/MKY-1/remotelink/10000&quot;,&quot;globalId&quot;:&quot;system=http://www.mycompany.com/support&amp;id=1&quot;,&quot;application&quot;:{&quot;type&quot;:&quot;com.acme.tracker&quot;,&quot;name&quot;:&quot;My Acme Tracker&quot;},&quot;relationship&quot;:&quot;causes&quot;,&quot;object&quot;:{&quot;url&quot;:&quot;http://www.mycompany.com/support?id=1&quot;,&quot;title&quot;:&quot;TSTSUP-111&quot;,&quot;summary&quot;:&quot;Crazy customer support issue&quot;,&quot;icon&quot;:{&quot;url16x16&quot;:&quot;http://www.mycompany.com/support/ticket.png&quot;,&quot;title&quot;:&quot;Support Ticket&quot;},&quot;status&quot;:{&quot;resolved&quot;:true,&quot;icon&quot;:{&quot;url16x16&quot;:&quot;http://www.mycompany.com/support/resolved.png&quot;,&quot;title&quot;:&quot;Case Closed&quot;,&quot;link&quot;:&quot;http://www.mycompany.com/support?id=1&amp;details=closed&quot;}}}}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Information on the remote issue link with the given id.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="401">
+                            <ns2:doc>Returned if the calling user is not authenticated.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="400">
+                            <ns2:doc>Returned if the linkId is not a valid number, or if the remote issue link with the given id does not belong to
+      the given issue.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="403">
+                            <ns2:doc>Returned if the calling user does not have permission to view the remote issue link, or if issue linking is
+      disabled.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+                <ns2:method name="DELETE" id="deleteRemoteIssueLinkById">
+                    <ns2:doc>Delete the remote issue link with the given id on the issue.</ns2:doc>
+                    <ns2:response>
+                        <ns2:representation status="204">
+                            <ns2:doc>Returned if the remote issue link was removed successfully.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the issue or remote issue link do not exist.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="401">
+                            <ns2:doc>Returned if the calling user is not authenticated.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="403">
+                            <ns2:doc>Returned if the calling user does not have permission to delete the remote issue link, or if issue linking is
+      disabled.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+            <ns2:resource path="{issueIdOrKey}/votes">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="issueIdOrKey">
+                    <ns2:doc>the issue to view voting information for</ns2:doc>
+                </ns2:param>
+                <ns2:method name="POST" id="addVote">
+                    <ns2:doc>Cast your vote in favour of an issue.</ns2:doc>
+                    <ns2:response>
+                        <ns2:representation status="204">
+                            <ns2:doc>Nothing is returned on success.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the user cannot vote for any reason. (The user is the reporter, the user does
+      not have permission to vote, voting is disabled in the instance, the issue does not exist, etc.)</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+                <ns2:method name="DELETE" id="removeVote">
+                    <ns2:doc>Remove your vote from an issue. (i.e. &quot;unvote&quot;)</ns2:doc>
+                    <ns2:response>
+                        <ns2:representation status="204">
+                            <ns2:doc>Nothing is returned on success.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the user cannot remove a vote for any reason. (The user did not vote on the issue,
+      the user is the reporter, voting is disabled, the issue does not exist, etc.)</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+                <ns2:method name="GET" id="getVotes">
+                    <ns2:doc>A REST sub-resource representing the voters on the issue. This sub-resource is also used for voting
+ and unvoting (via POST and DELETE).</ns2:doc>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the user cannot view the issue in question or voting is disabled.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/issue/MKY-1/votes&quot;,&quot;votes&quot;:24,&quot;hasVoted&quot;:true,&quot;voters&quot;:[{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/user?username=fred&quot;,&quot;name&quot;:&quot;fred&quot;,&quot;displayName&quot;:&quot;Fred F. User&quot;,&quot;active&quot;:false}]}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Information about voting on the current issue.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+            <ns2:resource path="{issueIdOrKey}/remotelink">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="issueIdOrKey">
+                    <ns2:doc>the issue to create the remote issue link for</ns2:doc>
+                </ns2:param>
+                <ns2:method name="GET" id="getRemoteIssueLinks">
+                    <ns2:doc>A REST sub-resource representing the remote issue links on the issue. This sub-resource is also used for creating,
+ updating and deleting links (via POST, PUT and DELETE).</ns2:doc>
+                    <ns2:request>
+                        <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="query" name="globalId">
+                            <ns2:doc>if not null, return only the remote issue link with this globalId</ns2:doc>
+                        </ns2:param>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the issue or remote issue link do not exist.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>[{&quot;id&quot;:10000,&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/issue/MKY-1/remotelink/10000&quot;,&quot;globalId&quot;:&quot;system=http://www.mycompany.com/support&amp;id=1&quot;,&quot;application&quot;:{&quot;type&quot;:&quot;com.acme.tracker&quot;,&quot;name&quot;:&quot;My Acme Tracker&quot;},&quot;relationship&quot;:&quot;causes&quot;,&quot;object&quot;:{&quot;url&quot;:&quot;http://www.mycompany.com/support?id=1&quot;,&quot;title&quot;:&quot;TSTSUP-111&quot;,&quot;summary&quot;:&quot;Crazy customer support issue&quot;,&quot;icon&quot;:{&quot;url16x16&quot;:&quot;http://www.mycompany.com/support/ticket.png&quot;,&quot;title&quot;:&quot;Support Ticket&quot;},&quot;status&quot;:{&quot;resolved&quot;:true,&quot;icon&quot;:{&quot;url16x16&quot;:&quot;http://www.mycompany.com/support/resolved.png&quot;,&quot;title&quot;:&quot;Case Closed&quot;,&quot;link&quot;:&quot;http://www.mycompany.com/support?id=1&amp;details=closed&quot;}}}},{&quot;id&quot;:10001,&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/issue/MKY-1/remotelink/10001&quot;,&quot;globalId&quot;:&quot;system=http://www.anothercompany.com/tester&amp;id=1234&quot;,&quot;application&quot;:{&quot;type&quot;:&quot;com.acme.tester&quot;,&quot;name&quot;:&quot;My Acme Tester&quot;},&quot;relationship&quot;:&quot;is tested by&quot;,&quot;object&quot;:{&quot;url&quot;:&quot;http://www.anothercompany.com/tester/testcase/1234&quot;,&quot;title&quot;:&quot;Test Case #1234&quot;,&quot;summary&quot;:&quot;Test that the submit button saves the thing&quot;,&quot;icon&quot;:{&quot;url16x16&quot;:&quot;http://www.anothercompany.com/tester/images/testcase.gif&quot;,&quot;title&quot;:&quot;Test Case&quot;},&quot;status&quot;:{&quot;resolved&quot;:false,&quot;icon&quot;:{&quot;url16x16&quot;:&quot;http://www.anothercompany.com/tester/images/person/fred.gif&quot;,&quot;title&quot;:&quot;Tested by Fred Jones&quot;,&quot;link&quot;:&quot;http://www.anothercompany.com/tester/person?username=fred&quot;}}}}]</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Information on the remote issue links for the current issue.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="401">
+                            <ns2:doc>Returned if the calling user is not authenticated.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="403">
+                            <ns2:doc>Returned if the calling user does not have permission to view the remote issue links, or if issue linking is
+      disabled.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+                <ns2:method name="POST" id="createOrUpdateRemoteIssueLink">
+                    <ns2:doc>Creates or updates a remote issue link from a JSON representation. If a globalId is provided and a remote issue link
+ exists with that globalId, the remote issue link is updated. Otherwise, the remote issue link is created.</ns2:doc>
+                    <ns2:request>
+                        <ns2:representation mediaType="application/json">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;globalId&quot;:&quot;system=http://www.mycompany.com/support&amp;id=1&quot;,&quot;application&quot;:{&quot;type&quot;:&quot;com.acme.tracker&quot;,&quot;name&quot;:&quot;My Acme Tracker&quot;},&quot;relationship&quot;:&quot;causes&quot;,&quot;object&quot;:{&quot;url&quot;:&quot;http://www.mycompany.com/support?id=1&quot;,&quot;title&quot;:&quot;TSTSUP-111&quot;,&quot;summary&quot;:&quot;Crazy customer support issue&quot;,&quot;icon&quot;:{&quot;url16x16&quot;:&quot;http://www.mycompany.com/support/ticket.png&quot;,&quot;title&quot;:&quot;Support Ticket&quot;},&quot;status&quot;:{&quot;resolved&quot;:true,&quot;icon&quot;:{&quot;url16x16&quot;:&quot;http://www.mycompany.com/support/resolved.png&quot;,&quot;title&quot;:&quot;Case Closed&quot;,&quot;link&quot;:&quot;http://www.mycompany.com/support?id=1&amp;details=closed&quot;}}}}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                        </ns2:representation>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation mediaType="application/json" status="200" element="remote issue link">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;id&quot;:10000,&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/issue/MKY-1/remotelink/10000&quot;}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returns a link to the created/updated remote issue link.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="401">
+                            <ns2:doc>Returned if the calling user is not authenticated.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="400">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;errorMessages&quot;:[],&quot;errors&quot;:{&quot;title&quot;:&quot;'title' is required.&quot;}}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returned if the input is invalid (e.g. missing required fields, invalid values, and so forth).</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="403">
+                            <ns2:doc>Returned if the calling user does not have permission to create/update the remote issue link, or if issue linking
+      is disabled.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+                <ns2:method name="DELETE" id="deleteRemoteIssueLinkByGlobalId">
+                    <ns2:doc>Delete the remote issue link with the given global id on the issue.</ns2:doc>
+                    <ns2:request>
+                        <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="query" name="globalId">
+                            <ns2:doc>the global id of the remote issue link</ns2:doc>
+                        </ns2:param>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation status="204">
+                            <ns2:doc>Returned if the remote issue link was removed successfully.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the issue or remote issue link do not exist.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="401">
+                            <ns2:doc>Returned if the calling user is not authenticated.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="403">
+                            <ns2:doc>Returned if the calling user does not have permission to delete the remote issue link, or if issue linking is
+      disabled.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+            <ns2:resource path="/{issueIdOrKey}/transitions">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="issueIdOrKey">
+                    <ns2:doc>the issue you want to transition</ns2:doc>
+                </ns2:param>
+                <ns2:method name="GET" id="getTransitions">
+                    <ns2:doc>Get a list of the transitions possible for this issue by the current user, along with fields that are required and their types.</ns2:doc>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the requested issue is not found or the user does not have permission to view it.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;731&quot;:{&quot;id&quot;:2,&quot;name&quot;:&quot;Close Issue&quot;,&quot;fields&quot;:{&quot;summary&quot;:{&quot;required&quot;:false,&quot;schema&quot;:{&quot;type&quot;:&quot;array&quot;,&quot;items&quot;:&quot;option&quot;,&quot;custom&quot;:&quot;com.atlassian.jira.plugin.system.customfieldtypes:multiselect&quot;,&quot;customId&quot;:10001},&quot;operations&quot;:[&quot;set&quot;,&quot;add&quot;],&quot;allowedValues&quot;:[&quot;red&quot;,&quot;blue&quot;]}},&quot;transitionDestination&quot;:&quot;6&quot;}}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returns a full representation of the transitions possible for the specified issue and the fields required to perform the transition.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+                <ns2:method name="POST" id="doTransition">
+                    <ns2:doc>Perform a transition on an issue.
+ The POST must contain a single JSON Object. It must have a &quot;transition&quot; string and a &quot;fields&quot; object.
+ A &quot;comment&quot; is optional. The comment can be either a simple string or an object with a &quot;body&quot; and &quot;role&quot; or &quot;group&quot;.</ns2:doc>
+                    <ns2:request>
+                        <ns2:representation mediaType="application/json">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{
+   &quot;transition&quot; : 2,
+   &quot;fields&quot; : { &quot;resolution&quot; : &quot;Duplicate&quot; },
+   &quot;comment&quot; : &quot;We've already fixed this one.&quot;
+ }
+
+ {
+   &quot;transition&quot; : 3,
+   &quot;fields&quot; : { &quot;assignee&quot; : &quot;fred&quot;, &quot;priority&quot; : &quot;Critical&quot; },
+   &quot;comment&quot; : { &quot;body&quot; : &quot;This isn't fixed yet.&quot;, &quot;group&quot; : &quot;jira-developers&quot; }
+ }</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                        </ns2:representation>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation status="204">
+                            <ns2:doc>Nothing is returned on success.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="404">
+                            <ns2:doc>The issue does not exist or the user does not have permission to view it</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="400">
+                            <ns2:doc>The request body failed to validate.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+            <ns2:resource path="/createmeta">
+                <ns2:method name="GET" id="getCreateIssueMeta">
+                    <ns2:doc>Returns the meta data for creating issues. This includes the available projects, issue types and fields,
+ including field types and whether or not those fields are required.
+ Projects will not be returned if the user does not have permission to create issues in that project.
+
+ &lt;p&gt;
+ Fields will only be returned if &lt;code&gt;expand=projects.issuetypes.fields&lt;/code&gt;.
+ &lt;p&gt;
+ The results can be filtered by project and/or issue type, given by the query params.</ns2:doc>
+                    <ns2:request>
+                        <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="query" name="projectIds">
+                            <ns2:doc>combined with the projectKeys param, lists the projects with which to filter the results. If absent, all projects are returned.
+  This parameter can be specified multiple times, and/or be a comma-separated list.
+  Specifiying a project that does not exist (or that you cannot create issues in) is not an error, but it will not be in the results.</ns2:doc>
+                        </ns2:param>
+                        <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="query" name="projectKeys">
+                            <ns2:doc>combined with the projectIds param, lists the projects with which to filter the results. If null, all projects are returned.
+  This parameter can be specified multiple times, and/or be a comma-separated list.
+  Specifiying a project that does not exist (or that you cannot create issues in) is not an error, but it will not be in the results.</ns2:doc>
+                        </ns2:param>
+                        <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="query" name="issuetypeIds">
+                            <ns2:doc>combinded with issuetypeNames, lists the issue types with which to filter the results. If null, all issue types are returned.
+  This parameter can be specified multiple times, and/or be a comma-separated list.
+  Specifiying an issue type that does not exist is not an error.</ns2:doc>
+                        </ns2:param>
+                        <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="query" name="issuetypeNames">
+                            <ns2:doc>combinded with issuetypeIds, lists the issue types with which to filter the results. If null, all issue types are returned.
+  This parameter can be specified multiple times, but is NOT interpreted as a comma-separated list.
+  Specifiying an issue type that does not exist is not an error.</ns2:doc>
+                        </ns2:param>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation mediaType="application/json" status="200">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;expand&quot;:&quot;projects&quot;,&quot;projects&quot;:[{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/project/EX&quot;,&quot;id&quot;:&quot;10000&quot;,&quot;key&quot;:&quot;EX&quot;,&quot;name&quot;:&quot;Example Project&quot;,&quot;avatarUrls&quot;:{&quot;16x16&quot;:&quot;http://www.example.com/jira/secure/projectavatar?size=small&amp;pid=10000&amp;avatarId=10011&quot;,&quot;48x48&quot;:&quot;http://www.example.com/jira/secure/projectavatar?pid=10000&amp;avatarId=10011&quot;},&quot;issuetypes&quot;:[{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/issueType/1&quot;,&quot;id&quot;:&quot;1&quot;,&quot;name&quot;:&quot;Bug&quot;,&quot;iconUrl&quot;:&quot;http://www.example.com/jira/images/icons/bug.gif&quot;,&quot;fields&quot;:{&quot;issuetype&quot;:{&quot;required&quot;:true,&quot;operations&quot;:[&quot;set&quot;]}}}]}]}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returns the meta data for creating issues.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="403">
+                            <ns2:doc>Returned if the user does not have permission to view any of the requested projects.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+            <ns2:resource path="/{issueIdOrKey}/editmeta">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="issueIdOrKey">
+                    <ns2:doc>the issue whose edit meta data you want to view</ns2:doc>
+                </ns2:param>
+                <ns2:method name="GET" id="getEditIssueMeta">
+                    <ns2:doc>Returns the meta data for editing an issue.</ns2:doc>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the requested issue is not found or the user does not have permission to view it.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;fields&quot;:{&quot;summary&quot;:{&quot;required&quot;:false,&quot;schema&quot;:{&quot;type&quot;:&quot;array&quot;,&quot;items&quot;:&quot;option&quot;,&quot;custom&quot;:&quot;com.atlassian.jira.plugin.system.customfieldtypes:multiselect&quot;,&quot;customId&quot;:10001},&quot;operations&quot;:[&quot;set&quot;,&quot;add&quot;],&quot;allowedValues&quot;:[&quot;red&quot;,&quot;blue&quot;]}}}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returns a response containing a Map of FieldBeans for fields edited by the current user.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+        </ns2:resource>
+        <ns2:resource path="comment">
+            <ns2:resource path="{id}">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="id">
+                    <ns2:doc>the ID of the comment to request</ns2:doc>
+                </ns2:param>
+                <ns2:method name="GET" id="getComment">
+                    <ns2:doc>Returns a single issue comment.</ns2:doc>
+                    <ns2:request>
+                        <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" default="true" type="xs:boolean" style="query" name="render">
+                            <ns2:doc>true if text fields should be rendered according to the renderer associated with them; false to return the raw, unrendered data</ns2:doc>
+                        </ns2:param>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the requested comment is not found, or the user does not have permission to view it.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200" element="comment">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/comment/10000&quot;,&quot;id&quot;:&quot;10000&quot;,&quot;author&quot;:{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/user?username=fred&quot;,&quot;name&quot;:&quot;fred&quot;,&quot;displayName&quot;:&quot;Fred F. User&quot;,&quot;active&quot;:false},&quot;body&quot;:&quot;Lorem ipsum dolor sit amet, consectetur adipiscing elit. Pellentesque eget venenatis elit. Duis eu justo eget augue iaculis fermentum. Sed semper quam laoreet nisi egestas at posuere augue semper.&quot;,&quot;updateAuthor&quot;:{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/user?username=fred&quot;,&quot;name&quot;:&quot;fred&quot;,&quot;displayName&quot;:&quot;Fred F. User&quot;,&quot;active&quot;:false},&quot;created&quot;:&quot;2011-10-05T13:08:06.837-0700&quot;,&quot;updated&quot;:&quot;2011-10-05T13:08:06.837-0700&quot;,&quot;visibility&quot;:{&quot;type&quot;:&quot;role&quot;,&quot;value&quot;:&quot;Administrators&quot;}}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returns a full representation of a JIRA comment in JSON format.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+        </ns2:resource>
+        <ns2:resource path="attachment">
+            <ns2:resource path="{id}">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="id">
+                    <ns2:doc>the id of the attachment to ddelete.</ns2:doc>
+                </ns2:param>
+                <ns2:method name="GET" id="getAttachment">
+                    <ns2:doc>Returns the meta-data for an attachment, including the URI of the actual attached file.</ns2:doc>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the attachment with the given id does not exist, or is not accessible by the calling user.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200" element="attachment">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2.0/attachments/10000&quot;,&quot;filename&quot;:&quot;picture.jpg&quot;,&quot;author&quot;:{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/user?username=fred&quot;,&quot;name&quot;:&quot;fred&quot;,&quot;displayName&quot;:&quot;Fred F. User&quot;,&quot;active&quot;:false},&quot;created&quot;:&quot;2011-10-05T13:08:06.974-0700&quot;,&quot;size&quot;:23123,&quot;mimeType&quot;:&quot;image/jpeg&quot;,&quot;content&quot;:&quot;http://www.example.com/jira/attachments/10000&quot;,&quot;thumbnail&quot;:&quot;http://www.example.com/jira/secure/thumbnail/10000&quot;}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returns a JSON representation of the attachment meta-data. The representation does not contain the
+      attachment itself, but contains a URI that can be used to download the actual attached file.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+                <ns2:method name="DELETE" id="removeAttachment">
+                    <ns2:doc>Remove an attachment from an issue.</ns2:doc>
+                    <ns2:response>
+                        <ns2:representation status="204">
+                            <ns2:doc>Returned if successful.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the attachment is not found</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="403">
+                            <ns2:doc>Returned if attachments is disabled or if you don't have permission to remove attachments from this issue.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+        </ns2:resource>
+        <ns2:resource path="project">
+            <ns2:method name="GET" id="getAllProjects">
+                <ns2:doc>Returns all projects which are visible for the currently logged in user. If no user is logged in, it returns the
+ list of projects that are visible when using anonymous access.</ns2:doc>
+                <ns2:response>
+                    <ns2:representation mediaType="application/json" status="200" element="projects">
+                        <ns2:doc>
+                            <ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+<ns3:h6>Example</ns3:h6>
+<ns3:pre>
+    <ns3:code>[{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/project/EX&quot;,&quot;id&quot;:&quot;10000&quot;,&quot;key&quot;:&quot;EX&quot;,&quot;name&quot;:&quot;Example&quot;,&quot;avatarUrls&quot;:{&quot;16x16&quot;:&quot;http://www.example.com/jira/secure/projectavatar?size=small&amp;pid=10000&quot;,&quot;48x48&quot;:&quot;http://www.example.com/jira/secure/projectavatar?size=large&amp;pid=10000&quot;}},{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/project/ABC&quot;,&quot;id&quot;:&quot;10001&quot;,&quot;key&quot;:&quot;ABC&quot;,&quot;name&quot;:&quot;Alphabetical&quot;,&quot;avatarUrls&quot;:{&quot;16x16&quot;:&quot;http://www.example.com/jira/secure/projectavatar?size=small&amp;pid=10001&quot;,&quot;48x48&quot;:&quot;http://www.example.com/jira/secure/projectavatar?size=large&amp;pid=10001&quot;}}]</ns3:code>
+</ns3:pre>
+                            </ns3:p>
+                        </ns2:doc>
+                        <ns2:doc>Returns a list of projects for which the user has the BROWSE, ADMINISTER or PROJECT_ADMIN project permission.</ns2:doc>
+                    </ns2:representation>
+                    <ns2:representation status="500">
+                        <ns2:doc>Returned if an error occurs while retrieving the list of projects.</ns2:doc>
+                    </ns2:representation>
+                </ns2:response>
+            </ns2:method>
+            <ns2:resource path="{key}">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="key">
+                    <ns2:doc>the project key</ns2:doc>
+                </ns2:param>
+                <ns2:method name="GET" id="getProject">
+                    <ns2:doc>Contains a full representation of a project in JSON format.</ns2:doc>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the project is not found, or the calling user does not have permission to view it.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200" element="project">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/project/EX&quot;,&quot;id&quot;:&quot;10000&quot;,&quot;key&quot;:&quot;EX&quot;,&quot;description&quot;:&quot;This project was created as an example for REST.&quot;,&quot;lead&quot;:{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/user?username=fred&quot;,&quot;name&quot;:&quot;fred&quot;,&quot;displayName&quot;:&quot;Fred F. User&quot;,&quot;active&quot;:false},&quot;components&quot;:[{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/component/10000&quot;,&quot;id&quot;:&quot;10000&quot;,&quot;name&quot;:&quot;Component 1&quot;,&quot;description&quot;:&quot;This is a JIRA component&quot;,&quot;lead&quot;:{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/user?username=fred&quot;,&quot;name&quot;:&quot;fred&quot;,&quot;displayName&quot;:&quot;Fred F. User&quot;,&quot;active&quot;:false},&quot;assigneeType&quot;:&quot;PROJECT_LEAD&quot;,&quot;assignee&quot;:{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/user?username=fred&quot;,&quot;name&quot;:&quot;fred&quot;,&quot;displayName&quot;:&quot;Fred F. User&quot;,&quot;active&quot;:false},&quot;realAssigneeType&quot;:&quot;PROJECT_LEAD&quot;,&quot;realAssignee&quot;:{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/user?username=fred&quot;,&quot;name&quot;:&quot;fred&quot;,&quot;displayName&quot;:&quot;Fred F. User&quot;,&quot;active&quot;:false},&quot;isAssigneeTypeValid&quot;:false}],&quot;url&quot;:&quot;http://www.example.com/jira/browse/EX&quot;,&quot;assigneeType&quot;:&quot;PROJECT_LEAD&quot;,&quot;versions&quot;:[],&quot;name&quot;:&quot;Example&quot;,&quot;roles&quot;:{&quot;Developers&quot;:&quot;http://www.example.com/jira/rest/api/2/project/EX/role/10000&quot;},&quot;avatarUrls&quot;:{&quot;16x16&quot;:&quot;http://www.example.com/jira/secure/projectavatar?size=small&amp;pid=10000&quot;,&quot;48x48&quot;:&quot;http://www.example.com/jira/secure/projectavatar?size=large&amp;pid=10000&quot;}}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returned if the project exists and the user has permission to view it. Contains a full representation
+      of a project in JSON format.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+            <ns2:resource path="{key}/versions">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="key">
+                    <ns2:doc>the project key</ns2:doc>
+                </ns2:param>
+                <ns2:method name="GET" id="getProjectVersions">
+                    <ns2:doc>Contains a full representation of a the specified project's versions.</ns2:doc>
+                    <ns2:request>
+                        <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="query" name="expand"/>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the project is not found, or the calling user does not have permission to view it.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200" element="versions">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/version/10000&quot;,&quot;id&quot;:&quot;10000&quot;,&quot;description&quot;:&quot;An excellent version&quot;,&quot;name&quot;:&quot;New Version 1&quot;,&quot;overdue&quot;:true,&quot;userReleaseDate&quot;:&quot;5/Jul/2010&quot;,&quot;releaseDate&quot;:&quot;2010-07-05&quot;,&quot;released&quot;:true,&quot;archived&quot;:false}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returned if the project exists and the user has permission to view its versions. Contains a full
+      representation of the project's versions in JSON format.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+            <ns2:resource path="{key}/components">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="key">
+                    <ns2:doc>the project key</ns2:doc>
+                </ns2:param>
+                <ns2:method name="GET" id="getProjectComponents">
+                    <ns2:doc>Contains a full representation of a the specified project's components.</ns2:doc>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the project is not found, or the calling user does not have permission to view it.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200" element="components">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/component/10000&quot;,&quot;id&quot;:&quot;10000&quot;,&quot;name&quot;:&quot;Component 1&quot;,&quot;description&quot;:&quot;This is a JIRA component&quot;,&quot;lead&quot;:{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/user?username=fred&quot;,&quot;name&quot;:&quot;fred&quot;,&quot;displayName&quot;:&quot;Fred F. User&quot;,&quot;active&quot;:false},&quot;assigneeType&quot;:&quot;PROJECT_LEAD&quot;,&quot;assignee&quot;:{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/user?username=fred&quot;,&quot;name&quot;:&quot;fred&quot;,&quot;displayName&quot;:&quot;Fred F. User&quot;,&quot;active&quot;:false},&quot;realAssigneeType&quot;:&quot;PROJECT_LEAD&quot;,&quot;realAssignee&quot;:{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/user?username=fred&quot;,&quot;name&quot;:&quot;fred&quot;,&quot;displayName&quot;:&quot;Fred F. User&quot;,&quot;active&quot;:false},&quot;isAssigneeTypeValid&quot;:false}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returned if the project exists and the user has permission to view its components. Contains a full
+      representation of the project's components in JSON format.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+            <ns2:resource path="{key}/avatars">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="key">
+                    <ns2:doc>project key</ns2:doc>
+                </ns2:param>
+                <ns2:method name="GET" id="getAllAvatars">
+                    <ns2:doc>Returns all avatars which are visible for the currently logged in user.</ns2:doc>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the currently authenticated user does not have VIEW PROJECT permission.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200" element="avatars">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;id&quot;:1000,&quot;owner&quot;:&quot;fred&quot;,&quot;isSystemAvatar&quot;:true,&quot;isSelected&quot;:true,&quot;selected&quot;:true}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returns a map containing a list of avatars for both custom an system avatars, which the user has the BROWSE project permission.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="500">
+                            <ns2:doc>Returned if an error occurs while retrieving the list of avatars.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+            <ns2:resource path="{key}/avatar">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="key"/>
+                <ns2:method name="POST" id="createAvatarFromTemporary">
+                    <ns2:doc>Converts temporary avatar into a real avatar</ns2:doc>
+                    <ns2:request>
+                        <ns2:representation mediaType="application/json">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;cropperWidth&quot;:120,&quot;cropperOffsetX&quot;:50,&quot;cropperOffsetY&quot;:50,&quot;needsCropping&quot;:false}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                        </ns2:representation>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the currently authenticated user does not have EDIT PROJECT permission.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="201" element="avatar">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;id&quot;:1000,&quot;owner&quot;:&quot;fred&quot;,&quot;isSystemAvatar&quot;:true,&quot;isSelected&quot;:true,&quot;selected&quot;:true}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returns created avatar</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="400">
+                            <ns2:doc>Returned if the cropping coordinates are invalid</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="403">
+                            <ns2:doc>Returned if the currently authenticated user does not have permission to pick avatar</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="500">
+                            <ns2:doc>Returned if an error occurs while converting temporary avatar to real avatar</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+                <ns2:method name="PUT" id="updateProjectAvatar">
+                    <ns2:request>
+                        <ns2:representation mediaType="application/json"/>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation mediaType="application/json"/>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+            <ns2:resource path="{key}/avatar/temporary">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="key"/>
+                <ns2:method name="POST" id="storeTemporaryAvatar">
+                    <ns2:doc>Creates temporary avatar</ns2:doc>
+                    <ns2:request>
+                        <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="query" name="filename">
+                            <ns2:doc>name of file being uploaded</ns2:doc>
+                        </ns2:param>
+                        <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:long" style="query" name="size">
+                            <ns2:doc>size of file</ns2:doc>
+                        </ns2:param>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the currently authenticated user does not have EDIT PROJECT permission.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="201" element="avatar">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;cropperWidth&quot;:120,&quot;cropperOffsetX&quot;:50,&quot;cropperOffsetY&quot;:50,&quot;url&quot;:&quot;http://example.com/jira/secure/temporaryavatar?cropped=true&quot;,&quot;needsCropping&quot;:true}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>temporary avatar cropping instructions</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="403">
+                            <ns2:doc>Returned if the request does not conain a valid XSRF token</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="500">
+                            <ns2:doc>Returned if an error occurs while converting temporary avatar to real avatar</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+                <ns2:method name="POST" id="storeTemporaryAvatarUsingMultiPart">
+                    <ns2:request>
+                        <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" name="avatar"/>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation mediaType="text/html"/>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+            <ns2:resource path="{key}/avatar/{id}">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:long" style="template" name="id">
+                    <ns2:doc>database id for avatar</ns2:doc>
+                </ns2:param>
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="key">
+                    <ns2:doc>Project key</ns2:doc>
+                </ns2:param>
+                <ns2:method name="DELETE" id="deleteAvatar">
+                    <ns2:doc>Deletes avatar</ns2:doc>
+                    <ns2:response>
+                        <ns2:representation mediaType="application/json" status="204">
+                            <ns2:doc>Returned if the avatar is successfully deleted.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the avatar does not exist or the currently authenticated user does not have permission to
+      delete it.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="403">
+                            <ns2:doc>Returned if the currently authenticated user does not have permission to delete the component.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+        </ns2:resource>
+        <ns2:resource path="groups">
+            <ns2:doc>REST endpoint for searching groups in a group picker</ns2:doc>
+            <ns2:resource path="/picker">
+                <ns2:method name="GET" id="findGroups">
+                    <ns2:doc>Returns groups with substrings matching a given query. This is mainly for use with
+ the group picker, so the returned groups contain html to be used as picker suggestions.
+ The groups are also wrapped in a single response object that also contains a header for
+ use in the picker, specifically &lt;i&gt;Showing X of Y matching groups&lt;/i&gt;.
+
+ The number of groups returned is limited by the system property &quot;jira.ajax.autocomplete.limit&quot;
+
+ The groups will be unique and sorted.</ns2:doc>
+                    <ns2:request>
+                        <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="query" name="query">
+                            <ns2:doc>a String to match groups agains</ns2:doc>
+                        </ns2:param>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation mediaType="application/json" status="200" element="groupsuggestions">
+                            <ns2:doc>Returned even if no groups match the given substring</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+        </ns2:resource>
+        <ns2:resource path="project/{projectKey}/role">
+            <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="projectKey">
+                <ns2:doc>the project key</ns2:doc>
+            </ns2:param>
+            <ns2:method name="GET" id="getProjectRoles">
+                <ns2:doc>Contains a list of roles in this project with links to full details.</ns2:doc>
+                <ns2:response>
+                    <ns2:representation status="404">
+                        <ns2:doc>Returned if the project is not found, or the calling user does not have permission to view it.</ns2:doc>
+                    </ns2:representation>
+                    <ns2:representation mediaType="application/json" status="200">
+                        <ns2:doc>
+                            <ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+<ns3:h6>Example</ns3:h6>
+<ns3:pre>
+    <ns3:code>{&quot;Users&quot;:&quot;http://www.example.com/jira/rest/api/2/project/MKY/role/10001&quot;,&quot;Administrators&quot;:&quot;http://www.example.com/jira/rest/api/2/project/MKY/role/10002&quot;,&quot;Developers&quot;:&quot;http://www.example.com/jira/rest/api/2/project/MKY/role/10000&quot;}</ns3:code>
+</ns3:pre>
+                            </ns3:p>
+                        </ns2:doc>
+                        <ns2:doc>Returned if the project exists and the user has permission to view it. A maps of roles to URIs containing
+      full details for that role.</ns2:doc>
+                    </ns2:representation>
+                </ns2:response>
+            </ns2:method>
+            <ns2:resource path="{id}">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:long" style="template" name="id">
+                    <ns2:doc>the project role id</ns2:doc>
+                </ns2:param>
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="projectKey">
+                    <ns2:doc>the project key</ns2:doc>
+                </ns2:param>
+                <ns2:method name="GET" id="getProjectRole">
+                    <ns2:doc>Details on a given project role.</ns2:doc>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the project or role is not found, or the calling user does not have permission to view it.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/project/MKY/role/10360&quot;,&quot;name&quot;:&quot;Developers&quot;,&quot;id&quot;:10360,&quot;description&quot;:&quot;A project role that represents developers in a project&quot;,&quot;actors&quot;:[{&quot;id&quot;:10240,&quot;displayName&quot;:&quot;jira-developers&quot;,&quot;type&quot;:&quot;atlassian-group-role-actor&quot;,&quot;name&quot;:&quot;jira-developers&quot;}]}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returned if the project and role exists and the user has permission to view it. Contains the role name,
+      description, and project actors.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+                <ns2:method name="PUT" id="setActors">
+                    <ns2:doc>Updates a project role to contain the sent actors.</ns2:doc>
+                    <ns2:request>
+                        <ns2:representation mediaType="application/json">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{ &quot;user&quot; : [&quot;admin&quot;] }
+      { &quot;group&quot; : [&quot;jira-developers&quot;] }</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                        </ns2:representation>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the actor could not be added to the project role</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/project/MKY/role/10360&quot;,&quot;name&quot;:&quot;Developers&quot;,&quot;id&quot;:10360,&quot;description&quot;:&quot;A project role that represents developers in a project&quot;,&quot;actors&quot;:[{&quot;id&quot;:10240,&quot;displayName&quot;:&quot;jira-developers&quot;,&quot;type&quot;:&quot;atlassian-group-role-actor&quot;,&quot;name&quot;:&quot;jira-developers&quot;}]}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returned if the project and role exists and the user has permission to view it. Contains the role name,
+      description, and project actors.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+                <ns2:method name="POST" id="addActorUsers">
+                    <ns2:doc>Add an actor to a project role.</ns2:doc>
+                    <ns2:request>
+                        <ns2:representation mediaType="application/json">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{ &quot;user&quot; : [&quot;admin&quot;] }
+      { &quot;group&quot; : [&quot;jira-developers&quot;] }</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                        </ns2:representation>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the actor could not be added to the project role</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/project/MKY/role/10360&quot;,&quot;name&quot;:&quot;Developers&quot;,&quot;id&quot;:10360,&quot;description&quot;:&quot;A project role that represents developers in a project&quot;,&quot;actors&quot;:[{&quot;id&quot;:10240,&quot;displayName&quot;:&quot;jira-developers&quot;,&quot;type&quot;:&quot;atlassian-group-role-actor&quot;,&quot;name&quot;:&quot;jira-developers&quot;}]}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returned if the project and role exists and the user has permission to view it. Contains the role name,
+      description, and project actors.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+                <ns2:method name="DELETE" id="deleteActor">
+                    <ns2:doc>Remove actors from a project role.</ns2:doc>
+                    <ns2:request>
+                        <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="query" name="user">
+                            <ns2:doc>the username to remove from the project role</ns2:doc>
+                        </ns2:param>
+                        <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="query" name="group">
+                            <ns2:doc>the groupname to remove from the project role</ns2:doc>
+                        </ns2:param>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation status="204">
+                            <ns2:doc>Returned if the actor was successfully removed from the project role.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the project or role is not found, the calling user does not have permission to view it, or does
+      not have permission to modify the actors in the project role.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+        </ns2:resource>
+        <ns2:resource path="securitylevel">
+            <ns2:resource path="{id}">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="id">
+                    <ns2:doc>a String containing an issue security level id</ns2:doc>
+                </ns2:param>
+                <ns2:method name="GET" id="getIssuesecuritylevel">
+                    <ns2:doc>Returns a full representation of the issue type that has the given id.</ns2:doc>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the issue type does not exist, or is not visible to the calling user.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200" element="issuesecuritylevel">
+                            <ns2:doc>Returned if the issue type exists and is visible by the calling user.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+        </ns2:resource>
+        <ns2:resource path="serverInfo">
+            <ns2:method name="GET" id="getServerInfo">
+                <ns2:doc>Returns general information about the current JIRA server.</ns2:doc>
+                <ns2:response>
+                    <ns2:representation mediaType="application/json" status="200" element="serverInfo">
+                        <ns2:doc>
+                            <ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+<ns3:h6>Example</ns3:h6>
+<ns3:pre>
+    <ns3:code>{&quot;baseUrl&quot;:&quot;http://localhost:8080/jira&quot;,&quot;version&quot;:&quot;4.2-SNAPSHOT&quot;,&quot;buildNumber&quot;:582,&quot;buildDate&quot;:&quot;2011-10-05T13:08:06.692-0700&quot;,&quot;serverTime&quot;:&quot;2011-10-05T13:08:06.692-0700&quot;,&quot;scmInfo&quot;:&quot;482389&quot;,&quot;buildPartnerName&quot;:&quot;Example Partner Co.&quot;,&quot;serverTitle&quot;:&quot;My Shiny New JIRA Server&quot;}</ns3:code>
+</ns3:pre>
+                            </ns3:p>
+                        </ns2:doc>
+                        <ns2:doc>Returns a full representation of the server info in JSON format</ns2:doc>
+                    </ns2:representation>
+                </ns2:response>
+            </ns2:method>
+        </ns2:resource>
+        <ns2:resource path="priority">
+            <ns2:resource path="{id}">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="id">
+                    <ns2:doc>a String containing the priority id</ns2:doc>
+                </ns2:param>
+                <ns2:method name="GET" id="getPriority">
+                    <ns2:doc>Returns an issue priority.</ns2:doc>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the issue priority does not exist or is not visible to the calling user.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200" element="issuePriority">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/priority/3&quot;,&quot;statusColor&quot;:&quot;#009900&quot;,&quot;description&quot;:&quot;Major loss of function.&quot;,&quot;iconUrl&quot;:&quot;http://www.example.com/jira/images/icons/priority_major.gif&quot;,&quot;name&quot;:&quot;Major&quot;}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returned if the issue priority exists and is visible by the calling user. Contains a full representation of
+      the issue priority in JSON.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+        </ns2:resource>
+        <ns2:resource path="resolution">
+            <ns2:resource path="{id}">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="id">
+                    <ns2:doc>a String containing the resolution id</ns2:doc>
+                </ns2:param>
+                <ns2:method name="GET" id="getResolution">
+                    <ns2:doc>Returns a resolution.</ns2:doc>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the resolution does not exist or the user does not have permission to view it.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200" element="resolution">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/resolution/1&quot;,&quot;description&quot;:&quot;A fix for this issue is checked into the tree and tested.&quot;,&quot;iconUrl&quot;:&quot;http://www.example.com/jira/images/icons/status_resolved.gif&quot;,&quot;name&quot;:&quot;Fixed&quot;}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returned if the resolution exists and the user has permission to view it. Contains a full representation of
+      the resolution in JSON format.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+        </ns2:resource>
+        <ns2:resource path="status">
+            <ns2:resource path="{id}">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="id"/>
+                <ns2:method name="GET" id="getStatus">
+                    <ns2:doc>Returns a list of all statuses</ns2:doc>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the requested issue status is not found, or the user does not have permission to view it.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200" element="statuses">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>[{&quot;self&quot;:&quot;http://localhost:8090/jira/rest/api/2.0/status/10000&quot;,&quot;description&quot;:&quot;The issue is currently being worked on.&quot;,&quot;iconUrl&quot;:&quot;http://localhost:8090/jira/images/icons/progress.gif&quot;,&quot;name&quot;:&quot;In Progress&quot;,&quot;id&quot;:&quot;10000&quot;},{&quot;self&quot;:&quot;http://localhost:8090/jira/rest/api/2.0/status/5&quot;,&quot;description&quot;:&quot;The issue is closed.&quot;,&quot;iconUrl&quot;:&quot;http://localhost:8090/jira/images/icons/closed.gif&quot;,&quot;name&quot;:&quot;Closed&quot;,&quot;id&quot;:&quot;5&quot;}]</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returns a list of all JIRA issue statuse in JSON format, that are visible to the user.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+        </ns2:resource>
+        <ns2:resource path="component">
+            <ns2:method name="POST" id="createComponent">
+                <ns2:doc>Create a component via POST. Any fields present in the PUT will override existing values. As a convenience, if a field
+ is not present, it is silently ignored.</ns2:doc>
+                <ns2:request>
+                    <ns2:representation mediaType="application/json">
+                        <ns2:doc>
+                            <ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+<ns3:h6>Example</ns3:h6>
+<ns3:pre>
+    <ns3:code>{&quot;name&quot;:&quot;Component 1&quot;,&quot;description&quot;:&quot;This is a JIRA component&quot;,&quot;leadUserName&quot;:&quot;fred&quot;,&quot;assigneeType&quot;:&quot;PROJECT_LEAD&quot;,&quot;isAssigneeTypeValid&quot;:false,&quot;project&quot;:&quot;PXA&quot;}</ns3:code>
+</ns3:pre>
+                            </ns3:p>
+                        </ns2:doc>
+                    </ns2:representation>
+                </ns2:request>
+                <ns2:response>
+                    <ns2:representation status="404">
+                        <ns2:doc>Returned if the component does not exist or the currently authenticated user does not have permission to
+      view it.</ns2:doc>
+                    </ns2:representation>
+                    <ns2:representation mediaType="application/json" status="201">
+                        <ns2:doc>
+                            <ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+<ns3:h6>Example</ns3:h6>
+<ns3:pre>
+    <ns3:code>{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/component/10000&quot;,&quot;id&quot;:&quot;10000&quot;,&quot;name&quot;:&quot;Component 1&quot;,&quot;description&quot;:&quot;This is a JIRA component&quot;,&quot;lead&quot;:{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/user?username=fred&quot;,&quot;name&quot;:&quot;fred&quot;,&quot;displayName&quot;:&quot;Fred F. User&quot;,&quot;active&quot;:false},&quot;assigneeType&quot;:&quot;PROJECT_LEAD&quot;,&quot;assignee&quot;:{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/user?username=fred&quot;,&quot;name&quot;:&quot;fred&quot;,&quot;displayName&quot;:&quot;Fred F. User&quot;,&quot;active&quot;:false},&quot;realAssigneeType&quot;:&quot;PROJECT_LEAD&quot;,&quot;realAssignee&quot;:{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/user?username=fred&quot;,&quot;name&quot;:&quot;fred&quot;,&quot;displayName&quot;:&quot;Fred F. User&quot;,&quot;active&quot;:false},&quot;isAssigneeTypeValid&quot;:false}</ns3:code>
+</ns3:pre>
+                            </ns3:p>
+                        </ns2:doc>
+                        <ns2:doc>Returned if the component is created successfully.</ns2:doc>
+                    </ns2:representation>
+                    <ns2:representation status="403">
+                        <ns2:doc>Returned if the currently authenticated user does not have permission to edit the component.</ns2:doc>
+                    </ns2:representation>
+                </ns2:response>
+            </ns2:method>
+            <ns2:resource path="{id}">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="id"/>
+                <ns2:method name="DELETE" id="delete">
+                    <ns2:doc>Delete a project component.</ns2:doc>
+                    <ns2:request>
+                        <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="query" name="moveIssuesTo">
+                            <ns2:doc>The new component applied to issues whose 'id' component will be deleted.
+ If this value is null, then the 'id' component is simply deleted.</ns2:doc>
+                        </ns2:param>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation status="204">
+                            <ns2:doc>Returned if the component is successfully deleted.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the component does not exist or the currently authenticated user does not have permission to
+      view it.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="403">
+                            <ns2:doc>Returned if the currently authenticated user does not have permission to delete the component.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+                <ns2:method name="GET" id="getComponent">
+                    <ns2:doc>Returns a project component.</ns2:doc>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if there is no component with the given key, or if the calling user does not have permission to
+      view the component.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200" element="component">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/component/10000&quot;,&quot;id&quot;:&quot;10000&quot;,&quot;name&quot;:&quot;Component 1&quot;,&quot;description&quot;:&quot;This is a JIRA component&quot;,&quot;lead&quot;:{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/user?username=fred&quot;,&quot;name&quot;:&quot;fred&quot;,&quot;displayName&quot;:&quot;Fred F. User&quot;,&quot;active&quot;:false},&quot;assigneeType&quot;:&quot;PROJECT_LEAD&quot;,&quot;assignee&quot;:{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/user?username=fred&quot;,&quot;name&quot;:&quot;fred&quot;,&quot;displayName&quot;:&quot;Fred F. User&quot;,&quot;active&quot;:false},&quot;realAssigneeType&quot;:&quot;PROJECT_LEAD&quot;,&quot;realAssignee&quot;:{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/user?username=fred&quot;,&quot;name&quot;:&quot;fred&quot;,&quot;displayName&quot;:&quot;Fred F. User&quot;,&quot;active&quot;:false},&quot;isAssigneeTypeValid&quot;:false}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returns a full JSON representation of a project component.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+                <ns2:method name="PUT" id="updateComponent">
+                    <ns2:doc>Modify a component via PUT. Any fields present in the PUT will override existing values. As a convenience, if a field
+ is not present, it is silently ignored.
+
+ If leadUserName is an empty string (&quot;&quot;) the component lead will be removed.</ns2:doc>
+                    <ns2:request>
+                        <ns2:representation mediaType="application/json">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;name&quot;:&quot;Component 1&quot;,&quot;description&quot;:&quot;This is a JIRA component&quot;,&quot;leadUserName&quot;:&quot;fred&quot;,&quot;assigneeType&quot;:&quot;PROJECT_LEAD&quot;,&quot;isAssigneeTypeValid&quot;:false}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                        </ns2:representation>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the component does not exist or the currently authenticated user does not have permission to
+      view it.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="200">
+                            <ns2:doc>Returned if the component exists and the currently authenticated user has permission to edit it.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="403">
+                            <ns2:doc>Returned if the currently authenticated user does not have permission to edit the component.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+            <ns2:resource path="{id}/relatedIssueCounts">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="id">
+                    <ns2:doc>a String containing the component id</ns2:doc>
+                </ns2:param>
+                <ns2:method name="GET" id="getComponentRelatedIssues">
+                    <ns2:doc>Returns a project component.</ns2:doc>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the component does not exist or the currently authenticated user does not have permission to
+      view it.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200" element="issue Count Bean">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/component/10000&quot;,&quot;issueCount&quot;:23}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returned if the component exists and the currently authenticated user has permission to view it. Contains
+      counts of issues fixed in and affecting this component.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+        </ns2:resource>
+        <ns2:resource path="issueLink">
+            <ns2:doc>The Link Issue Resource provides functionality to manage issue links.</ns2:doc>
+            <ns2:method name="POST" id="linkIssues">
+                <ns2:doc>Creates an issue link between two issues.
+ The user requires the link issue permission for the issue which will be linked to another issue.
+ The specified link type in the request is used to create the link and will create a link from the first issue
+ to the second issue using the outward description. It also create a link from the second issue to the first issue using the
+ inward description of the issue link type.
+ It will add the supplied comment to the first issue. The comment can have a restriction who can view it.
+ If group is specified, only users of this group can view this comment, if roleLevel is specified only users who have the specified role can view this comment.
+ The user who creates the issue link needs to belong to the specified group or have the specified role.</ns2:doc>
+                <ns2:request>
+                    <ns2:representation mediaType="application/json">
+                        <ns2:doc>
+                            <ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+<ns3:h6>Example</ns3:h6>
+<ns3:pre>
+    <ns3:code>{&quot;linkType&quot;:&quot;Duplicate&quot;,&quot;fromIssueKey&quot;:&quot;HSP-1&quot;,&quot;toIssueKey&quot;:&quot;MKY-1&quot;,&quot;comment&quot;:{&quot;body&quot;:&quot;Linked related issue!&quot;,&quot;visibility&quot;:{&quot;type&quot;:&quot;group&quot;,&quot;value&quot;:&quot;jira-users&quot;}}}</ns3:code>
+</ns3:pre>
+                            </ns3:p>
+                        </ns2:doc>
+                    </ns2:representation>
+                </ns2:request>
+                <ns2:response>
+                    <ns2:representation status="404">
+                        <ns2:doc>If issue linking is disabled or
+      it failed to find one of the issues (issue might exist, but it is not visible for this user) or
+      it failed to find the specified issue link type.</ns2:doc>
+                    </ns2:representation>
+                    <ns2:representation mediaType="application/json" status="200">
+                        <ns2:doc>if the issue link was created successfully.</ns2:doc>
+                    </ns2:representation>
+                    <ns2:representation status="401">
+                        <ns2:doc>if the user does not have the link issue permission for the issue, which will be linked to another issue.</ns2:doc>
+                    </ns2:representation>
+                    <ns2:representation status="400">
+                        <ns2:doc>if it can't create the supplied comment.
+      The response will contain an error message indicating why it failed to create the comment.
+      No issue link will be created if it failed to create the comment.</ns2:doc>
+                    </ns2:representation>
+                    <ns2:representation status="500">
+                        <ns2:doc>if an error occurred when creating the issue link or the comment.</ns2:doc>
+                    </ns2:representation>
+                </ns2:response>
+            </ns2:method>
+        </ns2:resource>
+        <ns2:resource path="issuetype">
+            <ns2:resource path="{id}">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="id">
+                    <ns2:doc>a String containing an issue type id</ns2:doc>
+                </ns2:param>
+                <ns2:method name="GET" id="getIssueType">
+                    <ns2:doc>Returns a full representation of the issue type that has the given id.</ns2:doc>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the issue type does not exist, or is not visible to the calling user.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200" element="issueType">
+                            <ns2:doc>Returned if the issue type exists and is visible by the calling user.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+        </ns2:resource>
+        <ns2:resource path="version">
+            <ns2:method name="POST" id="createVersion">
+                <ns2:doc>Create a version via POST.</ns2:doc>
+                <ns2:request>
+                    <ns2:representation mediaType="application/json">
+                        <ns2:doc>
+                            <ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+<ns3:h6>Example</ns3:h6>
+<ns3:pre>
+    <ns3:code>{&quot;description&quot;:&quot;An excellent version&quot;,&quot;name&quot;:&quot;New Version 1&quot;,&quot;userReleaseDate&quot;:&quot;5/Jul/2010&quot;,&quot;project&quot;:&quot;PXA&quot;,&quot;releaseDate&quot;:&quot;2010-07-05&quot;,&quot;released&quot;:true,&quot;archived&quot;:false}</ns3:code>
+</ns3:pre>
+                            </ns3:p>
+                        </ns2:doc>
+                    </ns2:representation>
+                </ns2:request>
+                <ns2:response>
+                    <ns2:representation status="404">
+                        <ns2:doc>Returned if the version does not exist or the currently authenticated user does not have permission to
+      view it.</ns2:doc>
+                    </ns2:representation>
+                    <ns2:representation mediaType="application/json" status="201">
+                        <ns2:doc>
+                            <ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+<ns3:h6>Example</ns3:h6>
+<ns3:pre>
+    <ns3:code>{&quot;description&quot;:&quot;An excellent version&quot;,&quot;name&quot;:&quot;New Version 1&quot;,&quot;userReleaseDate&quot;:&quot;5/Jul/2010&quot;,&quot;project&quot;:&quot;PXA&quot;,&quot;releaseDate&quot;:&quot;2010-07-05&quot;,&quot;released&quot;:true,&quot;archived&quot;:false}</ns3:code>
+</ns3:pre>
+                            </ns3:p>
+                        </ns2:doc>
+                        <ns2:doc>Returned if the version is created successfully.</ns2:doc>
+                    </ns2:representation>
+                    <ns2:representation status="403">
+                        <ns2:doc>Returned if the currently authenticated user does not have permission to edit the version.</ns2:doc>
+                    </ns2:representation>
+                </ns2:response>
+            </ns2:method>
+            <ns2:resource path="{id}">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="id"/>
+                <ns2:method name="DELETE" id="delete">
+                    <ns2:doc>Delete a project version.</ns2:doc>
+                    <ns2:request>
+                        <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="query" name="moveFixIssuesTo">
+                            <ns2:doc>The version to set fixVersion to on issues where the deleted version is the fix version,
+ If null then the fixVersion is removed.</ns2:doc>
+                        </ns2:param>
+                        <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="query" name="moveAffectedIssuesTo">
+                            <ns2:doc>The version to set affectedVersion to on issues where the deleted version is the affected version,
+ If null then the affectedVersion is removed.</ns2:doc>
+                        </ns2:param>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation status="204">
+                            <ns2:doc>Returned if the version is successfully deleted.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the version does not exist or the currently authenticated user does not have permission to
+      view it.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="403">
+                            <ns2:doc>Returned if the currently authenticated user does not have permission to delete the version.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+                <ns2:method name="GET" id="getVersion">
+                    <ns2:doc>Returns a project version.</ns2:doc>
+                    <ns2:request>
+                        <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="query" name="expand"/>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the version does not exist or the currently authenticated user does not have permission to
+      view it.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200" element="project">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/version/10000&quot;,&quot;id&quot;:&quot;10000&quot;,&quot;description&quot;:&quot;An excellent version&quot;,&quot;name&quot;:&quot;New Version 1&quot;,&quot;overdue&quot;:true,&quot;userReleaseDate&quot;:&quot;5/Jul/2010&quot;,&quot;releaseDate&quot;:&quot;2010-07-05&quot;,&quot;released&quot;:true,&quot;archived&quot;:false}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returned if the version exists and the currently authenticated user has permission to view it. Contains a
+      full representation of the version.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+                <ns2:method name="PUT" id="updateVersion">
+                    <ns2:doc>Modify a version via PUT. Any fields present in the PUT will override existing values. As a convenience, if a field
+ is not present, it is silently ignored.</ns2:doc>
+                    <ns2:request>
+                        <ns2:representation mediaType="application/json">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/version/10000&quot;,&quot;id&quot;:&quot;10000&quot;,&quot;description&quot;:&quot;An excellent version&quot;,&quot;name&quot;:&quot;New Version 1&quot;,&quot;overdue&quot;:true,&quot;userReleaseDate&quot;:&quot;5/Jul/2010&quot;,&quot;releaseDate&quot;:&quot;2010-07-05&quot;,&quot;released&quot;:true,&quot;archived&quot;:false}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                        </ns2:representation>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the version does not exist or the currently authenticated user does not have permission to
+      view it.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="200">
+                            <ns2:doc>Returned if the version exists and the currently authenticated user has permission to edit it.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="403">
+                            <ns2:doc>Returned if the currently authenticated user does not have permission to edit the version.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+            <ns2:resource path="{id}/relatedIssueCounts">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="id">
+                    <ns2:doc>a String containing the version id</ns2:doc>
+                </ns2:param>
+                <ns2:method name="GET" id="getVersionRelatedIssues">
+                    <ns2:doc>Returns a bean containing the number of fixed in and affected issues for the given version.</ns2:doc>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the version does not exist or the currently authenticated user does not have permission to
+      view it.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200" element="issue Count Bean">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/version/10000&quot;,&quot;issuesFixedCount&quot;:23,&quot;issuesAffectedCount&quot;:101}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returned if the version exists and the currently authenticated user has permission to view it. Contains
+      counts of issues fixed in and affecting this version.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+            <ns2:resource path="{id}/unresolvedIssueCount">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="id">
+                    <ns2:doc>a String containing the version id</ns2:doc>
+                </ns2:param>
+                <ns2:method name="GET" id="getVersionUnresolvedIssues">
+                    <ns2:doc>Returns the number of unresolved issues for the given version</ns2:doc>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the version does not exist or the currently authenticated user does not have permission to
+      view it.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200" element="issuesUnresolvedCount">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/version/10000&quot;,&quot;issuesUnresolvedCount&quot;:23}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returned if the version exists and the currently authenticated user has permission to view it. Contains
+      counts of issues unresolved in this version.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+            <ns2:resource path="/{id}/move">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="id">
+                    <ns2:doc>a String containing the version id</ns2:doc>
+                </ns2:param>
+                <ns2:method name="POST" id="moveVersion">
+                    <ns2:doc>Modify a version's sequence within a project.
+
+ The move version bean has 2 alternative field value pairs:
+ &lt;dl&gt;
+     &lt;dt&gt;position&lt;/dt&gt;&lt;dd&gt;An absolute position, which may have a value of 'First', 'Last', 'Earlier' or 'Later'&lt;/dd&gt;
+     &lt;dt&gt;after&lt;/dt&gt;&lt;dd&gt;A version to place this version after.  The value should be the self link of another version&lt;/dd&gt;
+ &lt;/dl&gt;</ns2:doc>
+                    <ns2:request>
+                        <ns2:representation mediaType="application/json">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;after&quot;:&quot;http://www.example.com/jira/rest/api/2/version/10000&quot;}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                        </ns2:representation>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the version, or target of the version to move after does not exist or the currently authenticated
+      user does not have permission to view it.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200" element="project version">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/version/10000&quot;,&quot;id&quot;:&quot;10000&quot;,&quot;description&quot;:&quot;An excellent version&quot;,&quot;name&quot;:&quot;New Version 1&quot;,&quot;overdue&quot;:true,&quot;userReleaseDate&quot;:&quot;5/Jul/2010&quot;,&quot;releaseDate&quot;:&quot;2010-07-05&quot;,&quot;released&quot;:true,&quot;archived&quot;:false}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returned if the version exists and the currently authenticated user has permission to view it. Contains a
+      full representation of the version moved.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+        </ns2:resource>
+        <ns2:resource path="issue/{issueIdOrKey}/attachments">
+            <ns2:doc>Issue attachments</ns2:doc>
+            <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="issueIdOrKey">
+                <ns2:doc>the issue that you want to add the attachments to</ns2:doc>
+            </ns2:param>
+            <ns2:method name="POST" id="addAttachment">
+                <ns2:doc>Add one or more attachments to an issue.
+ &lt;p&gt;
+ This resource expects a multipart post. The media-type multipart/form-data is defined in RFC 1867. Most client
+ libraries have classes that make dealing with multipart posts simple. For instance, in Java the Apache HTTP Components
+ library provides a
+ &lt;a href=&quot;http://hc.apache.org/httpcomponents-client-ga/httpmime/apidocs/org/apache/http/entity/mime/MultipartEntity.html&quot;&gt;MultiPartEntity&lt;/a&gt;
+ that makes it simple to submit a multipart POST.
+ &lt;p&gt;
+ In order to protect against XSRF attacks, because this method accepts multipart/form-data, it has XSRF protection
+ on it.  This means you must submit a header of X-Atlassian-Token: nocheck with the request, otherwise it will be
+ blocked.
+ &lt;p&gt;
+     The name of the multipart/form-data parameter that contains attachments must be &quot;file&quot;
+ &lt;p&gt;
+     A simple example to upload a file called &quot;myfile.txt&quot; to issue REST-123:
+     &lt;pre&gt;curl -D- -u admin:admin -X POST -H &quot;X-Atlassian-Token: nocheck&quot; -F &quot;file=@myfile.txt&quot; http://myhost/rest/api/2/issue/TEST-123/attachments&lt;/pre&gt;</ns2:doc>
+                <ns2:request>
+                    <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" name="file">
+                        <ns2:doc>the files to add</ns2:doc>
+                    </ns2:param>
+                </ns2:request>
+                <ns2:response>
+                    <ns2:representation status="204">
+                        <ns2:doc>Returned if successful.</ns2:doc>
+                    </ns2:representation>
+                    <ns2:representation status="404">
+                        <ns2:doc>Returned if the requested issue is not found, the user does not have permission to view it, or if the
+      attachments exceeds the maximum configured attachment size.</ns2:doc>
+                    </ns2:representation>
+                    <ns2:representation status="403">
+                        <ns2:doc>Returned if attachments is disabled or if you don't have permission to add attachments to this issue.</ns2:doc>
+                    </ns2:representation>
+                </ns2:response>
+            </ns2:method>
+        </ns2:resource>
+        <ns2:resource path="application-properties">
+            <ns2:method name="GET" id="getProperty">
+                <ns2:request>
+                    <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="query" name="key"/>
+                </ns2:request>
+                <ns2:response>
+                    <ns2:representation mediaType="application/json"/>
+                </ns2:response>
+            </ns2:method>
+            <ns2:resource path="/{id}">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="id"/>
+                <ns2:method name="PUT" id="setPropertyViaRestfulTable">
+                    <ns2:request>
+                        <ns2:representation mediaType="*/*"/>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation mediaType="application/json"/>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+        </ns2:resource>
+        <ns2:resource path="search">
+            <ns2:doc>Resource for searches.</ns2:doc>
+            <ns2:method name="GET" id="search">
+                <ns2:doc>Searches for issues using JQL.
+
+ &lt;p&gt;&lt;b&gt;Sorting&lt;/b&gt;
+  the &lt;code&gt;jql&lt;/code&gt; parameter is a full &lt;a href=&quot;http://confluence.atlassian.com/display/JIRA/Advanced+Searching&quot;&gt;JQL&lt;/a&gt;
+  expression, and includes an &lt;code&gt;ORDER BY&lt;/code&gt; clause.
+ &lt;/p&gt;
+
+ &lt;p&gt;&lt;b&gt;GET vs POST:&lt;/b&gt;
+  If the JQL query is too large to be encoded as a query param you should instead
+  POST to this resource.
+ &lt;/p&gt;</ns2:doc>
+                <ns2:request>
+                    <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="query" name="jql">
+                        <ns2:doc>a JQL query string</ns2:doc>
+                    </ns2:param>
+                    <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:int" style="query" name="startAt">
+                        <ns2:doc>the index of the first issue to return (0-based)</ns2:doc>
+                    </ns2:param>
+                    <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:int" style="query" name="maxResults">
+                        <ns2:doc>the maximum number of issues to return (defaults to 50). The maximum allowable value is
+ dictated by the JIRA property 'jira.search.views.default.max'. If you specify a value that is higher than this
+ number, your search results will be truncated.</ns2:doc>
+                    </ns2:param>
+                    <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="query" name="fields">
+                        <ns2:doc>the list of fields to return for each issue. If null, all fields are returned.</ns2:doc>
+                    </ns2:param>
+                    <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="query" name="expand">
+                        <ns2:doc>the parameters to expand</ns2:doc>
+                    </ns2:param>
+                </ns2:request>
+                <ns2:response>
+                    <ns2:representation mediaType="application/json" status="200" element="searchResults">
+                        <ns2:doc>
+                            <ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+<ns3:h6>Example</ns3:h6>
+<ns3:pre>
+    <ns3:code>{&quot;expand&quot;:&quot;names,schema&quot;,&quot;startAt&quot;:0,&quot;maxResults&quot;:50,&quot;total&quot;:1,&quot;issues&quot;:[{&quot;expand&quot;:&quot;&quot;,&quot;id&quot;:&quot;10001&quot;,&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/issue/HSP-1&quot;,&quot;key&quot;:&quot;HSP-1&quot;,&quot;editmeta&quot;:&quot;TODO&quot;,&quot;changelog&quot;:&quot;TODO&quot;}]}</ns3:code>
+</ns3:pre>
+                            </ns3:p>
+                        </ns2:doc>
+                        <ns2:doc>Returns a JSON representation of the search results.</ns2:doc>
+                    </ns2:representation>
+                    <ns2:representation status="400">
+                        <ns2:doc>Returned if there is a problem with the JQL query.</ns2:doc>
+                    </ns2:representation>
+                </ns2:response>
+            </ns2:method>
+            <ns2:method name="POST" id="searchUsingSearchRequest">
+                <ns2:doc>Performs a search using JQL.</ns2:doc>
+                <ns2:request>
+                    <ns2:representation mediaType="application/json" element="searchRequest">
+                        <ns2:doc>
+                            <ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+<ns3:h6>Example</ns3:h6>
+<ns3:pre>
+    <ns3:code>{&quot;jql&quot;:&quot;project = HSP&quot;,&quot;startAt&quot;:0,&quot;maxResults&quot;:15,&quot;fields&quot;:[&quot;summary&quot;,&quot;status&quot;,&quot;assignee&quot;]}</ns3:code>
+</ns3:pre>
+                            </ns3:p>
+                        </ns2:doc>
+                    </ns2:representation>
+                </ns2:request>
+                <ns2:response>
+                    <ns2:representation mediaType="application/json" status="200" element="searchResults">
+                        <ns2:doc>
+                            <ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+<ns3:h6>Example</ns3:h6>
+<ns3:pre>
+    <ns3:code>{&quot;expand&quot;:&quot;names,schema&quot;,&quot;startAt&quot;:0,&quot;maxResults&quot;:50,&quot;total&quot;:1,&quot;issues&quot;:[{&quot;expand&quot;:&quot;&quot;,&quot;id&quot;:&quot;10001&quot;,&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/issue/HSP-1&quot;,&quot;key&quot;:&quot;HSP-1&quot;,&quot;editmeta&quot;:&quot;TODO&quot;,&quot;changelog&quot;:&quot;TODO&quot;}]}</ns3:code>
+</ns3:pre>
+                            </ns3:p>
+                        </ns2:doc>
+                        <ns2:doc>Returns a JSON representation of the search results.</ns2:doc>
+                    </ns2:representation>
+                    <ns2:representation status="400">
+                        <ns2:doc>Returned if there is a problem with the JQL query.</ns2:doc>
+                    </ns2:representation>
+                </ns2:response>
+            </ns2:method>
+        </ns2:resource>
+        <ns2:resource path="issueLinkType">
+            <ns2:doc>Rest resource to retrieve a list of issue link types.</ns2:doc>
+            <ns2:method name="GET" id="getIssueLinkTypes">
+                <ns2:doc>Returns a list of available issue link types, if issue linking is enabled.
+ Each issue link type has an id, a name and a label for the outward and inward link relationship.</ns2:doc>
+                <ns2:response>
+                    <ns2:representation status="404">
+                        <ns2:doc>Returned if issue linking is disabled.</ns2:doc>
+                    </ns2:representation>
+                    <ns2:representation mediaType="application/json" status="200" element="issueLinkTypes">
+                        <ns2:doc>
+                            <ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+<ns3:h6>Example</ns3:h6>
+<ns3:pre>
+    <ns3:code>{&quot;issueLinkTypes&quot;:[{&quot;id&quot;:1000,&quot;name&quot;:&quot;Duplicate&quot;,&quot;inward&quot;:&quot;Duplicated by&quot;,&quot;outward&quot;:&quot;Duplicates&quot;,&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2//issueLinkType/1000&quot;},{&quot;id&quot;:1010,&quot;name&quot;:&quot;Blocks&quot;,&quot;inward&quot;:&quot;Blocked by&quot;,&quot;outward&quot;:&quot;Blocks&quot;,&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2//issueLinkType/1010&quot;}]}</ns3:code>
+</ns3:pre>
+                            </ns3:p>
+                        </ns2:doc>
+                        <ns2:doc>Returns a list of all available issue link types.</ns2:doc>
+                    </ns2:representation>
+                </ns2:response>
+            </ns2:method>
+            <ns2:resource path="/{issueLinkTypeId}">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="issueLinkTypeId"/>
+                <ns2:method name="GET" id="getIssueLinkType">
+                    <ns2:doc>Returns for a given issue link type id all information about this issue link type.</ns2:doc>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if issue linking is disabled or no issue link type with the given id exists.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200" element="issueLinkType">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;id&quot;:1000,&quot;name&quot;:&quot;Duplicate&quot;,&quot;inward&quot;:&quot;Duplicated by&quot;,&quot;outward&quot;:&quot;Duplicates&quot;,&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2//issueLinkType/1000&quot;}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returns the issue link type with the given id.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+        </ns2:resource>
+        <ns2:resource path="user">
+            <ns2:method name="GET" id="getUser">
+                <ns2:doc>Returns a user. This resource cannot be accessed anonymously.</ns2:doc>
+                <ns2:request>
+                    <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="query" name="username">
+                        <ns2:doc>the username</ns2:doc>
+                    </ns2:param>
+                </ns2:request>
+                <ns2:response>
+                    <ns2:representation status="404">
+                        <ns2:doc>Returned if the requested user is not found.</ns2:doc>
+                    </ns2:representation>
+                    <ns2:representation mediaType="application/json" status="200" element="user">
+                        <ns2:doc>
+                            <ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+<ns3:h6>Example</ns3:h6>
+<ns3:pre>
+    <ns3:code>{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/user?username=fred&quot;,&quot;name&quot;:&quot;fred&quot;,&quot;emailAddress&quot;:&quot;fred@example.com&quot;,&quot;avatarUrls&quot;:{&quot;16x16&quot;:&quot;http://www.example.com/jira/secure/useravatar?size=small&amp;ownerId=fred&quot;,&quot;48x48&quot;:&quot;http://www.example.com/jira/secure/useravatar?size=large&amp;ownerId=fred&quot;},&quot;displayName&quot;:&quot;Fred F. User&quot;,&quot;active&quot;:true,&quot;timeZone&quot;:&quot;Australia/Sydney&quot;,&quot;groups&quot;:{&quot;size&quot;:3,&quot;items&quot;:[{&quot;name&quot;:&quot;jira-user&quot;},{&quot;name&quot;:&quot;jira-admin&quot;},{&quot;name&quot;:&quot;important&quot;}]},&quot;expand&quot;:&quot;groups&quot;}</ns3:code>
+</ns3:pre>
+                            </ns3:p>
+                        </ns2:doc>
+                        <ns2:doc>Returns a full representation of a JIRA user in JSON format.</ns2:doc>
+                    </ns2:representation>
+                    <ns2:representation status="401">
+                        <ns2:doc>Returned if the current user is not authenticated.</ns2:doc>
+                    </ns2:representation>
+                </ns2:response>
+            </ns2:method>
+            <ns2:resource path="search">
+                <ns2:method name="GET" id="findUsers">
+                    <ns2:doc>Returns a list of users that match the search string. This resource cannot be accessed anonymously.</ns2:doc>
+                    <ns2:request>
+                        <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="query" name="username">
+                            <ns2:doc>the username</ns2:doc>
+                        </ns2:param>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the requested user is not found.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200" element="List of users">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/user?username=fred&quot;,&quot;name&quot;:&quot;fred&quot;,&quot;emailAddress&quot;:&quot;fred@example.com&quot;,&quot;avatarUrls&quot;:{&quot;16x16&quot;:&quot;http://www.example.com/jira/secure/useravatar?size=small&amp;ownerId=fred&quot;,&quot;48x48&quot;:&quot;http://www.example.com/jira/secure/useravatar?size=large&amp;ownerId=fred&quot;},&quot;displayName&quot;:&quot;Fred F. User&quot;,&quot;active&quot;:true,&quot;timeZone&quot;:&quot;Australia/Sydney&quot;,&quot;groups&quot;:{&quot;size&quot;:3,&quot;items&quot;:[{&quot;name&quot;:&quot;jira-user&quot;},{&quot;name&quot;:&quot;jira-admin&quot;},{&quot;name&quot;:&quot;important&quot;}]},&quot;expand&quot;:&quot;groups&quot;}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returns a full representation of a JIRA user in JSON format.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="401">
+                            <ns2:doc>Returned if the current user is not authenticated.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+            <ns2:resource path="assignable/search">
+                <ns2:method name="GET" id="findAssignableUsers">
+                    <ns2:doc>Returns a list of users that match the search string. This resource cannot be accessed anonymously.</ns2:doc>
+                    <ns2:request>
+                        <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="query" name="username">
+                            <ns2:doc>the username</ns2:doc>
+                        </ns2:param>
+                        <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="query" name="project">
+                            <ns2:doc>the key of the project we are finding assignable users for</ns2:doc>
+                        </ns2:param>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the requested user is not found.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200" element="user">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/user?username=fred&quot;,&quot;name&quot;:&quot;fred&quot;,&quot;emailAddress&quot;:&quot;fred@example.com&quot;,&quot;avatarUrls&quot;:{&quot;16x16&quot;:&quot;http://www.example.com/jira/secure/useravatar?size=small&amp;ownerId=fred&quot;,&quot;48x48&quot;:&quot;http://www.example.com/jira/secure/useravatar?size=large&amp;ownerId=fred&quot;},&quot;displayName&quot;:&quot;Fred F. User&quot;,&quot;active&quot;:true,&quot;timeZone&quot;:&quot;Australia/Sydney&quot;,&quot;groups&quot;:{&quot;size&quot;:3,&quot;items&quot;:[{&quot;name&quot;:&quot;jira-user&quot;},{&quot;name&quot;:&quot;jira-admin&quot;},{&quot;name&quot;:&quot;important&quot;}]},&quot;expand&quot;:&quot;groups&quot;}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returns a full representation of a JIRA user in JSON format.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="401">
+                            <ns2:doc>Returned if the current user is not authenticated.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+            <ns2:resource path="{username}/avatars">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="username">
+                    <ns2:doc>username</ns2:doc>
+                </ns2:param>
+                <ns2:method name="GET" id="getAllAvatars">
+                    <ns2:doc>Returns all avatars which are visible for the currently logged in user.</ns2:doc>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the requested user is not found.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200" element="avatars">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;id&quot;:1000,&quot;owner&quot;:&quot;fred&quot;,&quot;isSystemAvatar&quot;:true,&quot;isSelected&quot;:true,&quot;selected&quot;:true}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returns a map containing a list of avatars for both custom an system avatars</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="401">
+                            <ns2:doc>Returned if the current user is not authenticated.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="500">
+                            <ns2:doc>Returned if an error occurs while retrieving the list of avatars.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+            <ns2:resource path="{username}/avatar">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="username"/>
+                <ns2:method name="POST" id="createAvatarFromTemporary">
+                    <ns2:doc>Converts temporary avatar into a real avatar</ns2:doc>
+                    <ns2:request>
+                        <ns2:representation mediaType="application/json">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;cropperWidth&quot;:120,&quot;cropperOffsetX&quot;:50,&quot;cropperOffsetY&quot;:50,&quot;needsCropping&quot;:false}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                        </ns2:representation>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the currently authenticated user does not have EDIT PROJECT permission.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="201" element="avatar">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;id&quot;:1000,&quot;owner&quot;:&quot;fred&quot;,&quot;isSystemAvatar&quot;:true,&quot;isSelected&quot;:true,&quot;selected&quot;:true}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returns created avatar</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="400">
+                            <ns2:doc>Returned if the cropping coordinates are invalid</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="403">
+                            <ns2:doc>Returned if the currently authenticated user does not have permission to pick avatar</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="500">
+                            <ns2:doc>Returned if an error occurs while converting temporary avatar to real avatar</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+                <ns2:method name="PUT" id="updateProjectAvatar">
+                    <ns2:request>
+                        <ns2:representation mediaType="application/json"/>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation mediaType="application/json"/>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+            <ns2:resource path="{username}/avatar/temporary">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="username"/>
+                <ns2:method name="POST" id="storeTemporaryAvatar">
+                    <ns2:doc>Creates temporary avatar</ns2:doc>
+                    <ns2:request>
+                        <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="query" name="filename">
+                            <ns2:doc>name of file being uploaded</ns2:doc>
+                        </ns2:param>
+                        <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:long" style="query" name="size">
+                            <ns2:doc>size of file</ns2:doc>
+                        </ns2:param>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the currently authenticated user does not have EDIT PROJECT permission.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="201" element="avatar">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;cropperWidth&quot;:120,&quot;cropperOffsetX&quot;:50,&quot;cropperOffsetY&quot;:50,&quot;url&quot;:&quot;http://example.com/jira/secure/temporaryavatar?cropped=true&quot;,&quot;needsCropping&quot;:true}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>temporary avatar cropping instructions</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="403">
+                            <ns2:doc>Returned if the request does not conain a valid XSRF token</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="500">
+                            <ns2:doc>Returned if an error occurs while converting temporary avatar to real avatar</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+                <ns2:method name="POST" id="storeTemporaryAvatarUsingMultiPart">
+                    <ns2:request>
+                        <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" name="avatar"/>
+                    </ns2:request>
+                    <ns2:response>
+                        <ns2:representation mediaType="text/html"/>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+            <ns2:resource path="{username}/avatar/{id}">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:long" style="template" name="id">
+                    <ns2:doc>database id for avatar</ns2:doc>
+                </ns2:param>
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="username">
+                    <ns2:doc>username</ns2:doc>
+                </ns2:param>
+                <ns2:method name="DELETE" id="deleteAvatar">
+                    <ns2:doc>Deletes avatar</ns2:doc>
+                    <ns2:response>
+                        <ns2:representation mediaType="application/json" status="204">
+                            <ns2:doc>Returned if the avatar is successfully deleted.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the avatar does not exist or the currently authenticated user does not have permission to
+      delete it.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation status="403">
+                            <ns2:doc>Returned if the currently authenticated user does not have permission to delete the avatar.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+        </ns2:resource>
+        <ns2:resource path="customFieldOption">
+            <ns2:resource path="{id}">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="id">
+                    <ns2:doc>a String containing an custom Field Option id</ns2:doc>
+                </ns2:param>
+                <ns2:method name="GET" id="getCustomFieldOption">
+                    <ns2:doc>Returns a full representation of the custom Field Option that has the given id.</ns2:doc>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the custom Field Option does not exist, or is not visible to the calling user.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200" element="customFieldOption">
+                            <ns2:doc>Returned if the custom Field Option exists and is visible by the calling user.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+        </ns2:resource>
+        <ns2:resource path="worklog">
+            <ns2:resource path="{id}">
+                <ns2:param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:string" style="template" name="id">
+                    <ns2:doc>a String containing the work log id</ns2:doc>
+                </ns2:param>
+                <ns2:method name="GET" id="getWorklog">
+                    <ns2:doc>Returns a work log.</ns2:doc>
+                    <ns2:response>
+                        <ns2:representation status="404">
+                            <ns2:doc>Returned if the work log with the given id does not exist or if the currently authenticated user does not
+      have permission to view it.</ns2:doc>
+                        </ns2:representation>
+                        <ns2:representation mediaType="application/json" status="200" element="worklog">
+                            <ns2:doc>
+<ns3:p xmlns:ns3="http://www.w3.org/1999/xhtml">
+    <ns3:h6>Example</ns3:h6>
+    <ns3:pre>
+        <ns3:code>{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2.0/worklog/10000&quot;,&quot;author&quot;:{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/user?username=fred&quot;,&quot;name&quot;:&quot;fred&quot;,&quot;displayName&quot;:&quot;Fred F. User&quot;,&quot;active&quot;:false},&quot;updateAuthor&quot;:{&quot;self&quot;:&quot;http://www.example.com/jira/rest/api/2/user?username=fred&quot;,&quot;name&quot;:&quot;fred&quot;,&quot;displayName&quot;:&quot;Fred F. User&quot;,&quot;active&quot;:false},&quot;comment&quot;:&quot;I did some work here.&quot;,&quot;visibility&quot;:{&quot;type&quot;:&quot;group&quot;,&quot;value&quot;:&quot;jira-developers&quot;},&quot;started&quot;:&quot;2011-10-05T13:08:06.981-0700&quot;,&quot;timeSpent&quot;:&quot;3h 20m&quot;,&quot;id&quot;:100028}</ns3:code>
+    </ns3:pre>
+</ns3:p>
+                            </ns2:doc>
+                            <ns2:doc>Returned if the work log with the given id exists and the currently authenticated user has permission to
+      view it. The returned response contains a full representation of the work log in JSON format.</ns2:doc>
+                        </ns2:representation>
+                    </ns2:response>
+                </ns2:method>
+            </ns2:resource>
+        </ns2:resource>
+    </ns2:resources>
+</ns2:application>

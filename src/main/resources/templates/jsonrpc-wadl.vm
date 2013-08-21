@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+#* @vtlvariable name="resourceBase" type="java.lang.String" *#
+#* @vtlvariable name="methods" type="java.util.List<com.atlassian.labs.restbrowser.rest.model.JsonRpcMethod>" *#
+<application xmlns="http://research.sun.com/wadl/2006/10">
+    <resources base="$resourceBase">
+        #foreach($method in $methods)
+        <resource path="$method.name">
+            <method name="POST" id="$method.name">
+                <request>
+                    <representation mediaType="application/json"/>
+                    #foreach($param in $method.params)
+                    <param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:$param.xmlnsType"
+                           style="jsonRpc" name="$param.name"/>
+                    #end
+                </request>
+                <response>
+                    <representation mediaType="application/json"/>
+                </response>
+            </method>
+        </resource>
+        #end
+    </resources>
+</application>
