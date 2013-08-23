@@ -75,5 +75,5 @@ angular.module('RAB', ['ui.codemirror'])
                     });
             }
             initDivider();
-            jQuery(window).on('resize', _.debounce(initDivider, 50));
+            jQuery(window).on('resize', initDivider);
     });

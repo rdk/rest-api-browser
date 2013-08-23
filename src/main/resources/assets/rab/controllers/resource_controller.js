@@ -53,6 +53,33 @@ angular.module('RAB')
                 } catch(e){}
             }
 
+            $scope.reqEditorOptions = {
+                mode:'javascript',
+                theme:'neat',
+                lineNumbers:true,
+                foldGutter:true,
+                gutters: ["CodeMirror-linenumbers", "CodeMirror-foldgutter"],
+                indentWithTabs:false,
+                electricChars:true,
+                matchBrackets:true,
+                autoCloseBrackets:true,
+                highlightSelectionMatches:true,
+                indentUnit:2,
+                // styleActiveLine: true,
+                extraKeys: {"Tab": "indentMore", "Shift-Tab": "indentLess"}
+            }
+
+            $scope.respEditorOptions = {
+                mode:'javascript',
+                theme:'neat',
+                lineNumbers:true,
+                indentUnit:2,
+                foldGutter:true,
+                gutters: ["CodeMirror-linenumbers", "CodeMirror-foldgutter"],
+                readOnly:true,
+                highlightSelectionMatches:true,
+                lineWrapping:true
+            }
 
             $scope.addCustomParam = function(method){
                 method.customParams = method.customParams ? method.customParams : [];
@@ -144,9 +171,12 @@ angular.module('RAB')
                     contentType: contentType,
                     dataType: outputType,
                     beforeSend: function(){
-
+                        method.sendInProgress = true;
                     },
                     complete: function(){
+                        $scope.$apply(function(){
+                            method.sendInProgress = false;
+                        });
                     }
                 }).done(function(d, msg, o){
                     $scope.$apply(function(){

@@ -4,6 +4,23 @@ body {
 #footer {
     display:none;
 }
+.rab-bubble-get-started {
+    background:url(rab/images/getting-started.png) no-repeat;
+}
+.rab-bubble-documentation {
+    background:url(rab/images/docs.png) no-repeat;
+}
+.rab-bubble-code {
+    background:url(rab/images/code.png) no-repeat;
+}
+.rab-bubble-get-started,
+.rab-bubble-documentation,
+.rab-bubble-code {
+    width:150px;
+    height:150px;
+    background-size: 150px 150px;
+    display:block;
+}
 .rab-loading {
     text-align: center;
     padding:10px;
@@ -62,7 +79,7 @@ body {
     overflow-y: scroll;
     background:#fff;
     margin-left:20%;
-    padding:20px;
+    padding:10px 20px 20px 20px;
 }
 table.rab-params>tbody>tr>td,
 table.rab-params>thead>tr>th {
@@ -119,6 +136,34 @@ table.aui .rab-param-actions {
 .CodeMirror-scroll {
     overflow-y: hidden;
     overflow-x: auto;
+}
+.CodeMirror-foldmarker {
+    color: blue;
+    text-shadow: #b9f 1px 1px 2px, #b9f -1px -1px 2px, #b9f 1px -1px 2px, #b9f -1px 1px 2px;
+    font-family: arial;
+    line-height: .3;
+    cursor: pointer;
+}
+.CodeMirror-foldgutter {
+    width: .7em;
+}
+.CodeMirror-foldgutter-open,
+.CodeMirror-foldgutter-folded {
+    color: #555;
+    cursor: pointer;
+}
+.CodeMirror-foldgutter-open:after {
+    content: "\25BE";
+}
+.CodeMirror-foldgutter-folded:after {
+    content: "\25B8";
+}
+.cm-searching {
+    border-bottom:1px dotted #000;
+}
+div.CodeMirror span.CodeMirror-matchingbracket {
+    color:red;
+    border-bottom:1px dotted #000;
 }
 .rab-req-rep {
     text-align: right;

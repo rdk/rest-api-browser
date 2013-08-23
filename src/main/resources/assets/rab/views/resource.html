@@ -71,11 +71,12 @@
                         <option ng-repeat="rep in method.representations.requests" value="{{rep.mediaType}}" ng-selected="method.reqRep">{{rep.mediaType}}</option>
                     </select>
                 </div>
-                <textarea ng-model="method.reqBody" ui-codemirror="{mode: 'javascript',theme:'neat'}"></textarea>
+                <textarea ng-model="method.reqBody" ui-codemirror="reqEditorOptions"></textarea>
             </div>
             <div class="aui-panel">
-                <button class="aui-button aui-button-primary" ng-click="send(method)">Send</button>
-                <a href="" ng-click="clearResults()">Clear results</a>
+                <button class="aui-button aui-button-primary" ng-click="send(method, $event)">Send</button>
+                <span class="aui-icon aui-icon-wait" ng-show="method.sendInProgress">Wait</span>
+                <a href="" ng-click="clearResults()" ng-show="method.response && !method.sendInProgress">Clear results</a>
             </div>
         </form>
         <div class="aui-panel rab-resp" ng-show="method.response">
@@ -86,7 +87,7 @@
                 </p>
                 <pre>{{method.response.headers}}</pre>
             </div>
-            <textarea ng-model="method.response.body" ui-refresh="method.response.body" ui-codemirror="{mode: 'javascript',theme:'neat'}"></textarea>
+            <textarea ng-model="method.response.body" ui-refresh="method.response.body" ui-codemirror="respEditorOptions"></textarea>
         </div>
     </div>
 </div>
