@@ -14,6 +14,13 @@ angular.module('RAB')
                 if (method.method === 'DELETE')  return 6;
             }
 
+            function SendRequestError(msg){
+                AJS.messages.error("#rab-errors",{
+                    title: "Send request error",
+                    body: msg
+                });
+            }
+
             // Listen for selected resource off of the $rootScope... pretty hacky.
             // The alternative is to call the resource loader again and search through
             // the resources array. This is probably more efficient since I'm
@@ -46,14 +53,20 @@ angular.module('RAB')
                 } catch(e){}
             }
 
+
             $scope.addCustomParam = function(method){
-                console.log(method)
                 method.customParams = method.customParams ? method.customParams : [];
                 method.customParams.push({});
             };
 
             $scope.removeCustomParam = function(idx, method){
                 method.customParams.splice(idx,1);
+            }
+
+            $scope.isJsonRPC = function(){
+                if(/^json\-rpc/i.test($rootScope.resource.name)) {
+                    return true;
+                }
             }
 
             $scope.isActive = function(idx){
@@ -72,17 +85,24 @@ angular.module('RAB')
                 });
             };
 
-            function serializeParams(params){
-
+            $scope.clearResults = function(){
+                this.method.response = null;
             }
 
             $scope.send = function(method){
-                var url;
+                jQuery('#rab-errors').html("");
+                var url, queryParams, jsonRpcParams, customParams, contentType, outputType, data;
+
+                url = $rootScope.resource.url;
                 _.each(_.where(method.params,{style:"template"}), function(tmplVar) {
                     var pat = new RegExp('\{' + tmplVar.name + '\:?(.*)\}', 'g');
-                    url = $rootScope.resource.url.replace(pat, tmplVar.value);
+                    if(!tmplVar.value) {
+                        throw new SendRequestError("You forgot to provide a value for the following required parameter: <b>" + tmplVar.name + "</b>");
+                    }
+                    url = url.replace(pat, tmplVar.value);
                 });
-                var params = _.chain(method.params)
+
+                queryParams = _.chain(_.compact(method.params.concat(method.customParams)))
                     .filter(function(o){
                         return o.style !== "template";
                     })
@@ -94,7 +114,21 @@ angular.module('RAB')
                     .compact()
                     .join('&')
                     .value();
-                var outputType = "json";
+
+                if (queryParams.length > 0) {
+                    url += "?" + queryParams;
+                }
+
+                if ((method.method === "POST" || method.method === "PUT" || method.method === "PATCH") && method.reqBody) {
+                    data = method.reqBody ? method.reqBody.trim() : {};
+                }
+
+                if (!method.reqRep) {
+                    contentType = 'application/json';
+                } else {
+                    contentType = method.reqRep;
+                }
+
                 if (method.reqRep === 'application/xml') {
                     outputType = 'xml';
                 } else if (method.reqRep === 'text/plain') {
@@ -103,19 +137,54 @@ angular.module('RAB')
                     outputType = 'json';
                 }
 
-//                jQuery.ajax({
-//                    url: url,
-//                    type: method.method,
-//                    data: data,
-//                    contentType: method.reqRep,
-//                    dataType: outputType,
-//                    beforeSend: function(){
-//
-//                    },
-//                    complete: function(){
-//
-//                    }
-//                });
+                jQuery.ajax({
+                    url: url,
+                    type: method.method,
+                    data: data,
+                    contentType: contentType,
+                    dataType: outputType,
+                    beforeSend: function(){
+
+                    },
+                    complete: function(){
+                    }
+                }).done(function(d, msg, o){
+                    $scope.$apply(function(){
+                        var contentType;
+                        method.response = {};
+                        method.response.headers = o.getAllResponseHeaders();
+                        contentType = o.getResponseHeader('Content-Type');
+                        if (/^application\/xml/.test(contentType)) {
+                            method.response.body = o.responseText;
+                        } else {
+                            try {
+                                method.response.body = JSON.stringify(d, null, 2);
+                            } catch(e) {
+                                try {
+                                    method.response.body = d.documentElement.innerHTML;
+                                } catch(e) {
+                                    method.response.body = d;
+                                }
+                            }
+                        }
+                        if (method.response.body == null) method.response.body = "";
+                        method.response.status = "success";
+                        method.response.call = url + " (" + o.status + ")";
+                    });
+                }).fail(function(o, msg, descr) {
+                    $scope.$apply(function(){
+                        method.response = {};
+                        method.response.headers = o.getAllResponseHeaders();
+                        try {
+                            method.response.body = JSON.stringify(JSON.parse(o.responseText), null, 2);
+                        } catch(e) {
+                            method.response.body = o.responseText;
+                        }
+                        if (method.response.body == null) method.response.body = "";
+                        method.response.status = "error";
+                        method.response.call = url + " (" + o.status + ")";
+                    });
+               });
             }
         }]
     );

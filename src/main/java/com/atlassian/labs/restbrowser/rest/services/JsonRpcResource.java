@@ -62,22 +62,23 @@ public class JsonRpcResource {
                 resourceBase.append(applicationProperties.getBaseUrl());
                 resourceBase.append("/rpc/json-rpc/");
                 context.put("resourceBase", resourceBase.toString() + soap.getServicePath());
+                context.put("applicationProperties",applicationProperties);
 
-                Class<?> soapInterface = soap.getPublishedInterface();
-                for (Method method: soapInterface.getMethods()) {
-                    JsonRpcMethod.Builder builder = new JsonRpcMethod.Builder();
-                    builder.name(method.getName());
-                    Class<?>[] types = method.getParameterTypes();
-                    if (method.getParameterTypes().length > 0) {
-                        String[] names = paranamer.lookupParameterNames(method);
-                        for (int i = 0; i < types.length; i++) {
-                            String name = i < names.length ? names[i] : "name missing";
-                            builder.addParameter(name, convertClassToXmlnsType(types[i]));
-                        }
-                    }
-                    jsonRpcMethods.add(builder.build());
-                }
-                context.put("methods", jsonRpcMethods);
+//                Class<?> soapInterface = soap.getPublishedInterface();
+//                for (Method method: soapInterface.getMethods()) {
+//                    JsonRpcMethod.Builder builder = new JsonRpcMethod.Builder();
+//                    builder.name(method.getName());
+//                    Class<?>[] types = method.getParameterTypes();
+//                    if (method.getParameterTypes().length > 0) {
+//                        String[] names = paranamer.lookupParameterNames(method);
+//                        for (int i = 0; i < types.length; i++) {
+//                            String name = i < names.length ? names[i] : "name missing";
+//                            builder.addParameter(name, convertClassToXmlnsType(types[i]));
+//                        }
+//                    }
+//                    jsonRpcMethods.add(builder.build());
+//                }
+//                context.put("methods", jsonRpcMethods);
                 break;
             }
         }

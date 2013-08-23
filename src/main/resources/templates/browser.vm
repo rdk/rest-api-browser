@@ -9,9 +9,6 @@
     <title>REST API Browser</title>
     <meta name="decorator" content="atl.general">
     $webResourceManager.requireResource("com.atlassian.labs.rest-api-browser:assets")
-    <link rel="stylesheet" href="$assets/vendor/codemirror-3.15/lib/codemirror.css"/>
-    <link rel="stylesheet" href="$assets/vendor/codemirror-3.15/theme/midnight.css"/>
-    <link rel="stylesheet" href="$assets/app.css"/>
   </head>
   <body class="page-type-admin">
     <script>
@@ -79,15 +76,5 @@ RAB.rest.services = RAB.rest.services.concat(RAB.rest.jsonRpcs);
             </div>
         </div>
     </div>
-    <script src="$assets/vendor/angular.min.js"></script>
-    <script src="$assets/vendor/jquery-ui-1.10.3.custom.min.js"></script>
-    <script src="$assets/vendor/codemirror-3.15/lib/codemirror-compressed.js"></script>
-    <script src="$assets/vendor/ui-codemirror.min.js"></script>
-    <script src="$assets/process-wadl.js"></script>
-    <script src="$assets/app.js"></script>
-    <script src="$assets/services/rest_resources_service.js"></script>
-    <script src="$assets/controllers/sidebar_controller.js"></script>
-    <script src="$assets/controllers/main_controller.js"></script>
-    <script src="$assets/controllers/resource_controller.js"></script>
   </body>
 </html>

@@ -1,18 +1,25 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 #* @vtlvariable name="resourceBase" type="java.lang.String" *#
-#* @vtlvariable name="methods" type="java.util.List<com.atlassian.labs.restbrowser.rest.model.JsonRpcMethod>" *#
 <application xmlns="http://research.sun.com/wadl/2006/10">
     <resources base="$resourceBase">
         #foreach($method in $methods)
         <resource path="$method.name">
             <method name="POST" id="$method.name">
-                <request>
-                    <representation mediaType="application/json"/>
-                    #foreach($param in $method.params)
-                    <param xmlns:xs="http://www.w3.org/2001/XMLSchema" type="xs:$param.xmlnsType"
-                           style="jsonRpc" name="$param.name"/>
-                    #end
-                </request>
+                <doc>
+                    <![CDATA[
+                    <p>
+                        The JSON-RPC APIs for $applicationProperties.displayName are provided here to help you browse
+                        and discover APIs you have access to. JSON-RPC APIs operate differently than REST APIs. To learn
+                        more about how to use these APIs, please refer to the
+                        #if($applicationProperties.displayName == "Confluence")
+                            <a href="https://developer.atlassian.com/display/CONFDEV/Confluence+JSON-RPC+APIs" target="_blank">$applicationProperties.displayName JSON-RPC documentation on Atlassian Developers</a>.
+                        #else
+                            <a href="https://developer.atlassian.com/display/JIRADEV/JIRA+JSON-RPC+Overview" target="_blank">$applicationProperties.displayName JSON-RPC documentation on Atlassian Developers</a>.
+                        #end
+                    </p>
+                    ]]>
+                </doc>
+                <request></request>
                 <response>
                     <representation mediaType="application/json"/>
                 </response>

@@ -34,6 +34,16 @@ angular.module('RAB', ['ui.codemirror'])
             return input.replace(/\//g,'::');
         }
     })
+    .filter('sanitize', function(){
+        // sanitizes HTML via caja's html_sanitizer
+        return function(input){
+            if (!input) return;
+            function urlFilter(url){
+                if(/^https?:\/\//.test(url)) { return url; }
+            }
+            return html_sanitize(input, urlFilter);
+        }
+    })
     .run(function($rootScope){
 
             // Draggable divider
@@ -41,6 +51,14 @@ angular.module('RAB', ['ui.codemirror'])
                 var sbWidth = jQuery('.rab-sidebar').width();
                 var mainWidth = jQuery('.rab-main').width() + 40;
                 var mainMarginLeft = parseInt(jQuery('.rab-main').css('margin-left'));
+                function sizeSearchInput(sbWidth, offset){
+                    offset = offset || 0;
+                    jQuery('.rab-search').css({
+                        width: sbWidth + offset - 15,
+                        maxWidth: sbWidth + offset - 15
+                    });
+                }
+                sizeSearchInput(sbWidth);
                 jQuery('.rab-divider')
                     .css('margin-left',sbWidth + 'px')
                     .draggable({
@@ -51,7 +69,8 @@ angular.module('RAB', ['ui.codemirror'])
                             jQuery('.rab-main').width(mainWidth - ui.offset.left)
                                 .css('margin-left',function(){
                                     return (mainMarginLeft + ui.offset.left) + "px";
-                                })
+                                });
+                            sizeSearchInput(sbWidth, ui.offset.left);
                         }
                     });
             }
