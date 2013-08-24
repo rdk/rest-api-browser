@@ -15,16 +15,19 @@ angular.module('RAB')
             }
 
             function SendRequestError(msg){
-                AJS.messages.error("#rab-errors",{
-                    title: "Send request error",
-                    body: msg
-                });
+                AJS.messages.error('#rab-errors',
+                    {
+                        title: 'Send request error',
+                        body: msg
+                    }
+                );
             }
 
             // Listen for selected resource off of the $rootScope... pretty hacky.
             // The alternative is to call the resource loader again and search through
             // the resources array. This is probably more efficient since I'm
             // just passing the selected resource from the sidebarCtrl.
+            var method = {};
             if(!$rootScope.selectedResourceWatchSet) {
                 $rootScope.$watch('selectedResource', function(newVal, oldVal){
                     $rootScope.selectedResourceWatchSet = true;
@@ -32,9 +35,9 @@ angular.module('RAB')
                     $rootScope.resource = newVal;
                     $rootScope.resource.methods = _.sortBy($rootScope.resource.methods,methodNameValue);
                     if($routeParams.method){
-                        var method = _.where($rootScope.resource.methods, {method: $routeParams.method})[0];
+                        method = _.where($rootScope.resource.methods, {method: $routeParams.method})[0];
                     } else {
-                        var method = $rootScope.resource.methods[0];
+                        method = $rootScope.resource.methods[0];
                     }
                     try {
                         method.reqRep = method.representations.requests[0].mediaType;
@@ -43,9 +46,9 @@ angular.module('RAB')
                 });
             } else {
                 if($routeParams.method){
-                    var method = _.where($rootScope.resource.methods, {method: $routeParams.method})[0];
+                    method = _.where($rootScope.resource.methods, {method: $routeParams.method})[0];
                 } else {
-                    var method = $rootScope.resource.methods[0];
+                    method = $rootScope.resource.methods[0];
                 }
                 try {
                     method.reqRep = method.representations.requests[0].mediaType;
@@ -58,7 +61,7 @@ angular.module('RAB')
                 theme:'neat',
                 lineNumbers:true,
                 foldGutter:true,
-                gutters: ["CodeMirror-linenumbers", "CodeMirror-foldgutter"],
+                gutters: ['CodeMirror-linenumbers', 'CodeMirror-foldgutter'],
                 indentWithTabs:false,
                 electricChars:true,
                 matchBrackets:true,
@@ -66,8 +69,8 @@ angular.module('RAB')
                 highlightSelectionMatches:true,
                 indentUnit:2,
                 // styleActiveLine: true,
-                extraKeys: {"Tab": "indentMore", "Shift-Tab": "indentLess"}
-            }
+                extraKeys: {'Tab': 'indentMore', 'Shift-Tab': 'indentLess'}
+            };
 
             $scope.respEditorOptions = {
                 mode:'javascript',
@@ -75,11 +78,11 @@ angular.module('RAB')
                 lineNumbers:true,
                 indentUnit:2,
                 foldGutter:true,
-                gutters: ["CodeMirror-linenumbers", "CodeMirror-foldgutter"],
+                gutters: ['CodeMirror-linenumbers', 'CodeMirror-foldgutter'],
                 readOnly:true,
                 highlightSelectionMatches:true,
                 lineWrapping:true
-            }
+            };
 
             $scope.addCustomParam = function(method){
                 method.customParams = method.customParams ? method.customParams : [];
@@ -88,13 +91,13 @@ angular.module('RAB')
 
             $scope.removeCustomParam = function(idx, method){
                 method.customParams.splice(idx,1);
-            }
+            };
 
             $scope.isJsonRPC = function(){
                 if(/^json\-rpc/i.test($rootScope.resource.name)) {
                     return true;
                 }
-            }
+            };
 
             $scope.isActive = function(idx){
                 if($routeParams.method) {
@@ -114,28 +117,28 @@ angular.module('RAB')
 
             $scope.clearResults = function(){
                 this.method.response = null;
-            }
+            };
 
             $scope.send = function(method){
-                jQuery('#rab-errors').html("");
-                var url, queryParams, jsonRpcParams, customParams, contentType, outputType, data;
+                jQuery('#rab-errors').html('');
+                var url, queryParams, contentType, outputType, data;
 
                 url = $rootScope.resource.url;
-                _.each(_.where(method.params,{style:"template"}), function(tmplVar) {
-                    var pat = new RegExp('\{' + tmplVar.name + '\:?(.*)\}', 'g');
+                _.each(_.where(method.params,{style:'template'}), function(tmplVar) {
+                    var pat = new RegExp('{' + tmplVar.name + ':?(.*)}', 'g');
                     if(!tmplVar.value) {
-                        throw new SendRequestError("You forgot to provide a value for the following required parameter: <b>" + tmplVar.name + "</b>");
+                        throw new SendRequestError('You forgot to provide a value for the following required parameter: <b>' + tmplVar.name + '</b>');
                     }
                     url = url.replace(pat, tmplVar.value);
                 });
 
                 queryParams = _.chain(_.compact(method.params.concat(method.customParams)))
                     .filter(function(o){
-                        return o.style !== "template";
+                        return o.style !== 'template';
                     })
                     .map(function(o){
                         if(o.value) {
-                            return encodeURIComponent(o.name)+"="+encodeURIComponent(o.value);
+                            return encodeURIComponent(o.name)+'='+encodeURIComponent(o.value);
                         }
                     })
                     .compact()
@@ -143,10 +146,10 @@ angular.module('RAB')
                     .value();
 
                 if (queryParams.length > 0) {
-                    url += "?" + queryParams;
+                    url += '?' + queryParams;
                 }
 
-                if ((method.method === "POST" || method.method === "PUT" || method.method === "PATCH") && method.reqBody) {
+                if ((method.method === 'POST' || method.method === 'PUT' || method.method === 'PATCH') && method.reqBody) {
                     data = method.reqBody ? method.reqBody.trim() : {};
                 }
 
@@ -197,11 +200,11 @@ angular.module('RAB')
                                 }
                             }
                         }
-                        if (method.response.body == null) method.response.body = "";
-                        method.response.status = "success";
-                        method.response.call = url + " (" + o.status + ")";
+                        if (method.response.body == null) method.response.body = '';
+                        method.response.status = 'success';
+                        method.response.call = url + ' (' + o.status + ')';
                     });
-                }).fail(function(o, msg, descr) {
+                }).fail(function(o) {
                     $scope.$apply(function(){
                         method.response = {};
                         method.response.headers = o.getAllResponseHeaders();
@@ -210,11 +213,11 @@ angular.module('RAB')
                         } catch(e) {
                             method.response.body = o.responseText;
                         }
-                        if (method.response.body == null) method.response.body = "";
-                        method.response.status = "error";
-                        method.response.call = url + " (" + o.status + ")";
+                        if (method.response.body == null) method.response.body = '';
+                        method.response.status = 'error';
+                        method.response.call = url + ' (' + o.status + ')';
                     });
-               });
-            }
+                });
+            };
         }]
     );

@@ -28,6 +28,6 @@ angular.module('RAB')
                     return true;
                 }
                 return false;
-            }
+            };
         }]
     );
