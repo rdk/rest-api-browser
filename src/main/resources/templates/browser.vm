@@ -76,5 +76,6 @@ RAB.rest.services = RAB.rest.services.concat(RAB.rest.jsonRpcs);
             </div>
         </div>
     </div>
+    <script src="$assets/rest-api-browser.min.js"></script>
   </body>
 </html>

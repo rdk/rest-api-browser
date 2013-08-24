@@ -1,3 +1,5 @@
+'use strict';
+
 angular.module('RAB')
     .service('restResources', ['$rootScope', '$q',
         function ($rootScope, $q) {
@@ -8,7 +10,7 @@ angular.module('RAB')
             function ResourcesLoader(scope){
                 // filter out crowd resources which require basic auth to use
                 this.services = _.reject(RAB.rest.services, function(r){
-                    return /usermanagement|appmanagement/.test(r.path)
+                    return (/usermanagement|appmanagement/.test(r.path));
                 });
                 this.resources = [];
                 this.scope = scope;
@@ -19,22 +21,22 @@ angular.module('RAB')
                 var dfd = $q.defer();
                 var self = this;
                 var resolvedCount = 1;
+                var resolvedWADL = function(r){
+                    // emitter is available so that resources can be
+                    // streamed in as they arrive
+                    self.scope.$emit('resource-loaded', r);
+                    self.resources = self.resources.concat(r.resources);
+                    resolvedCount++;
+                    if (resolvedCount === self.services.length) {
+                        dfd.resolve(self.resources);
+                        alreadyLoaded = true;
+                    }
+                };
                 if (!alreadyLoaded) {
+
                     for(var i=0;i<self.services.length;i++){
                         var resource = self.services[i];
-                        processWADL(resource).done(
-                            function(r){
-                                // emitter is available so that resources can be
-                                // streamed in as they arrive
-                                self.scope.$emit('resource-loaded', r);
-                                self.resources = self.resources.concat(r.resources);
-                                resolvedCount++;
-                                if (resolvedCount === self.services.length) {
-                                    dfd.resolve(self.resources);
-                                    alreadyLoaded = true;
-                                }
-                            }
-                        );
+                        processWADL(resource).done(resolvedWADL);
                     }
                 } else {
                     dfd.resolve(resources);

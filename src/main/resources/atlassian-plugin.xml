@@ -88,37 +88,12 @@
         <context>com.atlassian.labs.restbrowser</context>
         <dependency>com.atlassian.auiplugin:ajs</dependency>
         <dependency>com.atlassian.auiplugin:aui-experimental-page-header</dependency>
-        <resource name="html4-defs.js" type="download" location="assets/rab/vendor/html4-defs.js"/>
-        <resource name="uri.js" type="download" location="assets/rab/vendor/uri.js"/>
-        <resource name="html-sanitizer.js" type="download" location="assets/rab/vendor/html-sanitizer-minified.js"/>
 
         <resource name="codemirror.css" type="download" location="assets/rab/vendor/codemirror-3.15/lib/codemirror.css"/>
         <resource name="midnight.css" type="download" location="assets/rab/vendor/codemirror-3.15/theme/neat.css"/>
+        <resource name="dialog.css" type="download" location="assets/rab/vendor/codemirror-3.15/addon/dialog/dialog.css"/>
         <resource name="app.css" type="download" location="assets/rab/app.css"/>
 
-        <resource name="angular.min.js" type="download" location="assets/rab/vendor/angular.min.js"/>
-        <resource name="jquery-ui.min.js" type="download" location="assets/rab/vendor/jquery-ui-1.10.3.custom.min.js"/>
-        <resource name="codemirror.min.js" type="download" location="assets/rab/vendor/codemirror-3.15/lib/codemirror-compressed.js"/>
-        <!--<resource name="active-line.js" type="download" location="assets/rab/vendor/codemirror-3.15/addon/selection/active-line.js"/>-->
-        <resource name="foldcode.js" type="download" location="assets/rab/vendor/codemirror-3.15/addon/fold/foldcode.js"/>
-        <resource name="foldgutter.js" type="download" location="assets/rab/vendor/codemirror-3.15/addon/fold/foldgutter.js"/>
-        <resource name="brace-fold.js" type="download" location="assets/rab/vendor/codemirror-3.15/addon/fold/brace-fold.js"/>
-        <resource name="xml-fold.js" type="download" location="assets/rab/vendor/codemirror-3.15/addon/fold/xml-fold.js"/>
-        <resource name="matchbrackets.js" type="download" location="assets/rab/vendor/codemirror-3.15/addon/edit/matchbrackets.js"/>
-        <resource name="closebrackets.js" type="download" location="assets/rab/vendor/codemirror-3.15/addon/edit/closebrackets.js"/>
-        <resource name="dialog.css" type="download" location="assets/rab/vendor/codemirror-3.15/addon/dialog/dialog.css"/>
-        <resource name="dialog.js" type="download" location="assets/rab/vendor/codemirror-3.15/addon/dialog/dialog.js"/>
-        <resource name="searchcursor.js" type="download" location="assets/rab/vendor/codemirror-3.15/addon/search/searchcursor.js"/>
-        <resource name="search.js" type="download" location="assets/rab/vendor/codemirror-3.15/addon/search/search.js"/>
-        <resource name="match-highlighter.js" type="download" location="assets/rab/vendor/codemirror-3.15/addon/search/match-highlighter.js"/>
-        <resource name="ui-codemirror.min.js" type="download" location="assets/rab/vendor/ui-codemirror.min.js"/>
-
-        <resource name="process-wadl.js" type="download" location="assets/rab/process-wadl.js"/>
-        <resource name="app.js" type="download" location="assets/rab/app.js"/>
-        <resource name="rest_resources_service.js" type="download" location="assets/rab/services/rest_resources_service.js"/>
-        <resource name="sidebar_controller.js" type="download" location="assets/rab/controllers/sidebar_controller.js"/>
-        <resource name="main_controller.js" type="download" location="assets/rab/controllers/main_controller.js"/>
-        <resource name="resource_controller.js" type="download" location="assets/rab/controllers/resource_controller.js"/>
     </web-resource>
 
     <!--

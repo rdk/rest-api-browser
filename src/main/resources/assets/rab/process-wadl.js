@@ -88,7 +88,7 @@ function processWADL(resource) {
             // Main function to cycle through resources in the WADL. This
             // function is called recursively.
             function getResource(resource, path, resourceWideParams, obj) {
-                var childResource, methodArry, path, params,
+                var childResource, methodArry, path, params, methods,
                     outMethods = [], addlPath = resource.attr('path');
 
                 obj = obj || {};
@@ -133,7 +133,7 @@ function processWADL(resource) {
                     // Methods found inside the resource. Extract them
                     jQuery.each(methods, function() {
                         var methodObj = {},
-                            params, request, self = jQuery(this);
+                            params, request, response, self = jQuery(this);
 
                         methodObj.params = [];
                         methodObj.method = self.attr('name');
