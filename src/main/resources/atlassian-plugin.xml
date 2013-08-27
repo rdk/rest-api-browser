@@ -82,18 +82,17 @@
 
     <!--
         Web resources for the REST API Browser
+        Only used for CSS management. JS is done inside of browser.vm and Gruntfile.js
      -->
     <resource type="download" name="rab/" location="assets/rab/"/>
     <web-resource key="assets">
         <context>com.atlassian.labs.restbrowser</context>
         <dependency>com.atlassian.auiplugin:ajs</dependency>
         <dependency>com.atlassian.auiplugin:aui-experimental-page-header</dependency>
-
         <resource name="codemirror.css" type="download" location="assets/rab/vendor/codemirror-3.15/lib/codemirror.css"/>
         <resource name="midnight.css" type="download" location="assets/rab/vendor/codemirror-3.15/theme/neat.css"/>
         <resource name="dialog.css" type="download" location="assets/rab/vendor/codemirror-3.15/addon/dialog/dialog.css"/>
         <resource name="app.css" type="download" location="assets/rab/app.css"/>
-
     </web-resource>
 
     <!--
@@ -109,7 +108,7 @@
     </web-item>
 
     <web-item name="REST API Browser" i18n-name-key="restapi-browser.name-jira" key="rest-browser-link-jira"
-              section="top_system_section/rest-api-browser-jira" weight="30"
+              section="advanced_menu_section/advanced_section" weight="900"
               application="jira">
         <description key="restapi-browser.description">REST API Browser</description>
         <label key="restapi-browser.label"/>
@@ -118,7 +117,7 @@
     </web-item>
 
     <web-item name="REST API Browser" i18n-name-key="restapi-browser.name-confluence" key="rest-browser-link-confluence"
-              section="system.admin/rest-api-browser-confluence" weight="30"
+              section="system.admin/administration" weight="900"
               application="confluence">
         <description key="restapi-browser.description">REST API Browser</description>
         <label key="restapi-browser.label"/>
@@ -146,7 +145,7 @@
     </web-item>
 
     <web-item name="REST API Browser" key="rest-browser-link-bamboo"
-              section="system.admin/rest-api-browser-bamboo" weight="30"
+              section="system.admin/system" weight="900"
               application="bamboo">
         <description key="restapi-browser.description">REST API Browser</description>
         <label key="restapi-browser.label"/>
@@ -159,7 +158,7 @@
         <description key="restapi-browser.description">REST API Browser</description>
         <label key="restapi-browser.label"/>
         <tooltip key="restapi-browser.description"/>
-        <link linkId="restapi-browser-link">/restbrowser</link>
+        <link linkId="restapi-browser-link">/plugins/servlet/restbrowser</link>
     </web-item>
 
     <!-- END web items for displaying REST Browser link in admin consoles -->

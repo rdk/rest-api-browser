@@ -3,6 +3,22 @@
 angular.module('RAB')
     .controller('ResourceCtrl', ['$scope', '$rootScope', '$routeParams', 'restResources',
         function ($scope,$rootScope,$routeParams,restResources) {
+
+            /*
+            // Inline dialog for cURL... disabled for now
+            $scope.$on('$viewContentLoaded', function(){
+                AJS.InlineDialog(AJS.$("#rab-curl"), 1,
+                    function(content, trigger, showPopup) {
+                        content
+                            .css({"padding":"20px"})
+                            .html('<h2>Inline dialog</h2><p>The inline dialog is a wrapper for secondary content/controls to be displayed on user request. Consider this component as displayed in context to the triggering control with the dialog overlaying the page content.</p><button class="aui-button">Done</button></form>');
+                        showPopup();
+                        return false;
+                    }
+                );
+            });
+            */
+
             // Custom method name sorting routine for tabs
             function methodNameValue(method){
                 if (method.method === 'GET')     return 0;

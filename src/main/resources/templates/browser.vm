@@ -3,28 +3,29 @@
 #* @vtlvariable name="restDescriptors" type="java.util.List<com.atlassian.labs.restbrowser.rest.model.RestDescriptor>" *#
 #* @vtlvariable name="jsonRpcDescriptors" type="java.util.List<com.atlassian.labs.restbrowser.rest.model.RestDescriptor>" *#
 #* @vtlvariable name="applicationProperties" type="com.atlassian.sal.api.ApplicationProperties" *#
+#* @vtlvariable name="devMode" type="java.lang.String" *#
 #set($assets = "$webResourceManager.getStaticResourcePrefix()/download/resources/com.atlassian.labs.rest-api-browser:assets/rab")
 <html>
   <head>
     <title>REST API Browser</title>
     <meta name="decorator" content="atl.general">
     $webResourceManager.requireResource("com.atlassian.labs.rest-api-browser:assets")
+    <script type="text/javascript"></script>
   </head>
   <body class="page-type-admin">
     <script>
-window.RAB = {}
+window.RAB={};
+#if($applicationProperties.displayName == "Bamboo")
+window.RAB.originalHash = location.hash;
+jQuery._data(jQuery(window)[0],'events')['hashchange'] = _.filter(jQuery._data(jQuery(window)[0],'events')['hashchange'], function(d){ return !/m\.Adapter\.trigger/.test(d.handler.toString())});
+#end
 RAB.resourcePrefix = "$assets";
 RAB.rest = {};
 RAB.rest.services = [
     #foreach($descriptor in $restDescriptors)
         {
             "wadl":"$textUtils.htmlEncode($applicationProperties.baseUrl)/rest$textUtils.htmlEncode(${descriptor.basePath})/$textUtils.htmlEncode($descriptor.version)/application.wadl",
-            "path":"$textUtils.htmlEncode($applicationProperties.baseUrl)/rest$textUtils.htmlEncode(${descriptor.basePath})/$textUtils.htmlEncode($descriptor.version)",
-            "version":"$textUtils.htmlEncode($descriptor.version)",
-            "pluginCompleteKey":"$textUtils.htmlEncode(${descriptor.pluginCompleteKey})",
-            "pluginKey":"$textUtils.htmlEncode(${descriptor.pluginKey})",
-            "pluginName":"$textUtils.htmlEncode(${descriptor.pluginName})",
-            "pluginDescription":"$textUtils.htmlEncode(${descriptor.pluginDescription})"
+            "path":"$textUtils.htmlEncode($applicationProperties.baseUrl)/rest$textUtils.htmlEncode(${descriptor.basePath})/$textUtils.htmlEncode($descriptor.version)"
         }#if($velocityCount < $restDescriptors.size()),#end
     #end
 ];
@@ -32,12 +33,7 @@ RAB.rest.jsonRpcs = [
     #foreach($descriptor in $jsonRpcDescriptors)
         {
             "wadl": "$textUtils.htmlEncode($applicationProperties.baseUrl)/rest/devtools/1/jsonrpc/${descriptor.pluginKey}/wadl",
-            "path": "$textUtils.htmlEncode($applicationProperties.baseUrl)$textUtils.htmlEncode(${descriptor.basePath})/$textUtils.htmlEncode($descriptor.version)",
-            "version":"$textUtils.htmlEncode($descriptor.version)",
-            "pluginCompleteKey":"$textUtils.htmlEncode(${descriptor.pluginCompleteKey})",
-            "pluginKey":"$textUtils.htmlEncode(${descriptor.pluginKey})",
-            "pluginName":"$textUtils.htmlEncode(${descriptor.pluginName})",
-            "pluginDescription":"$textUtils.htmlEncode(${descriptor.pluginDescription})"
+            "path": "$textUtils.htmlEncode($applicationProperties.baseUrl)$textUtils.htmlEncode(${descriptor.basePath})/$textUtils.htmlEncode($descriptor.version)"
         }#if($velocityCount < $jsonRpcDescriptors.size()),#end
     #end
 ];
@@ -64,8 +60,8 @@ RAB.rest.services = RAB.rest.services.concat(RAB.rest.jsonRpcs);
                         <div class="rab-loading" ng-hide="resourcesLoaded"><span class="aui-icon aui-icon-wait">Wait</span></div>
                         <div class="aui-navgroup-inner" ng-show="resourcesLoaded">
                             <ul class="aui-nav" id="searchTextResults">
-                                <li ng-repeat="resource in resources | filter:searchQuery | orderBy:'name'" ng-class='{"aui-nav-selected": selectCurrent()}'>
-                                    <a class="rab-sidebar-item" ng-href="#/resource/{{resource.key}}" title="{{resource.name}}">{{resource.name}}</a>
+                                <li ng-repeat="resource in resources | filter:searchQuery | unique:'name' | orderBy:'name'" ng-class='{"aui-nav-selected": selectCurrent()}'>
+                                    <a class="rab-sidebar-item" href="$applicationProperties.baseUrl/plugins/servlet/restbrowser#/resource/{{resource.key}}" title="{{resource.name}}">{{resource.name}}</a>
                                 </li>
                             </ul>
                         </div>
@@ -76,6 +72,48 @@ RAB.rest.services = RAB.rest.services.concat(RAB.rest.jsonRpcs);
             </div>
         </div>
     </div>
+    #if($devMode=="true")
+    ## if you add a new JS file to this list, make sure you update the corresponding
+    ## assets/rab/Gruntfile.js
+    <script src="$assets/vendor/html4-defs.js"></script>
+    <script src="$assets/vendor/html-sanitizer-minified.js"></script>
+    <script src="$assets/vendor/uri.js"></script>
+    <script src="$assets/vendor/angular.min.js"></script>
+    <script src="$assets/vendor/codemirror-3.15/lib/codemirror-compressed.js"></script>
+    <script src="$assets/vendor/codemirror-3.15/addon/fold/foldcode.js"></script>
+    <script src="$assets/vendor/codemirror-3.15/addon/fold/foldgutter.js"></script>
+    <script src="$assets/vendor/codemirror-3.15/addon/fold/brace-fold.js"></script>
+    <script src="$assets/vendor/codemirror-3.15/addon/fold/xml-fold.js"></script>
+    <script src="$assets/vendor/codemirror-3.15/addon/edit/matchbrackets.js"></script>
+    <script src="$assets/vendor/codemirror-3.15/addon/edit/closebrackets.js"></script>
+    <script src="$assets/vendor/codemirror-3.15/addon/dialog/dialog.js"></script>
+    <script src="$assets/vendor/codemirror-3.15/addon/search/searchcursor.js"></script>
+    <script src="$assets/vendor/codemirror-3.15/addon/search/search.js"></script>
+    <script src="$assets/vendor/codemirror-3.15/addon/search/match-highlighter.js"></script>
+    <script src="$assets/vendor/ui-codemirror.min.js"></script>
+    <script src="$assets/vendor/ui-utils/modules/unique/unique.js"></script>
+    <script src="$assets/process-wadl.js"></script>
+    <script src="$assets/app.js"></script>
+    <script src="$assets/services/rest_resources_service.js"></script>
+    <script src="$assets/controllers/sidebar_controller.js"></script>
+    <script src="$assets/controllers/main_controller.js"></script>
+    <script src="$assets/controllers/resource_controller.js"></script>
+    #else
+    ## this is generated by running `grunt` in the assets/rab directory
+    ## I decided not to use webresources for managing my js because I need this
+    ## code to run when after the inlined JS above.
     <script src="$assets/rest-api-browser.min.js"></script>
+    #end
+    #if($applicationProperties.displayName == "Bamboo")
+    <script type="text/javascript">
+        // very stupid hack for Bamboo. Bamboo has a global hashchange listener that
+        // makes it close to impossible to provide any other hashchange listener.
+        // This hack does not solve the problem 100% unfortunately. When a page
+        // is initially loaded with a hash, links on the sidebar break.
+        jQuery(function(){
+            window.history.replaceState({},'REST API Browser','$applicationProperties.baseUrl/plugins/servlet/restbrowser'+window.RAB.originalHash);
+        });
+    </script>
+    #end
   </body>
 </html>

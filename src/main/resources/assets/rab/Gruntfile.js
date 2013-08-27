@@ -24,6 +24,7 @@ module.exports = function(grunt) {
             ,'vendor/codemirror-3.15/addon/search/searchcursor.js'
             ,'vendor/codemirror-3.15/addon/search/search.js'
             ,'vendor/codemirror-3.15/addon/search/match-highlighter.js'
+            ,'vendor/ui-utils/modules/unique/unique.js'
             ,'vendor/ui-codemirror.min.js'
             ,'process-wadl.js'
             ,'app.js'

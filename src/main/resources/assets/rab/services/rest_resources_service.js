@@ -10,7 +10,7 @@ angular.module('RAB')
             function ResourcesLoader(scope){
                 // filter out crowd resources which require basic auth to use
                 this.services = _.reject(RAB.rest.services, function(r){
-                    return (/usermanagement|appmanagement/.test(r.path));
+                    return (/usermanagement|appmanagement/.test(r.wadl));
                 });
                 this.resources = [];
                 this.scope = scope;

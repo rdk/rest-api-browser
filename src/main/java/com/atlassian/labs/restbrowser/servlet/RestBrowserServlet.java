@@ -7,6 +7,7 @@ import com.atlassian.plugin.ModuleDescriptor;
 import com.atlassian.plugin.Plugin;
 import com.atlassian.plugin.PluginAccessor;
 import com.atlassian.plugin.predicate.ModuleDescriptorPredicate;
+import com.atlassian.sal.api.ApplicationProperties;
 import com.atlassian.sal.api.auth.LoginUriProvider;
 import com.atlassian.sal.api.user.UserManager;
 import com.atlassian.templaterenderer.TemplateRenderer;
@@ -30,10 +31,13 @@ public class RestBrowserServlet extends RequiresLoginServlet {
 
     private final PluginAccessor pluginAccessor;
     private final SoapServiceProvider soapServiceProvider;
+    private final ApplicationProperties applicationProperties;
 
     public RestBrowserServlet(PluginAccessor pluginAccessor, SoapServiceProvider soapServiceProvider,
-                              UserManager userManager,TemplateRenderer renderer, LoginUriProvider loginUriProvider) {
+                              UserManager userManager,TemplateRenderer renderer, LoginUriProvider loginUriProvider,
+                              ApplicationProperties applicationProperties) {
         super(userManager, renderer, loginUriProvider);
+        this.applicationProperties = applicationProperties;
         this.pluginAccessor = checkNotNull(pluginAccessor, "pluginAccessor");
         this.soapServiceProvider = checkNotNull(soapServiceProvider, "soapServiceProvider");
     }
@@ -44,6 +48,8 @@ public class RestBrowserServlet extends RequiresLoginServlet {
 
         context.put("restDescriptors", getRestDescriptors());
         context.put("jsonRpcDescriptors", getJsonRpcDescriptors());
+        context.put("devMode", System.getProperty("atlassian.dev.mode"));
+        context.put("applicationProperties", applicationProperties);
 
         return context;
     }

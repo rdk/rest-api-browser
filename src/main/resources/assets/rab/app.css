@@ -178,6 +178,9 @@ div.CodeMirror span.CodeMirror-matchingbracket {
     border-radius:5px;
     background: #f5f5f5;
 }
+.rab-response-headers .aui-lozenge {
+    font-size:13px;
+}
 .rab-response-headers pre {
     font-size:11px;
     font-family: Menlo, sans-serif;
@@ -185,6 +188,12 @@ div.CodeMirror span.CodeMirror-matchingbracket {
 .rab-response-headers code {
     font-weight:bold;
     font-family: Menlo, sans-serif;
+    display: inline;
+    padding: 0;
+    margin: 0;
+    border: 0;
+    color: #000;
+    background-color:transparent;
 }
 /* Confluence specific hacks: begin */
 #com-atlassian-confluence #main-header,
@@ -196,3 +205,14 @@ div.CodeMirror span.CodeMirror-matchingbracket {
     min-height:0;
 }
 /* Confluence specific hacks: end */
+
+/* Bamboo specific hacks: begin */
+html>body.aui-layout.aui-theme-default.dec_atl_general>div#page>section#content>div.aui-page-panel {
+    margin-top:0;
+    border-top:0;
+    padding:0;
+}
+html>body.aui-layout.aui-theme-default.dec_atl_general>div#page>section#content>div.aui-page-panel>div.aui-page-panel-inner>section.aui-page-panel-content {
+    padding:0;
+}
+/* Bamboo specific hacks: end */

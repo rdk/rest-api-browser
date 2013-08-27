@@ -1,28 +1,28 @@
 'use strict';
 
-angular.module('RAB', ['ui.codemirror'])
+angular.module('RAB', ['ui.codemirror','ui.unique'])
     .config(['$routeProvider',
         function ($routeProvider) {
-        $routeProvider
-            .when('/', {
-                templateUrl: RAB.resourcePrefix + '/views/main.html',
-                controller: 'MainCtrl'
-            })
-            .when('/search/:query', {
-                templateUrl: RAB.resourcePrefix + '/views/main.html',
-                controller: 'MainCtrl'
-            })
-            .when('/resource/:key', {
-                templateUrl: RAB.resourcePrefix + '/views/resource.html',
-                controller: 'ResourceCtrl'
-            })
-            .when('/resource/:key/:method', {
-                templateUrl: RAB.resourcePrefix + '/views/resource.html',
-                controller: 'ResourceCtrl'
-            })
-            .otherwise({
-                redirectTo: '/'
-            });
+            $routeProvider
+                .when('/', {
+                    templateUrl: RAB.resourcePrefix + '/views/main.html',
+                    controller: 'MainCtrl'
+                })
+                .when('/search/:query', {
+                    templateUrl: RAB.resourcePrefix + '/views/main.html',
+                    controller: 'MainCtrl'
+                })
+                .when('/resource/:key', {
+                    templateUrl: RAB.resourcePrefix + '/views/resource.html',
+                    controller: 'ResourceCtrl'
+                })
+                .when('/resource/:key/:method', {
+                    templateUrl: RAB.resourcePrefix + '/views/resource.html',
+                    controller: 'ResourceCtrl'
+                })
+                .otherwise({
+                    redirectTo: '/'
+                });
         }
     ])
     .filter('encodeQuery', function(){
@@ -45,35 +45,34 @@ angular.module('RAB', ['ui.codemirror'])
         }
     })
     .run(function($rootScope){
-
-            // Draggable divider
-            function initDivider(){
-                var sbWidth = jQuery('.rab-sidebar').width();
-                var mainWidth = jQuery('.rab-main').width() + 40;
-                var mainMarginLeft = parseInt(jQuery('.rab-main').css('margin-left'));
-                function sizeSearchInput(sbWidth, offset){
-                    offset = offset || 0;
-                    jQuery('.rab-search').css({
-                        width: sbWidth + offset - 15,
-                        maxWidth: sbWidth + offset - 15
-                    });
-                }
-                sizeSearchInput(sbWidth);
-                jQuery('.rab-divider')
-                    .css('margin-left',sbWidth + 'px')
-                    .draggable({
-                        axis: 'x',
-                        cursor: 'col-resize',
-                        drag: function(evt, ui){
-                            jQuery('.rab-sidebar').width(sbWidth + ui.offset.left);
-                            jQuery('.rab-main').width(mainWidth - ui.offset.left)
-                                .css('margin-left',function(){
-                                    return (mainMarginLeft + ui.offset.left) + "px";
-                                });
-                            sizeSearchInput(sbWidth, ui.offset.left);
-                        }
-                    });
+        // Draggable divider
+        function initDivider(){
+            var sbWidth = jQuery('.rab-sidebar').width();
+            var mainWidth = jQuery('.rab-main').width() + 40;
+            var mainMarginLeft = parseInt(jQuery('.rab-main').css('margin-left'));
+            function sizeSearchInput(sbWidth, offset){
+                offset = offset || 0;
+                jQuery('.rab-search').css({
+                    width: sbWidth + offset - 15,
+                    maxWidth: sbWidth + offset - 15
+                });
             }
-            initDivider();
-            jQuery(window).on('resize', initDivider);
+            sizeSearchInput(sbWidth);
+            jQuery('.rab-divider')
+                .css('margin-left',sbWidth + 'px')
+                .draggable({
+                    axis: 'x',
+                    cursor: 'col-resize',
+                    drag: function(evt, ui){
+                        jQuery('.rab-sidebar').width(sbWidth + ui.offset.left);
+                        jQuery('.rab-main').width(mainWidth - ui.offset.left)
+                            .css('margin-left',function(){
+                                return (mainMarginLeft + ui.offset.left) + "px";
+                            });
+                        sizeSearchInput(sbWidth, ui.offset.left);
+                    }
+                });
+        }
+        initDivider();
+        jQuery(window).on('resize', initDivider);
     });
