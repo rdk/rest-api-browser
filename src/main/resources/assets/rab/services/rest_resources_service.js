@@ -4,6 +4,12 @@ angular.module('RAB')
     .service('restResources', ['$rootScope', '$q',
         function ($rootScope, $q) {
 
+            var PUBLIC_APIS = [
+                '^json-rpc/',
+                '^api/',
+                '^auth/',
+                '^activity-stream/'
+            ];
             var alreadyLoaded = false;
 
             // var res = new Resources(scope)
@@ -26,6 +32,18 @@ angular.module('RAB')
                     // streamed in as they arrive
                     self.scope.$emit('resource-loaded', r);
                     self.resources = self.resources.concat(r.resources);
+                    self.resources = _.map(self.resources, function(resource){
+                        var isPublic = _.find(PUBLIC_APIS, function(txt){
+                            var re = new RegExp(txt);
+                            return re.test(resource.name);
+                        });
+                        if (isPublic){
+                            resource.public = true;
+                        } else {
+                            resource.public = false;
+                        }
+                        return resource;
+                    });
                     resolvedCount++;
                     if (resolvedCount === self.services.length) {
                         dfd.resolve(self.resources);

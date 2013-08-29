@@ -1,5 +1,9 @@
 <div id="rab-errors"></div>
-<h2 class="rab-resource-title" ng-show="mode!='edit'" ng-click="mode='edit'">{{resource.name}}</h2>
+<h2 class="rab-resource-title" ng-show="mode!='edit'" ng-click="mode='edit'">
+    {{resource.name}}
+    <span class="rab-scope aui-lozenge aui-lozenge-success" ng-show="resource.public">Public</span>
+    <span class="rab-scope aui-lozenge" ng-show="!resource.public">Private</span>
+</h2>
 <form class="rab-resource-url aui" ng-show="mode=='edit'" ng-click="selectUrl($event)"><input type="text" readonly="readonly" ng-model="resource.url" class="text long-field"></form>
 <p>{{resource.doc}}</p>
 <div class="aui-tabs horizontal-tabs">

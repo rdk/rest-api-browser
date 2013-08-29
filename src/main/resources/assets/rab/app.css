@@ -81,6 +81,10 @@ body {
     margin-left:20%;
     padding:10px 20px 20px 20px;
 }
+.rab-scope {
+    font-size: 15px;
+    padding: 5px 6px;
+}
 table.rab-params>tbody>tr>td,
 table.rab-params>thead>tr>th {
     vertical-align: baseline;

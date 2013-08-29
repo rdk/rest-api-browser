@@ -45,10 +45,11 @@ RAB.rest.services = RAB.rest.services.concat(RAB.rest.jsonRpcs);
                 <div class="aui-page-header-inner">
                     <form class="aui">
                         <input class="text rab-search" type="text" class="search" ng-model="searchQuery" placeholder="Search">
-                        <a ng-href="#/search/{{searchQuery | encodeQuery}}" ng-show="searchQuery">Link to filtered results</a>
+                        <input type="checkbox" name="publicOnlyFilter" class="checkbox" ng-model="publicOnly" ng-checked="publicOnly" />
+                        <label for="publicOnlyFilter">Show only public APIs</label>
                     </form>
                     <div class="aui-page-header-actions">
-                        <h4>REST API Browser</h4>
+                        <a ng-href="#/search/{{searchQuery | encodeQuery}}" ng-show="searchQuery">Link to filtered results</a>
                     </div>
                 </div>
             </div>
@@ -60,7 +61,7 @@ RAB.rest.services = RAB.rest.services.concat(RAB.rest.jsonRpcs);
                         <div class="rab-loading" ng-hide="resourcesLoaded"><span class="aui-icon aui-icon-wait">Wait</span></div>
                         <div class="aui-navgroup-inner" ng-show="resourcesLoaded">
                             <ul class="aui-nav" id="searchTextResults">
-                                <li ng-repeat="resource in resources | filter:searchQuery | unique:'name' | orderBy:'name'" ng-class='{"aui-nav-selected": selectCurrent()}'>
+                                <li ng-repeat="resource in resources | filter:searchQuery | showPublicOnly:publicOnly | unique:'name' | orderBy:'name'" ng-class='{"aui-nav-selected": selectCurrent()}'>
                                     <a class="rab-sidebar-item" href="$applicationProperties.baseUrl/plugins/servlet/restbrowser#/resource/{{resource.key}}" title="{{resource.name}}">{{resource.name}}</a>
                                 </li>
                             </ul>

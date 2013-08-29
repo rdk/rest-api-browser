@@ -44,6 +44,15 @@ angular.module('RAB', ['ui.codemirror','ui.unique'])
             return html_sanitize(input, urlFilter);
         }
     })
+    .filter('showPublicOnly', function($filter){
+        return function(resources, publicOnly){
+            if (publicOnly){
+                return $filter('filter')(resources, {public:true});
+            } else {
+                return resources;
+            }
+        };
+    })
     .run(function($rootScope){
         // Draggable divider
         function initDivider(){
