@@ -7,6 +7,11 @@ angular.module('RAB')
             var PUBLIC_APIS = [
                 '^json-rpc/',
                 '^api/',
+                '^audit/',
+                '^build\-status/',
+                '^jira/1\.0/',
+                '^ssh/',
+                '^branch-permissions/',
                 '^auth/',
                 '^activity-stream/'
             ];
