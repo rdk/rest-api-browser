@@ -1,8 +1,8 @@
 <div id="rab-errors"></div>
 <h2 class="rab-resource-title" ng-show="mode!='edit'" ng-click="mode='edit'">
     {{resource.name}}
-    <span class="rab-scope aui-lozenge aui-lozenge-success" ng-show="resource.public">Public</span>
-    <span class="rab-scope aui-lozenge" ng-show="!resource.public">Private</span>
+    <span class="rab-scope aui-lozenge aui-lozenge-success" ng-show="resource.public" title="This is a publicly available API and is supported by Atlassian.">Public</span>
+    <span class="rab-scope aui-lozenge" ng-show="!resource.public" title="This is a private API that is used by Atlassian within the product. This API can change without notice.">Private</span>
 </h2>
 <form class="rab-resource-url aui" ng-show="mode=='edit'" ng-click="selectUrl($event)"><input type="text" readonly="readonly" ng-model="resource.url" class="text long-field"></form>
 <p>{{resource.doc}}</p>

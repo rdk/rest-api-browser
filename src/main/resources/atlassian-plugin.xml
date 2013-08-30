@@ -89,6 +89,7 @@
         <context>com.atlassian.labs.restbrowser</context>
         <dependency>com.atlassian.auiplugin:ajs</dependency>
         <dependency>com.atlassian.auiplugin:aui-experimental-page-header</dependency>
+        <dependency>com.atlassian.auiplugin:aui-experimental-tooltips</dependency>
         <resource name="codemirror.css" type="download" location="assets/rab/vendor/codemirror-3.15/lib/codemirror.css"/>
         <resource name="midnight.css" type="download" location="assets/rab/vendor/codemirror-3.15/theme/neat.css"/>
         <resource name="dialog.css" type="download" location="assets/rab/vendor/codemirror-3.15/addon/dialog/dialog.css"/>

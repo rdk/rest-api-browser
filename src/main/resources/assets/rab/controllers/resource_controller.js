@@ -4,9 +4,11 @@ angular.module('RAB')
     .controller('ResourceCtrl', ['$scope', '$rootScope', '$routeParams', 'restResources',
         function ($scope,$rootScope,$routeParams,restResources) {
 
-            /*
-            // Inline dialog for cURL... disabled for now
             $scope.$on('$viewContentLoaded', function(){
+                AJS.$('.rab-scope').tooltip();
+
+                // Inline dialog for cURL... disabled for now
+                /*
                 AJS.InlineDialog(AJS.$("#rab-curl"), 1,
                     function(content, trigger, showPopup) {
                         content
@@ -16,8 +18,8 @@ angular.module('RAB')
                         return false;
                     }
                 );
+                */
             });
-            */
 
             // Custom method name sorting routine for tabs
             function methodNameValue(method){
