@@ -4,17 +4,38 @@ angular.module('RAB')
     .service('restResources', ['$rootScope', '$q',
         function ($rootScope, $q) {
 
-            var PUBLIC_APIS = [
+            var JIRA_PUBLIC_APIS = [
                 '^json-rpc/',
+                '^api/2',
+                '^auth/',
+                '^activities/'
+            ];
+
+            var CONFLUENCE_PUBLIC_APIS = [
+                '^json-rpc/'
+            ];
+
+            var STASH_PUBLIC_APIS = [
                 '^api/',
                 '^audit/',
                 '^build\-status/',
                 '^jira/1\.0/',
                 '^ssh/',
                 '^branch-permissions/',
-                '^auth/',
-                '^activity-stream/'
+                '^auth/'
             ];
+
+            var BAMBOO_PUBLIC_APIS = [
+                '^api/'
+            ]
+
+            var PUBLIC_APIS = [];
+            if(/JIRA/i.test(RAB.product)) { PUBLIC_APIS = JIRA_PUBLIC_APIS }
+            else if(/Confluence/i.test(RAB.product)) { PUBLIC_APIS = CONFLUENCE_PUBLIC_APIS }
+            else if(/Stash/i.test(RAB.product)) { PUBLIC_APIS = STASH_PUBLIC_APIS }
+            else if(/Bamboo/i.test(RAB.product)) { PUBLIC_APIS = BAMBOO_PUBLIC_APIS }
+
+            var compiledPublicAPIRe = new RegExp("("+PUBLIC_APIS.join("|")+")");
             var alreadyLoaded = false;
 
             // var res = new Resources(scope)
@@ -38,11 +59,7 @@ angular.module('RAB')
                     self.scope.$emit('resource-loaded', r);
                     self.resources = self.resources.concat(r.resources);
                     self.resources = _.map(self.resources, function(resource){
-                        var isPublic = _.find(PUBLIC_APIS, function(txt){
-                            var re = new RegExp(txt);
-                            return re.test(resource.name);
-                        });
-                        if (isPublic){
+                        if (PUBLIC_APIS.length > 0 && compiledPublicAPIRe.test(resource.name)){
                             resource.public = true;
                         } else {
                             resource.public = false;

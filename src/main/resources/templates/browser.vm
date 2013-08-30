@@ -19,6 +19,7 @@ window.RAB={};
 window.RAB.originalHash = location.hash;
 jQuery._data(jQuery(window)[0],'events')['hashchange'] = _.filter(jQuery._data(jQuery(window)[0],'events')['hashchange'], function(d){ return !/m\.Adapter\.trigger/.test(d.handler.toString())});
 #end
+RAB.product = "$applicationProperties.displayName";
 RAB.resourcePrefix = "$assets";
 RAB.rest = {};
 RAB.rest.services = [
@@ -62,7 +63,7 @@ RAB.rest.services = RAB.rest.services.concat(RAB.rest.jsonRpcs);
                         <div class="aui-navgroup-inner" ng-show="resourcesLoaded">
                             <ul class="aui-nav" id="searchTextResults">
                                 <li ng-repeat="resource in resources | filter:searchQuery | showPublicOnly:publicOnly | unique:'name' | orderBy:'name'" ng-class='{"aui-nav-selected": selectCurrent()}'>
-                                    <a class="rab-sidebar-item" href="$applicationProperties.baseUrl/plugins/servlet/restbrowser#/resource/{{resource.key}}" title="{{resource.name}}">{{resource.name}}</a>
+                                    <a class="rab-sidebar-item" href="$applicationProperties.baseUrl/plugins/servlet/restbrowser#/resource/{{resource.key}}" title="{{resource.name}}" ng-bind="resource.name"></a>
                                 </li>
                             </ul>
                         </div>
