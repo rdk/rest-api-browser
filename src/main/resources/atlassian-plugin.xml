@@ -16,6 +16,7 @@
     <component-import key="userManager" interface="com.atlassian.sal.api.user.UserManager" />
     <component-import key="loginUriProvider" interface="com.atlassian.sal.api.auth.LoginUriProvider" />
     <component-import key="webInterfaceManager" interface="com.atlassian.plugin.web.WebInterfaceManager" />
+    <component-import key="webResourceUrlProvider" interface="com.atlassian.plugin.webresource.WebResourceUrlProvider" />
 
     <!--
         SOAP module descriptor providers for each product

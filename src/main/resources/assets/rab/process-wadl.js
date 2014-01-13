@@ -45,12 +45,21 @@ function processWADL(resource) {
             var outResources = [];
 
             // Test to see if namespace is required
-            if (jQuery(x).find('resources').length === 0){
+            var resources = jQuery(x).find('resources');
+            var top;
+            if (resources.length === 0) {
                 useNamespace = true;
+                resources = jQuery(x).find(addNamespace('resources'));
+                top = resources.find('>'+addNamespace('resource'));
+            } else {
+                top = resources.find('>'+addNamespace('resource'));
+                if (top.length === 0) {
+                    useNamespace = true;
+                    top = resources.find('>'+addNamespace('resource'));
+                }
             }
 
-            var base = jQuery(x).find(addNamespace('resources')).attr('base'),
-                top = jQuery(x).find(addNamespace('resources')).find('>'+addNamespace('resource'));
+            var base = resources.attr('base');
 
             // Helper function for extracting the doc CDATA section from
             // a node
