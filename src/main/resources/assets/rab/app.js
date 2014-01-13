@@ -3,21 +3,22 @@
 angular.module('RAB', ['ui.codemirror','ui.unique'])
     .config(['$routeProvider',
         function ($routeProvider) {
+            var resourcePrefix = AJS.contextPath() + '/download/resources/com.atlassian.labs.rest-api-browser:assets/rab';
             $routeProvider
                 .when('/', {
-                    templateUrl: RAB.resourcePrefix + '/views/main.html',
+                    templateUrl: resourcePrefix + '/views/main.html',
                     controller: 'MainCtrl'
                 })
                 .when('/search/:query', {
-                    templateUrl: RAB.resourcePrefix + '/views/main.html',
+                    templateUrl: resourcePrefix + '/views/main.html',
                     controller: 'MainCtrl'
                 })
                 .when('/resource/:key', {
-                    templateUrl: RAB.resourcePrefix + '/views/resource.html',
+                    templateUrl: resourcePrefix + '/views/resource.html',
                     controller: 'ResourceCtrl'
                 })
                 .when('/resource/:key/:method', {
-                    templateUrl: RAB.resourcePrefix + '/views/resource.html',
+                    templateUrl: resourcePrefix + '/views/resource.html',
                     controller: 'ResourceCtrl'
                 })
                 .otherwise({
