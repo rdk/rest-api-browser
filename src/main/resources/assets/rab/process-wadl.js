@@ -50,6 +50,7 @@ function processWADL(resource) {
             if (resources.length === 0) {
                 useNamespace = true;
                 resources = jQuery(x).find(addNamespace('resources'));
+                top = resources.find('>'+addNamespace('resource'));
             } else {
                 top = resources.find('>'+addNamespace('resource'));
                 if (top.length === 0) {
