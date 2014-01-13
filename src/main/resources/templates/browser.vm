@@ -4,7 +4,8 @@
 #* @vtlvariable name="jsonRpcDescriptors" type="java.util.List<com.atlassian.labs.restbrowser.rest.model.RestDescriptor>" *#
 #* @vtlvariable name="applicationProperties" type="com.atlassian.sal.api.ApplicationProperties" *#
 #* @vtlvariable name="devMode" type="java.lang.String" *#
-#set($assets = "$webResourceManager.getStaticResourcePrefix()/download/resources/com.atlassian.labs.rest-api-browser:assets/rab")
+#* @vtlvariable name="staticResourcePrefix" type="java.lang.String" *#
+#set($assets = "$staticResourcePrefix/download/resources/com.atlassian.labs.rest-api-browser:assets/rab")
 <html>
   <head>
     <title>REST API Browser</title>
