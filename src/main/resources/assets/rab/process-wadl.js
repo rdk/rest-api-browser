@@ -22,8 +22,6 @@ function processWADL(resource) {
         return str.toLowerCase().replace(/[^-a-zA-Z0-9,&\s]+/ig, '-').replace(/\s/gi, "-").replace(/^-/, '').replace(/-$/, '');
     };
 
-
-    resource.relativeResource = resource.path.split('/').slice(-2).join('/');
     var rootResource = resource;
 
     function addNamespace(selector){

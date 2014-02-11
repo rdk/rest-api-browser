@@ -1,7 +1,12 @@
 package com.atlassian.labs.restbrowser.rest.model;
 
+import com.atlassian.labs.restbrowser.util.TextUtils;
+import com.atlassian.plugins.rest.module.ApiVersion;
+
 public class RestDescriptor {
     private final String basePath;
+    private final String restPath;
+    private final String displayPath;
     private final String version;
     private final String pluginCompleteKey;
     private final String pluginKey;
@@ -10,6 +15,8 @@ public class RestDescriptor {
 
     public RestDescriptor(Builder builder) {
         this.basePath = builder.basePath;
+        this.restPath = builder.restPath;
+        this.displayPath = builder.displayPath;
         this.version = builder.version;
         this.pluginCompleteKey = builder.pluginCompleteKey;
         this.pluginKey = builder.pluginKey;
@@ -20,6 +27,10 @@ public class RestDescriptor {
     public String getBasePath() {
         return basePath;
     }
+
+    public String getRestPath() { return restPath; }
+
+    public String getDisplayPath() { return displayPath; }
 
     public String getPluginCompleteKey() {
         return pluginCompleteKey;
@@ -43,6 +54,8 @@ public class RestDescriptor {
 
     public static class Builder {
         private String basePath;
+        private String restPath;
+        private String displayPath;
         private String version;
         private String pluginCompleteKey;
         private String pluginKey;
@@ -88,6 +101,11 @@ public class RestDescriptor {
         }
 
         public RestDescriptor build() {
+            this.restPath = TextUtils.htmlEncode(this.basePath);
+            if(!"none".equals(this.version)) {
+                this.restPath += "/" + TextUtils.htmlEncode(this.version);
+            }
+            this.displayPath = this.restPath.substring(1);
             return new RestDescriptor(this);
         }
     }

@@ -12,7 +12,7 @@ angular.module('RAB')
             ];
 
             var CONFLUENCE_PUBLIC_APIS = [
-                '^json-rpc/'
+                '^api/'
             ];
 
             var STASH_PUBLIC_APIS = [
@@ -66,17 +66,22 @@ angular.module('RAB')
                         }
                         return resource;
                     });
+                };
+
+                // Handle the good and bad (bad are effectively skipped)
+                var handledWADL = function() {
                     resolvedCount++;
                     if (resolvedCount === self.services.length) {
                         dfd.resolve(self.resources);
                         alreadyLoaded = true;
                     }
                 };
+
                 if (!alreadyLoaded) {
 
                     for(var i=0;i<self.services.length;i++){
                         var resource = self.services[i];
-                        processWADL(resource).done(resolvedWADL);
+                        processWADL(resource).done(resolvedWADL).always(handledWADL);
                     }
                 } else {
                     dfd.resolve(resources);
