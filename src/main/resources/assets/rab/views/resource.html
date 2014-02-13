@@ -48,7 +48,7 @@
                         </td>
                         <td class="rab-param-type">{{param.type}}</td>
                         <td class="rab-param-style">{{param.style}}</td>
-                        <td class="rab-param-descr">{{param.description}}</td>
+                        <td class="rab-param-descr" ng-bind-html-unsafe="param.description | sanitize"></td>
                         <td class="rab-param-action"></td>
                     </tr>
                     <tr ng-repeat="param in method.customParams">
