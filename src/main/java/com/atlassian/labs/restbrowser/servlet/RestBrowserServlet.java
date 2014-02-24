@@ -69,7 +69,7 @@ public class RestBrowserServlet extends RequiresLoginServlet {
             Plugin plugin = soap.getPlugin();
             builder.pluginKey(plugin.getKey()).pluginCompleteKey(soap.getCompleteKey()).
                     pluginName(plugin.getName()).pluginDescription(soap.getDescription()).
-                    basePath("/rpc/json-rpc").version(soap.getServicePath());
+                    basePath("/json-rpc").version(soap.getServicePath());
             jsonRpcDescriptors.add(builder.build());
         }
 

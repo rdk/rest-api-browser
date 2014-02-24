@@ -23,8 +23,9 @@ RAB.rest = {};
 RAB.rest.services = [
     #foreach($descriptor in $restDescriptors)
         {
-            "wadl":"$textUtils.htmlEncode($applicationProperties.baseUrl)/rest$textUtils.htmlEncode(${descriptor.basePath})/$textUtils.htmlEncode($descriptor.version)/application.wadl",
-            "path":"$textUtils.htmlEncode($applicationProperties.baseUrl)/rest$textUtils.htmlEncode(${descriptor.basePath})/$textUtils.htmlEncode($descriptor.version)"
+            "wadl":"$textUtils.htmlEncode($applicationProperties.baseUrl)/rest${descriptor.restPath}/application.wadl",
+            "path":"$textUtils.htmlEncode($applicationProperties.baseUrl)/rest${descriptor.restPath}",
+            "relativeResource": "${descriptor.displayPath}"
         }#if($velocityCount < $restDescriptors.size()),#end
     #end
 ];
@@ -32,7 +33,8 @@ RAB.rest.jsonRpcs = [
     #foreach($descriptor in $jsonRpcDescriptors)
         {
             "wadl": "$textUtils.htmlEncode($applicationProperties.baseUrl)/rest/devtools/1/jsonrpc/${descriptor.pluginKey}/wadl",
-            "path": "$textUtils.htmlEncode($applicationProperties.baseUrl)$textUtils.htmlEncode(${descriptor.basePath})/$textUtils.htmlEncode($descriptor.version)"
+            "path": "$textUtils.htmlEncode($applicationProperties.baseUrl)/rpc$textUtils.htmlEncode(${descriptor.basePath})/$textUtils.htmlEncode($descriptor.version)",
+            "relativeResource": "${descriptor.displayPath}"
         }#if($velocityCount < $jsonRpcDescriptors.size()),#end
     #end
 ];
