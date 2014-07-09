@@ -1,7 +1,7 @@
 'use strict';
 
 angular.module('RAB')
-    .service('restResources', ['$rootScope', '$q',
+    .factory('restResources', ['$rootScope', '$q',
         function ($rootScope, $q) {
 
             var JIRA_PUBLIC_APIS = [
@@ -27,7 +27,12 @@ angular.module('RAB')
 
             var BAMBOO_PUBLIC_APIS = [
                 '^api/'
-            ]
+            ];
+
+            // filter out crowd resources which require basic auth to use
+            var FILTERED_SERVICES = _.reject(RAB.rest.services, function(r){
+                return (/usermanagement|appmanagement/.test(r.wadl));
+            });
 
             var PUBLIC_APIS = [];
             if(/JIRA/i.test(RAB.product)) { PUBLIC_APIS = JIRA_PUBLIC_APIS }
@@ -36,62 +41,48 @@ angular.module('RAB')
             else if(/Bamboo/i.test(RAB.product)) { PUBLIC_APIS = BAMBOO_PUBLIC_APIS }
 
             var compiledPublicAPIRe = new RegExp("("+PUBLIC_APIS.join("|")+")");
-            var alreadyLoaded = false;
+            var resources = [];
+            var loadedServices = {};
 
-            // var res = new Resources(scope)
-            function ResourcesLoader(scope){
-                // filter out crowd resources which require basic auth to use
-                this.services = _.reject(RAB.rest.services, function(r){
-                    return (/usermanagement|appmanagement/.test(r.wadl));
-                });
-                this.resources = [];
-                this.scope = scope;
+            function isServiceLoaded(service) {
+                return !!loadedServices[service.relativeResource];
             }
 
-            // res.load().then(fn)
-            ResourcesLoader.prototype.load = function(){
+            function isServicePublic(serviceName) {
+                return PUBLIC_APIS.length > 0 && compiledPublicAPIRe.test(serviceName);
+            }
+
+            return function(publicOnly) {
                 var dfd = $q.defer();
-                var self = this;
-                var resolvedCount = 1;
-                var resolvedWADL = function(r){
-                    // emitter is available so that resources can be
-                    // streamed in as they arrive
-                    self.scope.$emit('resource-loaded', r);
-                    self.resources = self.resources.concat(r.resources);
-                    self.resources = _.map(self.resources, function(resource){
-                        if (PUBLIC_APIS.length > 0 && compiledPublicAPIRe.test(resource.name)){
-                            resource.public = true;
-                        } else {
-                            resource.public = false;
-                        }
+                var resolvedCount = 0;
+
+                var services = _.filter(FILTERED_SERVICES, function(service) {
+                    return !isServiceLoaded(service) && (!publicOnly || (publicOnly && isServicePublic(service.relativeResource)));
+                });
+
+                var resolvedWADL = function(r) {
+                    var newResources = _.map(r.resources, function(resource) {
+                        resource.public = !!isServicePublic(resource.name);
                         return resource;
                     });
+                    resources.push.apply(resources, newResources);
+                    loadedServices[r.ns.relativeResource] = true;
+                    dfd.notify(newResources);
                 };
 
                 // Handle the good and bad (bad are effectively skipped)
                 var handledWADL = function() {
                     resolvedCount++;
-                    if (resolvedCount === self.services.length) {
-                        dfd.resolve(self.resources);
-                        alreadyLoaded = true;
+                    if (resolvedCount === services.length) {
+                        dfd.resolve(resources);
                     }
                 };
 
-                if (!alreadyLoaded) {
+                _.each(services, function(service) {
+                    processWADL(service).done(resolvedWADL).always(handledWADL);
+                });
 
-                    for(var i=0;i<self.services.length;i++){
-                        var resource = self.services[i];
-                        processWADL(resource).done(resolvedWADL).always(handledWADL);
-                    }
-                } else {
-                    dfd.resolve(resources);
-                }
                 return dfd.promise;
-            };
-
-            // public api
-            return {
-                ResourcesLoader: ResourcesLoader
             };
         }
     ]);
