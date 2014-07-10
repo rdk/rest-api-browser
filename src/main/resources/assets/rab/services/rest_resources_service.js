@@ -78,9 +78,13 @@ angular.module('RAB')
                     }
                 };
 
-                _.each(services, function(service) {
-                    processWADL(service).done(resolvedWADL).always(handledWADL);
-                });
+                if (services.length) {
+                    _.each(services, function(service) {
+                        processWADL(service).done(resolvedWADL).always(handledWADL);
+                    });
+                } else {
+                    dfd.resolve(resources);
+                }
 
                 return dfd.promise;
             };
