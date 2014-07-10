@@ -13,6 +13,7 @@ module.exports = function(grunt) {
             ,'vendor/html-sanitizer-minified.js'
             ,'vendor/uri.js'
             ,'vendor/angular.min.js'
+            ,'vendor/angular-route.min.js'
             ,'vendor/codemirror-3.15/lib/codemirror-compressed.js'
             ,'vendor/codemirror-3.15/addon/fold/foldcode.js'
             ,'vendor/codemirror-3.15/addon/fold/foldgutter.js'
