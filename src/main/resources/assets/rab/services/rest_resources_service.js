@@ -12,7 +12,7 @@ angular.module('RAB')
             ];
 
             var CONFLUENCE_PUBLIC_APIS = [
-                '^api/'
+                '^api'
             ];
 
             var STASH_PUBLIC_APIS = [
