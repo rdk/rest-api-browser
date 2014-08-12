@@ -98,10 +98,10 @@
     <web-resource key="assets-devmode">
         <!-- if you add a new JS file to this list, make sure you update the corresponding assets/rab/Gruntfile.js -->
         <resource name="html4-defs.js" type="download" location="assets/rab/vendor/html4-defs.js"/>
-        <resource name="html-sanitizer-minified.js" type="download" location="assets/rab/vendor/html-sanitizer-minified.js"/>
         <resource name="uri.js" type="download" location="assets/rab/vendor/uri.js"/>
         <resource name="angular.min.js" type="download" location="assets/rab/vendor/angular.min.js"/>
         <resource name="angular.route.min.js" type="download" location="assets/rab/vendor/angular-route.min.js"/>
+        <resource name="angular.sanitize.min.js" type="download" location="assets/rab/vendor/angular-sanitize.min.js"/>
         <resource name="codemirror-compressed.js" type="download" location="assets/rab/vendor/codemirror-3.15/lib/codemirror-compressed.js"/>
         <resource name="codemirror-foldcode.js" type="download" location="assets/rab/vendor/codemirror-3.15/addon/fold/foldcode.js"/>
         <resource name="codemirror-foldgutter.js" type="download" location="assets/rab/vendor/codemirror-3.15/addon/fold/foldgutter.js"/>

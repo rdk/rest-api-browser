@@ -10,10 +10,10 @@ module.exports = function(grunt) {
         files: {
           'rest-api-browser.min.js': [
              'vendor/html4-defs.js'
-            ,'vendor/html-sanitizer-minified.js'
             ,'vendor/uri.js'
             ,'vendor/angular.min.js'
             ,'vendor/angular-route.min.js'
+            ,'vendor/angular-sanitize.min.js'
             ,'vendor/codemirror-3.15/lib/codemirror-compressed.js'
             ,'vendor/codemirror-3.15/addon/fold/foldcode.js'
             ,'vendor/codemirror-3.15/addon/fold/foldgutter.js'
