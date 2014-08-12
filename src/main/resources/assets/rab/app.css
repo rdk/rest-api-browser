@@ -113,8 +113,8 @@ form.aui.rab-resource-url input {
 .rab-param-description {
     width:40%;
 }
-.aui-tabs > .tabs-pane > .rab-method-description {
-    margin-top: 15px;
+.aui-tabs > .tabs-pane {
+    padding-top: 15px;
 }
 .rab-param-action {
     width:10%;
