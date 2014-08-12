@@ -1,6 +1,6 @@
 'use strict';
 
-angular.module('RAB', ['ngRoute', 'ui.codemirror','ui.unique'])
+angular.module('RAB', ['ngRoute', 'ngSanitize', 'ui.codemirror','ui.unique'])
     .config(['$routeProvider',
         function ($routeProvider) {
             var resourcePrefix = AJS.contextPath() + '/download/resources/com.atlassian.labs.rest-api-browser:assets/rab';

@@ -13,7 +13,7 @@
         </li>
     </ul>
     <div class="tabs-pane" ng-class="{'active-pane':isActive($index)}" ng-repeat='method in resource.methods' id="{{method.method}}">
-        <p ng-bind-html-unsafe="method.description | sanitize"></p>
+        <p class="rab-method-description" ng-if="method.description" ng-bind-html="method.description"></p>
 
         <form class="aui">
             <div class="aui-panel rab-req-options" ng-hide="isJsonRPC()">
@@ -48,7 +48,7 @@
                         </td>
                         <td class="rab-param-type">{{param.type}}</td>
                         <td class="rab-param-style">{{param.style}}</td>
-                        <td class="rab-param-descr" ng-bind-html-unsafe="param.description | sanitize"></td>
+                        <td class="rab-param-descr" ng-bind-html="param.description | sanitize"></td>
                         <td class="rab-param-action"></td>
                     </tr>
                     <tr ng-repeat="param in method.customParams">
