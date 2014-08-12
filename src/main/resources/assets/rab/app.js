@@ -35,16 +35,6 @@ angular.module('RAB', ['ngRoute', 'ngSanitize', 'ui.codemirror','ui.unique'])
             return input.replace(/\//g,'::');
         }
     })
-    .filter('sanitize', function(){
-        // sanitizes HTML via caja's html_sanitizer
-        return function(input){
-            if (!input) return;
-            function urlFilter(url){
-                if(/^https?:\/\//.test(url)) { return url; }
-            }
-            return html_sanitize(input, urlFilter);
-        }
-    })
     .filter('showPublicOnly', function($filter){
         return function(resources, publicOnly){
             if (publicOnly){
