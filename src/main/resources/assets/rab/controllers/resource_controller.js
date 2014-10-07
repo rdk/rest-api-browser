@@ -143,7 +143,7 @@ angular.module('RAB')
 
                 url = $rootScope.resource.url;
                 _.each(_.where(method.params,{style:'template'}), function(tmplVar) {
-                    var pat = new RegExp('{' + tmplVar.name + ':?(.*)}', 'g');
+                    var pat = new RegExp('{' + tmplVar.name + ':?(.*?)}', 'g');
                     if(!tmplVar.value) {
                         throw new SendRequestError('You forgot to provide a value for the following required parameter: <b>' + tmplVar.name + '</b>');
                     }
