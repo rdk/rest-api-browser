@@ -38,7 +38,7 @@ angular.module('RAB', ['ngRoute', 'ngSanitize', 'ui.codemirror','ui.unique'])
     .filter('showPublicOnly', function($filter){
         return function(resources, publicOnly){
             if (publicOnly){
-                return $filter('filter')(resources, {public:true});
+                return $filter('filter')(resources, {'public': true});
             } else {
                 return resources;
             }
