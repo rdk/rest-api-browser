@@ -62,7 +62,7 @@ angular.module('RAB')
 
                 var resolvedWADL = function(r) {
                     var newResources = _.map(r.resources, function(resource) {
-                        resource.public = !!isServicePublic(resource.name);
+                        resource['public'] = !!isServicePublic(resource.name);
                         return resource;
                     });
                     resources.push.apply(resources, newResources);
