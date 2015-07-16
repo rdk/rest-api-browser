@@ -157,7 +157,7 @@
         <confluence.rpc.version>5.3-OD-3</confluence.rpc.version>
         <confluence.version>5.3-OD-3</confluence.version>
         <jira.rpc.version>6.0</jira.rpc.version>
-        <jira.version>6.1-OD-05-2</jira.version>
+        <jira.version>6.1.9</jira.version>
         <stash.version>2.6.4</stash.version>
         <fecru.version>3.0.3-20130723010312</fecru.version>
         <template.renderer.version>1.3.1</template.renderer.version>

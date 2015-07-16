@@ -56,6 +56,11 @@
         <interface>com.atlassian.labs.restbrowser.plugin.provider.SoapServiceProvider</interface>
     </component>
 
+    <component key="bitbucketSoapServiceProvider" application="bitbucket"
+               class="com.atlassian.labs.restbrowser.provider.NoopSoapServiceProvider">
+        <interface>com.atlassian.labs.restbrowser.plugin.provider.SoapServiceProvider</interface>
+    </component>
+
     <!--
         Customized Velocity context items
      -->
@@ -172,6 +177,16 @@
               application="stash">
         <description key="restapi-browser.description.stash">Discover the Stash REST APIs</description>
         <tooltip key="stash.web.admin.settings.rab.tooltip">Interact and browse the REST resources bundled with Stash.</tooltip>
+        <label key="restapi-browser.label"/>
+        <link linkId="restapi-browser-link">/plugins/servlet/restbrowser</link>
+        <!--<link linkId="restapi-browser-link">/rest</link>-->
+    </web-item>
+
+    <web-item name="REST API Browser" i18n-name-key="restapi-browser.name-bitbucket" key="rest-browser-link-bitbucket"
+              section="atl.admin/admin-plugins-section" weight="15"
+              application="bitbucket">
+        <description key="restapi-browser.description.bitbucket">Discover the Bitbucket Server REST APIs</description>
+        <tooltip key="bitbucket.web.admin.settings.rab.tooltip">Interact and browse the REST resources bundled with Bitbucket Server.</tooltip>
         <label key="restapi-browser.label"/>
         <link linkId="restapi-browser-link">/plugins/servlet/restbrowser</link>
         <!--<link linkId="restapi-browser-link">/rest</link>-->
