@@ -43,8 +43,20 @@
                     </systemPropertyVariables>
                     <compressResources>false</compressResources>
                     <instructions>
-                        <Import-Package>com.atlassian.confluence.plugin.descriptor.rpc;version="0.0.0";resolution:="optional", com.atlassian.jira.plugin.rpc;version="0.0.0";resolution:="optional", com.atlassian.plugins.rest.common*;version="1.0.5", com.atlassian.plugin*;version="2.5", com.atlassian.templaterenderer*;version="1.1", com.google.common*;version="1.0", javax.servlet*;version="0.0",
-                            <!-- JIRA exports this as version 0.0 -->javax.ws.rs*;version="1.0", org.osgi.framework;version="1.3", org.osgi.service.packageadmin*;version="1.2", org.slf4j*;version="1.5"
+                        <Import-Package>
+                            com.atlassian.confluence.plugin.descriptor.rpc;version="0.0.0";resolution:="optional",
+                            com.atlassian.jira.plugin.rpc;version="0.0.0";resolution:="optional",
+                            com.atlassian.plugins.rest.common*;version="1.0.5",
+                            com.atlassian.plugin*;version="2.5",
+                            com.atlassian.templaterenderer*;version="1.1",
+                            com.google.common*;version="1.0",
+                            javax.servlet*;version="0.0",
+                            <!-- JIRA exports this as version 0.0 -->
+                            javax.ws.rs*;version="1.0",
+                            org.osgi.framework;version="1.3",
+                            org.osgi.service.packageadmin*;version="1.2",
+                            org.slf4j*;version="1.5",
+                            org.springframework.beans.factory.*;resolution:="optional"
                         </Import-Package>
                         <Export-Package>com.atlassian.labs.restbrowser*</Export-Package>
                     </instructions>
@@ -60,6 +72,36 @@
                             <artifactId>atlassian-pretty-urls-plugin</artifactId>
                         </pluginArtifact>
                     </pluginArtifacts>
+                    <products>
+                        <product>
+                            <id>jira</id>
+                            <version>${jira.version}</version>
+                            <systemPropertyVariables>
+                                <product>jira</product>
+                            </systemPropertyVariables>
+                        </product>
+                        <product>
+                            <id>confluence</id>
+                            <version>${confluence.version}</version>
+                            <systemPropertyVariables>
+                                <product>confluence</product>
+                            </systemPropertyVariables>
+                        </product>
+                        <product>
+                            <id>stash</id>
+                            <version>${stash.version}</version>
+                            <systemPropertyVariables>
+                                <product>stash</product>
+                            </systemPropertyVariables>
+                        </product>
+                        <product>
+                            <id>bamboo</id>
+                            <version>${bamboo.version}</version>
+                            <systemPropertyVariables>
+                                <product>bamboo</product>
+                            </systemPropertyVariables>
+                        </product>
+                    </products>
                 </configuration>
             </plugin>
             <plugin>
@@ -156,8 +198,7 @@
         <bamboo.version>5.0</bamboo.version>
         <confluence.rpc.version>5.3-OD-3</confluence.rpc.version>
         <confluence.version>5.3-OD-3</confluence.version>
-        <jira.rpc.version>6.0</jira.rpc.version>
-        <jira.version>6.1.9</jira.version>
+        <jira.version>6.4.9</jira.version>
         <stash.version>2.6.4</stash.version>
         <fecru.version>3.0.3-20130723010312</fecru.version>
         <template.renderer.version>1.3.1</template.renderer.version>
