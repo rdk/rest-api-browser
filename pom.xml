@@ -6,7 +6,7 @@
     <artifactId>rest-api-browser</artifactId>
     <packaging>atlassian-plugin</packaging>
     <name>Atlassian REST API Browser</name>
-    <version>3.1.1-SNAPSHOT</version>
+    <version>3.1.1</version>
     <description>Discover, browse, and try Atlassian's rich set or REST and JSON-RPC APIs</description>
     <organization>
         <name>Atlassian</name>
