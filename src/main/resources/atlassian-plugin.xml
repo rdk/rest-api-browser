@@ -22,7 +22,7 @@
         SOAP module descriptor providers for each product
      -->
     <component key="jiraSoapServiceProvider" application="jira"
-               class="com.atlassian.labs.restbrowser.provider.JiraSoapServiceProvider">
+               class="com.atlassian.labs.restbrowser.provider.JiraSoapServiceProviderFactory">
         <interface>com.atlassian.labs.restbrowser.plugin.provider.SoapServiceProvider</interface>
     </component>
 
