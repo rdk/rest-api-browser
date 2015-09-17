@@ -42,11 +42,6 @@ body {
     width:20%;
     padding:0;
     margin:0;
-    position:fixed;
-    top:82px;
-    bottom:0;
-    left:0;
-    overflow-y: scroll;
     background:#f5f5f5;
 }
 .rab-sidebar-list {
@@ -72,11 +67,6 @@ body {
 }
 .rab-main {
     width:80%;
-    position:fixed;
-    top:82px;
-    bottom:0;
-    left:0;
-    overflow-y: scroll;
     background:#fff;
     margin-left:20%;
     padding:10px 20px 20px 20px;
