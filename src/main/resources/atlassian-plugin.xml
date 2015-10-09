@@ -23,42 +23,42 @@
      -->
     <component key="jiraSoapServiceProvider" application="jira"
                class="com.atlassian.labs.restbrowser.provider.JiraSoapServiceProviderFactory">
-        <interface>com.atlassian.labs.restbrowser.plugin.provider.SoapServiceProvider</interface>
+        <interface>com.atlassian.labs.restbrowser.provider.SoapServiceProvider</interface>
     </component>
 
     <component key="confluenceSoapServiceProvider" application="confluence"
                class="com.atlassian.labs.restbrowser.provider.ConfluenceSoapServiceProvider">
-        <interface>com.atlassian.labs.restbrowser.plugin.provider.SoapServiceProvider</interface>
+        <interface>com.atlassian.labs.restbrowser.provider.SoapServiceProvider</interface>
     </component>
 
     <component key="bambooSoapServiceProvider" application="bamboo"
                class="com.atlassian.labs.restbrowser.provider.NoopSoapServiceProvider">
-        <interface>com.atlassian.labs.restbrowser.plugin.provider.SoapServiceProvider</interface>
+        <interface>com.atlassian.labs.restbrowser.provider.SoapServiceProvider</interface>
     </component>
 
     <component key="fecruSoapServiceProvider" application="fisheye"
                class="com.atlassian.labs.restbrowser.provider.NoopSoapServiceProvider">
-        <interface>com.atlassian.labs.restbrowser.plugin.provider.SoapServiceProvider</interface>
+        <interface>com.atlassian.labs.restbrowser.provider.SoapServiceProvider</interface>
     </component>
 
     <component key="crowdSoapServiceProvider" application="crowd"
                class="com.atlassian.labs.restbrowser.provider.NoopSoapServiceProvider">
-        <interface>com.atlassian.labs.restbrowser.plugin.provider.SoapServiceProvider</interface>
+        <interface>com.atlassian.labs.restbrowser.provider.SoapServiceProvider</interface>
     </component>
 
     <component key="refappSoapServiceProvider" application="refapp"
                class="com.atlassian.labs.restbrowser.provider.NoopSoapServiceProvider">
-        <interface>com.atlassian.labs.restbrowser.plugin.provider.SoapServiceProvider</interface>
+        <interface>com.atlassian.labs.restbrowser.provider.SoapServiceProvider</interface>
     </component>
 
     <component key="stashSoapServiceProvider" application="stash"
                class="com.atlassian.labs.restbrowser.provider.NoopSoapServiceProvider">
-        <interface>com.atlassian.labs.restbrowser.plugin.provider.SoapServiceProvider</interface>
+        <interface>com.atlassian.labs.restbrowser.provider.SoapServiceProvider</interface>
     </component>
 
     <component key="bitbucketSoapServiceProvider" application="bitbucket"
                class="com.atlassian.labs.restbrowser.provider.NoopSoapServiceProvider">
-        <interface>com.atlassian.labs.restbrowser.plugin.provider.SoapServiceProvider</interface>
+        <interface>com.atlassian.labs.restbrowser.provider.SoapServiceProvider</interface>
     </component>
 
     <!--
