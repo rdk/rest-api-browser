@@ -12,7 +12,7 @@
     <artifactId>rest-api-browser</artifactId>
     <packaging>atlassian-plugin</packaging>
     <name>Atlassian REST API Browser</name>
-    <version>3.2.0</version>
+    <version>3.2.1-SNAPSHOT</version>
     <description>Discover, browse, and try Atlassian's rich set of REST and JSON-RPC APIs</description>
 
     <properties>
@@ -192,6 +192,6 @@
         <connection>scm:git:ssh://git@bitbucket.org/atlassian/rest-api-browser.git</connection>
         <developerConnection>scm:git:ssh://git@bitbucket.org/atlassian/rest-api-browser.git</developerConnection>
         <url>https://bitbucket.org/atlassian/rest-api-browser</url>
-      <tag>rest-api-browser-3.2.0</tag>
+      <tag>HEAD</tag>
   </scm>
 </project>
