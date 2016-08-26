@@ -43,10 +43,8 @@ body,
 #rab,
 .rab-content,
 .rab-sidebar {
-    display: -webkit-flex;
     display: -ms-flexbox;
     display: flex;
-    -webkit-flex-direction: column;
     -ms-flex-direction: column;
     flex-direction: column;
 }
@@ -60,12 +58,10 @@ body,
 .rab-main,
 .rab-content,
 .rab-content > div {
-    -webkit-flex: 1 0;
     -ms-flex: 1 0;
     flex: 1 0;
 }
 .rab-content > div {
-    display: -webkit-flex;
     display: -ms-flexbox;
     display: flex;
 }
