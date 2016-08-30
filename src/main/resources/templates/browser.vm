@@ -69,8 +69,10 @@ RAB.rest.services = RAB.rest.services.concat(RAB.rest.jsonRpcs);
                         </div>
                     </nav>
                 </div>
-                <div class="rab-divider"></div>
-                <section class="aui-page-panel-content rab-main" ng-view></section>
+                <div class="rab-divider-container"><div class="rab-divider"></div></div>
+                <div class="rab-main">
+                    <section class="aui-page-panel-content" ng-view></section>
+                </div>
             </div>
         </div>
     </div>

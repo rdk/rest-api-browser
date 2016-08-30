@@ -47,29 +47,33 @@ angular.module('RAB', ['ngRoute', 'ngSanitize', 'ui.codemirror','ui.unique'])
     .run(function($rootScope){
         // Draggable divider
         function initDivider(){
-            var sbWidth = jQuery('.rab-sidebar').width();
-            var mainWidth = jQuery('.rab-main').width() + 40;
-            var mainMarginLeft = parseInt(jQuery('.rab-main').css('margin-left'));
-            function sizeSearchInput(sbWidth, offset){
+            function sizeSearchInput(offset) {
                 offset = offset || 0;
                 jQuery('.rab-search').css({
-                    width: sbWidth + offset - 15,
-                    maxWidth: sbWidth + offset - 15
+                    width: offset - 10,
+                    maxWidth: offset - 10
                 });
             }
-            sizeSearchInput(sbWidth);
+            function sizeMainSection(offset) {
+                var $main = jQuery('.rab-main');
+                $main.width($main.parent().width() - offset);
+            }
+            function sizeSidebar(offset) {
+                jQuery('.rab-sidebar').width(offset);
+            }
+            function sizeSections(offset) {
+                sizeSearchInput(offset);
+                sizeMainSection(offset);
+                sizeSidebar(offset);
+            }
+            sizeSections(jQuery('.rab-divider').offset().left - 1);
             jQuery('.rab-divider')
-                .css('margin-left',sbWidth + 'px')
                 .draggable({
+                    helper: function() {return jQuery('<div/>')},
                     axis: 'x',
                     cursor: 'col-resize',
                     drag: function(evt, ui){
-                        jQuery('.rab-sidebar').width(sbWidth + ui.offset.left);
-                        jQuery('.rab-main').width(mainWidth - ui.offset.left)
-                            .css('margin-left',function(){
-                                return (mainMarginLeft + ui.offset.left) + "px";
-                            });
-                        sizeSearchInput(sbWidth, ui.offset.left);
+                        sizeSections(ui.offset.left - 1);
                     }
                 });
         }

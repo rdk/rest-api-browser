@@ -83,11 +83,13 @@ function processWADL(resource) {
             function getCode(node, mediaType) {
                 var $doc = node.find('>' + addNamespace('doc')),
                     $code = $doc.find('>ns3\\:p, >p').find('>ns3\\:pre, >pre').find('>ns3\\:code, >code'),
-                    text = $code.text();
-                if (mediaType === 'application/json') {
+                    text = $code.first().text().trim();
+                if (mediaType === 'application/json' && text) {
                     try {
                         text = JSON.stringify(JSON.parse(text), null, 2);
-                    } catch (e) {}
+                    } catch (e) {
+                        console.error("Failed to format json object " + text + " - it will be printed as is - cause: " + e);
+                    }
                 }
                 return text;
             }
