@@ -102,6 +102,8 @@
     </web-resource>
 
     <web-resource key="assets-devmode">
+        <dependency>com.atlassian.auiplugin:jquery-ui-draggable</dependency>
+
         <!-- if you add a new JS file to this list, make sure you update the corresponding assets/rab/Gruntfile.js -->
         <resource name="html4-defs.js" type="download" location="assets/rab/vendor/html4-defs.js"/>
         <resource name="uri.js" type="download" location="assets/rab/vendor/uri.js"/>
@@ -130,6 +132,8 @@
     </web-resource>
 
     <web-resource key="assets-production">
+        <dependency>com.atlassian.auiplugin:jquery-ui-draggable</dependency>
+
         <resource name="rest-api-browser.min.js" type="download" location="assets/rab/rest-api-browser.min.js"/>
     </web-resource>
 
