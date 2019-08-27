@@ -2,7 +2,7 @@
   "name": "rest-api-browser",
   "version": "3.0.0",
   "devDependencies": {
-    "grunt": "*",
-    "grunt-contrib-uglify": "*"
+    "grunt": "^1.0.4",
+    "grunt-contrib-uglify": "^4.0.1"
   }
 }

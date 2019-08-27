@@ -13,6 +13,9 @@
 //       });
 //
 function processWADL(resource) {
+
+    console.log("XXX processWADL XXX");
+
     var debug = false,
         useNamespace = false,
     // Turn this function to a jQuery promise object
@@ -111,11 +114,35 @@ function processWADL(resource) {
                 } else {
                     path += '/' + addlPath;
                 }
+
+
                 path = path.replace(/\/\//g,'/');
                 obj.name = [rootResource.relativeResource,path].join('');
                 obj.url = [rootResource.path,path].join('');
                 obj.key = slugify(obj.name);
                 obj.description = getDoc(resource);
+
+                // fix for duplicated url root bug on Jira 8
+                // see https://jira.atlassian.com/browse/JRASERVER-68844
+                var pathWithoutSlash = path.substr(1);
+                var rr = rootResource.relativeResource;
+                //console.log("pathWithoutSlash", pathWithoutSlash, "relativeResource", rr);
+                if (pathWithoutSlash.startsWith(rr)) {
+                    var singleRr = rr + '/';
+                    var doubleRr = singleRr + singleRr;
+
+                    var newName = obj.name.replace(doubleRr, singleRr);
+                    var newUrl = obj.url.replace(doubleRr, singleRr);
+                    console.log(
+                        "orig.obj.name", obj.name,
+                        "orig.obj.url", obj.url,
+                        "fixed.obj.name", newName,
+                        "fixed.obj.url", newUrl
+                    );
+                    obj.name = newName;
+                    obj.url = newUrl;
+                }
+                // end fix
 
                 // Extract resource-wide params that live inside the path
                 params = resource.find('>'+addNamespace('param'));

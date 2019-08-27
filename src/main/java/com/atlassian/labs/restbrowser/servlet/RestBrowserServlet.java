@@ -111,7 +111,11 @@ public class RestBrowserServlet extends RequiresLoginServlet {
             RestDescriptor.Builder builder = new RestDescriptor.Builder().
                 basePath(basePath).version(version).pluginCompleteKey(servlet.getCompleteKey()).
                 pluginKey(plugin.getKey()).pluginName(plugin.getName()).pluginDescription(servlet.getDescription());
-            restDescriptors.add(builder.build());
+
+
+            RestDescriptor desc = builder.build();
+            // log.warn(desc.toString());
+            restDescriptors.add(desc);
         }
 
         return restDescriptors;

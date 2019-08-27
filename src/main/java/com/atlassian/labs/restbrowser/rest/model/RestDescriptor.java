@@ -52,6 +52,20 @@ public class RestDescriptor {
         return version;
     }
 
+    @Override
+    public String toString() {
+        return "RestDescriptor{" +
+            "basePath='" + basePath + '\'' +
+            ", restPath='" + restPath + '\'' +
+            ", displayPath='" + displayPath + '\'' +
+            ", version='" + version + '\'' +
+            ", pluginCompleteKey='" + pluginCompleteKey + '\'' +
+            ", pluginKey='" + pluginKey + '\'' +
+            ", pluginName='" + pluginName + '\'' +
+            ", pluginDescription='" + pluginDescription + '\'' +
+            '}';
+    }
+
     public static class Builder {
         private String basePath;
         private String restPath;
