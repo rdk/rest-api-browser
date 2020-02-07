@@ -113,9 +113,9 @@ function processWADL(resource) {
                 }
                 path = path.replace(/\/\//g,'/');
 
-                // HACKY FIX: Some WADL versions append the relativeResource to the path. Check for this and remove it
+                // RAB-31: Some WADL versions append the relativeResource to the path. Check for this and remove it
                 // if it is present.
-                var re = new RegExp(rootResource.relativeResource + '/',"g");
+                var re = new RegExp('^(?:\/)?' + rootResource.relativeResource ,"i");
                 if(re.test(path)) {
                     path = path.replace(re,'');
                 }
