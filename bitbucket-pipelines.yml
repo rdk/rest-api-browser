@@ -15,6 +15,11 @@ pipelines:
           caches:
             - maven
           script:
+            - set -euf
+            # Run the pipe to generate the .artifactory directory
+            - pipe: atlassian/artifactory-sidekick:v1
+            # Install the config files to the home directory and add env vars
+            - source .artifactory/activate.sh
             - mvn -B verify --file pom.xml
           after-script:
               # Collect checkstyle results, if any, and convert to Bitbucket Code Insights.
