@@ -202,10 +202,17 @@
                     </pluginArtifacts>
                     <products>
                         <product>
-                            <id>jira</id>
-                            <version>${jira.version}</version>
+                            <id>bamboo</id>
+                            <version>${bamboo.version}</version>
                             <systemPropertyVariables>
-                                <product>jira</product>
+                                <product>bamboo</product>
+                            </systemPropertyVariables>
+                        </product>
+                        <product>
+                            <id>bitbucket</id>
+                            <version>${bitbucket.version}</version>
+                            <systemPropertyVariables>
+                                <product>bitbucket</product>
                             </systemPropertyVariables>
                         </product>
                         <product>
@@ -216,17 +223,10 @@
                             </systemPropertyVariables>
                         </product>
                         <product>
-                            <id>stash</id>
-                            <version>${bitbucket.version}</version>
+                            <id>jira</id>
+                            <version>${jira.version}</version>
                             <systemPropertyVariables>
-                                <product>bitbucket</product>
-                            </systemPropertyVariables>
-                        </product>
-                        <product>
-                            <id>bamboo</id>
-                            <version>${bamboo.version}</version>
-                            <systemPropertyVariables>
-                                <product>bamboo</product>
+                                <product>jira</product>
                             </systemPropertyVariables>
                         </product>
                     </products>

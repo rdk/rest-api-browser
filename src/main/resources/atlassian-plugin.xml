@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="UTF-8"?>
-
 <atlassian-plugin key="${project.groupId}.${project.artifactId}" name="${project.name}" plugins-version="2">
     <plugin-info>
         <description>${project.description}</description>
@@ -22,7 +21,7 @@
         SOAP module descriptor providers for each product
      -->
     <component key="jiraSoapServiceProvider" application="jira"
-               class="com.atlassian.labs.restbrowser.provider.JiraSoapServiceProviderFactory">
+               class="com.atlassian.labs.restbrowser.provider.NoopSoapServiceProvider">
         <interface>com.atlassian.labs.restbrowser.provider.SoapServiceProvider</interface>
     </component>
 

@@ -1,7 +1,8 @@
 package com.atlassian.labs.restbrowser.provider;
 
 import com.atlassian.labs.restbrowser.plugin.SoapService;
-import com.google.common.collect.Lists;
+
+import static java.util.Collections.emptySet;
 
 /**
  * Returns an empty list for products that haven't implemented SOAP (or
@@ -11,6 +12,6 @@ public class NoopSoapServiceProvider implements SoapServiceProvider {
 
     @Override
     public Iterable<? extends SoapService> getSoapServices() {
-        return Lists.newArrayList();
+        return emptySet();
     }
 }
