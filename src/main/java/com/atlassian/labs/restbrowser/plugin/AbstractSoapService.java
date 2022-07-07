@@ -7,7 +7,7 @@ import com.atlassian.plugin.Plugin;
  * Partial implementation that takes care of the
  * {@link com.atlassian.plugin.ModuleDescriptor}-specific parts.
  */
-public abstract class AbstractSoapService<T extends ModuleDescriptor> implements SoapService {
+public abstract class AbstractSoapService<T extends ModuleDescriptor<?>> implements SoapService {
 
     protected T moduleDescriptor;
 

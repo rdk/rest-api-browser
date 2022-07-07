@@ -12,35 +12,35 @@ public interface SoapService {
      * Wrapper for {@link com.atlassian.plugin.ModuleDescriptor#getPluginKey()}.
      * @return the plugin key
      */
-    public String getPluginKey();
+    String getPluginKey();
 
     /**
      * Wrapper for {@link com.atlassian.plugin.ModuleDescriptor#getCompleteKey()}.
      * @return the complete plugin key
      */
-    public String getCompleteKey();
+    String getCompleteKey();
 
     /**
      * Wrapper for {@link com.atlassian.plugin.ModuleDescriptor#getDescription()}.
      * @return the SOAP module description
      */
-    public String getDescription();
+    String getDescription();
 
     /**
      * Wrapper for {@link com.atlassian.plugin.ModuleDescriptor#getPlugin()}.
      * @return the host plugin of this SOAP {@code ModuleDescriptor}
      */
-    public Plugin getPlugin();
+    Plugin getPlugin();
 
     /**
      * Returns the SOAP service path.
      * @return the SOAP service path
      */
-    public String getServicePath();
+    String getServicePath();
 
     /**
      * Returns the interface under which the SOAP service is published by the product.
      * @return the published {@link Class}
      */
-    public Class<?> getPublishedInterface();
+    Class<?> getPublishedInterface();
 }

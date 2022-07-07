@@ -4,10 +4,9 @@ import com.atlassian.confluence.plugin.descriptor.rpc.SoapModuleDescriptor;
 import com.atlassian.labs.restbrowser.plugin.AbstractSoapService;
 import com.atlassian.labs.restbrowser.plugin.SoapService;
 import com.atlassian.plugin.PluginAccessor;
-import com.google.common.base.Function;
-import com.google.common.collect.Collections2;
 
-import java.util.Collection;
+import static java.util.Objects.requireNonNull;
+import static java.util.stream.Collectors.toList;
 
 /**
  * Provides {@link SoapService}s for Confluence.
@@ -16,32 +15,28 @@ public class ConfluenceSoapServiceProvider implements SoapServiceProvider {
 
     private final PluginAccessor pluginAccessor;
 
-    public ConfluenceSoapServiceProvider(PluginAccessor pluginAccessor) {
-        this.pluginAccessor = pluginAccessor;
+    public ConfluenceSoapServiceProvider(final PluginAccessor pluginAccessor) {
+        this.pluginAccessor = requireNonNull(pluginAccessor);
     }
-
-    private final Function<SoapModuleDescriptor, ConfluenceSoapService> transformFunction =
-            new Function<SoapModuleDescriptor, ConfluenceSoapService>() {
-                @Override
-                public ConfluenceSoapService apply(SoapModuleDescriptor soapModuleDescriptor) {
-                    if (soapModuleDescriptor == null) return null;
-                    return new ConfluenceSoapService(soapModuleDescriptor);
-                }
-            };
-
 
     @Override
     public Iterable<? extends SoapService> getSoapServices() {
-        Collection<SoapModuleDescriptor> moduleDescriptors =
-                pluginAccessor.getEnabledModuleDescriptorsByClass(SoapModuleDescriptor.class);
-
-        return Collections2.transform(moduleDescriptors, transformFunction);
+        return pluginAccessor.getEnabledModuleDescriptorsByClass(SoapModuleDescriptor.class).stream()
+                .map(ConfluenceSoapService::getInstance)
+                .collect(toList());
     }
 
-    private final class ConfluenceSoapService extends AbstractSoapService<SoapModuleDescriptor> {
+    private static final class ConfluenceSoapService extends AbstractSoapService<SoapModuleDescriptor> {
 
-        private ConfluenceSoapService(SoapModuleDescriptor moduleDescriptor) {
-            this.moduleDescriptor = moduleDescriptor;
+        private static ConfluenceSoapService getInstance(final SoapModuleDescriptor soapModuleDescriptor) {
+            if (soapModuleDescriptor == null) {
+                return null;
+            }
+            return new ConfluenceSoapService(soapModuleDescriptor);
+        }
+
+        private ConfluenceSoapService(final SoapModuleDescriptor moduleDescriptor) {
+            this.moduleDescriptor = requireNonNull(moduleDescriptor);
         }
 
         @Override
@@ -51,15 +46,12 @@ public class ConfluenceSoapServiceProvider implements SoapServiceProvider {
 
         @Override
         public Class<?> getPublishedInterface() {
-            Class<?> publishedInterface;
             try {
-                publishedInterface = moduleDescriptor.getPublishedInterface();
-            } catch (ClassNotFoundException cnfe) {
+                return moduleDescriptor.getPublishedInterface();
+            } catch (final ClassNotFoundException e) {
                 throw new RuntimeException("Couldn't get published interface from Confluence " +
-                        "SOAP module descriptor", cnfe);
+                        "SOAP module descriptor", e);
             }
-            return publishedInterface;
         }
     }
-
 }
