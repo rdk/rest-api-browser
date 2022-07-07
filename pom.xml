@@ -27,8 +27,8 @@
         <connection>scm:git:ssh://git@bitbucket.org/atlassian/rest-api-browser.git</connection>
         <developerConnection>scm:git:ssh://git@bitbucket.org/atlassian/rest-api-browser.git</developerConnection>
         <url>https://bitbucket.org/atlassian/rest-api-browser</url>
-      <tag>HEAD</tag>
-  </scm>
+        <tag>HEAD</tag>
+    </scm>
     <issueManagement>
         <system>Jira</system>
         <url>https://ecosystem.atlassian.net/browse/RAB</url>

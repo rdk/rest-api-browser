@@ -69,6 +69,7 @@
         <resource name="codemirror-match-highlighter.js" type="download" location="assets/rab/vendor/codemirror-3.15/addon/search/match-highlighter.js"/>
         <resource name="ui-codemirror.min.js" type="download" location="assets/rab/vendor/ui-codemirror.min.js"/>
         <resource name="unique.js" type="download" location="assets/rab/vendor/ui-utils/modules/unique/unique.js"/>
+        <resource name="underscore-umd.js" type="download" location="assets/rab/vendor/underscore-umd.js"/>
         <resource name="process-wadl.js" type="download" location="assets/rab/process-wadl.js"/>
         <resource name="app.js" type="download" location="assets/rab/app.js"/>
         <resource name="rest_resources_service.js" type="download" location="assets/rab/services/rest_resources_service.js"/>
