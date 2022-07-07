@@ -207,12 +207,10 @@
                 <version>8.4.2</version>
                 <extensions>true</extensions>
                 <configuration>
-                    <systemPropertyVariables>
-                        <rest.api.browser.anonymous>${rest.api.browser.anonymous}</rest.api.browser.anonymous>
-                    </systemPropertyVariables>
                     <compressResources>false</compressResources>
                     <!-- Disabled because it causes AMPS to overwrite the RAB with an older version, see AMPS-1609 -->
                     <enableDevToolbox>false</enableDevToolbox>
+                    <enableQuickReload>true</enableQuickReload>
                     <instructions>
                         <Atlassian-Plugin-Key>${atlassian.plugin.key}</Atlassian-Plugin-Key>
                         <Export-Package>com.atlassian.labs.restbrowser.*</Export-Package>
@@ -271,6 +269,9 @@
                             </systemPropertyVariables>
                         </product>
                     </products>
+                    <systemPropertyVariables>
+                        <rest.api.browser.anonymous>${rest.api.browser.anonymous}</rest.api.browser.anonymous>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
         </plugins>
