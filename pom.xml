@@ -39,7 +39,6 @@
     </ciManagement>
 
     <properties>
-        <amps.version>8.4.2</amps.version>
         <atlassian.plugin.key>${project.groupId}.${project.artifactId}</atlassian.plugin.key>
         <bamboo.version>7.1.4</bamboo.version>
         <bitbucket.version>7.5.2</bitbucket.version>
@@ -205,7 +204,7 @@
             <plugin>
                 <groupId>com.atlassian.maven.plugins</groupId>
                 <artifactId>amps-maven-plugin</artifactId>
-                <version>${amps.version}</version>
+                <version>8.4.2</version>
                 <extensions>true</extensions>
                 <configuration>
                     <systemPropertyVariables>
