@@ -40,10 +40,12 @@
 
     <properties>
         <atlassian.plugin.key>${project.groupId}.${project.artifactId}</atlassian.plugin.key>
-        <bamboo.version>7.1.4</bamboo.version>
+        <!-- All the Bamboo 7.x test licenses seem to have expired  -->
+        <bamboo.version>8.0.9</bamboo.version>
         <bitbucket.version>7.5.2</bitbucket.version>
         <confluence.version>7.4.18</confluence.version>
-        <fecru.version>4.8.9-20220303135339</fecru.version>
+        <crowd.version>4.2.5</crowd.version>
+        <fecru.version>4.8.10-20220620091927</fecru.version>
         <jackson.version>1.9.14-atlassian-6</jackson.version>
         <jira.version>8.8.1</jira.version>
         <platform.version>5.2.9</platform.version>
@@ -255,6 +257,20 @@
                             </systemPropertyVariables>
                         </product>
                         <product>
+                            <id>crowd</id>
+                            <version>${crowd.version}</version>
+                            <systemPropertyVariables>
+                                <product>crowd</product>
+                            </systemPropertyVariables>
+                        </product>
+                        <product>
+                            <id>fecru</id>
+                            <version>${fecru.version}</version>
+                            <systemPropertyVariables>
+                                <product>fecru</product>
+                            </systemPropertyVariables>
+                        </product>
+                        <product>
                             <id>jira</id>
                             <version>${jira.version}</version>
                             <systemPropertyVariables>
@@ -269,6 +285,7 @@
                             </systemPropertyVariables>
                         </product>
                     </products>
+                    <server>localhost</server>
                     <systemPropertyVariables>
                         <rest.api.browser.anonymous>${rest.api.browser.anonymous}</rest.api.browser.anonymous>
                     </systemPropertyVariables>

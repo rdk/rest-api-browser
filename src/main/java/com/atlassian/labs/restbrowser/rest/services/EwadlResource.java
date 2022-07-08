@@ -17,6 +17,7 @@ import java.io.StringWriter;
 @Path("ewadl")
 public class EwadlResource {
 
+    // This WADL data describes Jira 5, so it doesn't seem very useful, especially in other products
     private static final String EWADL_TEMPLATE = "/templates/ewadl.vm";
 
     private final TemplateRenderer renderer;
