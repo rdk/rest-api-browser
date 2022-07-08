@@ -20,6 +20,7 @@ public abstract class RequiresLoginServlet extends HttpServlet {
 
     /**
      * If this system property is set to "true", the RAB can be used anonymously.
+     * Otherwise, the user needs to be logged in.
      */
     public static final String RAB_ANONYMOUS = "rest.api.browser.anonymous";
 

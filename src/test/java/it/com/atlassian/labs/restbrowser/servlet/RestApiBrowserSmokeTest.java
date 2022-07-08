@@ -3,9 +3,9 @@ package it.com.atlassian.labs.restbrowser.servlet;
 import com.atlassian.pageobjects.TestedProduct;
 import com.atlassian.webdriver.pageobjects.WebDriverTester;
 import it.com.atlassian.labs.restbrowser.servlet.pageobject.RestApiBrowserPage;
-import it.com.atlassian.labs.restbrowser.servlet.product.TestedProductUtils;
 import org.junit.Test;
 
+import static it.com.atlassian.labs.restbrowser.servlet.product.TestedProductFinder.getTestedProduct;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -14,7 +14,7 @@ import static org.junit.Assert.assertTrue;
  */
 public class RestApiBrowserSmokeTest {
 
-    private static final TestedProduct<WebDriverTester> TESTED_PRODUCT = TestedProductUtils.getTestedProduct();
+    private static final TestedProduct<WebDriverTester> TESTED_PRODUCT = getTestedProduct();
 
     @Test
     public void publicOnlyCheckboxShouldBeToggleable() {
