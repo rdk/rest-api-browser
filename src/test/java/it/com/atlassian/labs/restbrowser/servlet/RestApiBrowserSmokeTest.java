@@ -1,7 +1,5 @@
 package it.com.atlassian.labs.restbrowser.servlet;
 
-import com.atlassian.pageobjects.TestedProduct;
-import com.atlassian.webdriver.pageobjects.WebDriverTester;
 import it.com.atlassian.labs.restbrowser.servlet.pageobject.RestApiBrowserPage;
 import org.junit.Test;
 
@@ -14,11 +12,9 @@ import static org.junit.Assert.assertTrue;
  */
 public class RestApiBrowserSmokeTest {
 
-    private static final TestedProduct<WebDriverTester> TESTED_PRODUCT = getTestedProduct();
-
     @Test
     public void publicOnlyCheckboxShouldBeToggleable() {
-        final RestApiBrowserPage restApiBrowserPage = TESTED_PRODUCT.visit(RestApiBrowserPage.class);
+        final RestApiBrowserPage restApiBrowserPage = getTestedProduct().visit(RestApiBrowserPage.class);
         assertTrue(restApiBrowserPage.isPublicOnly());
         restApiBrowserPage.togglePublicOnly();
         assertFalse(restApiBrowserPage.isPublicOnly());
