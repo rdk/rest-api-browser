@@ -96,24 +96,6 @@
             </exclusions>
         </dependency>
         <dependency>
-            <groupId>com.atlassian.jira</groupId>
-            <artifactId>jira-tests</artifactId>
-            <version>${jira.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.atlassian.jira</groupId>
-            <artifactId>jira-func-tests</artifactId>
-            <version>${jira.version}</version>
-            <scope>test</scope>
-            <exclusions>
-                <exclusion>
-                    <groupId>commons-collections</groupId>
-                    <artifactId>commons-collections</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-        <dependency>
             <groupId>com.atlassian.plugins</groupId>
             <artifactId>atlassian-plugins-api</artifactId>
             <scope>provided</scope>
@@ -288,6 +270,8 @@
                     <server>localhost</server>
                     <systemPropertyVariables>
                         <rest.api.browser.anonymous>${rest.api.browser.anonymous}</rest.api.browser.anonymous>
+                        <!-- Stop UPM connecting to Marketplace, too noisy in the logs -->
+                        <upm.pac.disable>true</upm.pac.disable>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>
