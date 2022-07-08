@@ -6,6 +6,7 @@ import com.atlassian.labs.restbrowser.rest.model.RestDescriptor;
 import com.atlassian.plugin.ModuleDescriptor;
 import com.atlassian.plugin.Plugin;
 import com.atlassian.plugin.PluginAccessor;
+import com.atlassian.plugin.predicate.ModuleDescriptorPredicate;
 import com.atlassian.sal.api.ApplicationProperties;
 import com.atlassian.sal.api.auth.LoginUriProvider;
 import com.atlassian.sal.api.user.UserManager;
@@ -18,7 +19,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.function.Predicate;
 
 import static java.util.Objects.requireNonNull;
 import static java.util.stream.Collectors.toList;
@@ -82,18 +82,20 @@ public class RestBrowserServlet extends RequiresLoginServlet {
                 .build();
     }
 
+    // Can't use the non-deprecated getModuleDescriptors method until Fecru is on a newer version of Atlassian Plugins
+    @SuppressWarnings("deprecation")
     private List<RestDescriptor> getRestDescriptors() {
-         return pluginAccessor.getModuleDescriptors(describesRestModule()).stream()
+        return pluginAccessor.getModuleDescriptors(describesRestModule()).stream()
                 .map(RestBrowserServlet::getRestDescriptor)
                 .filter(Optional::isPresent)
                 .map(Optional::get)
                 .collect(toList());
     }
 
-    private static <T> Predicate<ModuleDescriptor<T>> describesRestModule() {
+    @SuppressWarnings("deprecation")
+    private static <T> ModuleDescriptorPredicate<T> describesRestModule() {
         return md -> md != null &&
-                md.getClass().getName().equals(
-                        "com.atlassian.plugins.rest.module.RestServletFilterModuleDescriptor");
+                "com.atlassian.plugins.rest.module.RestServletFilterModuleDescriptor".equals(md.getClass().getName());
     }
 
     private static Optional<RestDescriptor> getRestDescriptor(final ModuleDescriptor<?> servlet) {
