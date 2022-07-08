@@ -49,9 +49,12 @@
         <jackson.version>1.9.14-atlassian-6</jackson.version>
         <jira.version>8.8.1</jira.version>
         <platform.version>5.2.9</platform.version>
+        <!-- Override this to test in a different product -->
+        <product>refapp</product>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <refapp.version>6.0.3</refapp.version>
-        <rest.api.browser.anonymous>false</rest.api.browser.anonymous>
+        <!-- For ease of testing -->
+        <rest.api.browser.anonymous>true</rest.api.browser.anonymous>
     </properties>
 
     <dependencyManagement>
@@ -156,6 +159,11 @@
             <scope>test</scope>
         </dependency>
         <dependency>
+            <groupId>org.hamcrest</groupId>
+            <artifactId>hamcrest-library</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-core</artifactId>
             <scope>test</scope>
@@ -180,6 +188,18 @@
             <groupId>org.springframework</groupId>
             <artifactId>spring-context</artifactId>
             <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.atlassian.selenium</groupId>
+            <artifactId>atlassian-pageobjects-api</artifactId>
+            <version>3.3.0</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.atlassian.refapp</groupId>
+            <artifactId>atlassian-refapp-pageobjects</artifactId>
+            <version>${refapp.version}</version>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 
@@ -220,59 +240,50 @@
                         <product>
                             <id>bamboo</id>
                             <version>${bamboo.version}</version>
-                            <systemPropertyVariables>
-                                <product>bamboo</product>
-                            </systemPropertyVariables>
                         </product>
                         <product>
                             <id>bitbucket</id>
                             <version>${bitbucket.version}</version>
-                            <systemPropertyVariables>
-                                <product>bitbucket</product>
-                            </systemPropertyVariables>
                         </product>
                         <product>
                             <id>confluence</id>
                             <version>${confluence.version}</version>
-                            <systemPropertyVariables>
-                                <product>confluence</product>
-                            </systemPropertyVariables>
                         </product>
                         <product>
                             <id>crowd</id>
                             <version>${crowd.version}</version>
-                            <systemPropertyVariables>
-                                <product>crowd</product>
-                            </systemPropertyVariables>
                         </product>
                         <product>
                             <id>fecru</id>
                             <version>${fecru.version}</version>
-                            <systemPropertyVariables>
-                                <product>fecru</product>
-                            </systemPropertyVariables>
                         </product>
                         <product>
                             <id>jira</id>
                             <version>${jira.version}</version>
-                            <systemPropertyVariables>
-                                <product>jira</product>
-                            </systemPropertyVariables>
                         </product>
                         <product>
                             <id>refapp</id>
                             <version>${refapp.version}</version>
-                            <systemPropertyVariables>
-                                <product>refapp</product>
-                            </systemPropertyVariables>
                         </product>
                     </products>
                     <server>localhost</server>
                     <systemPropertyVariables>
+                        <product>${product}</product>
                         <rest.api.browser.anonymous>${rest.api.browser.anonymous}</rest.api.browser.anonymous>
                         <!-- Stop UPM connecting to Marketplace, too noisy in the logs -->
                         <upm.pac.disable>true</upm.pac.disable>
                     </systemPropertyVariables>
+                    <testGroups>
+                        <testGroup>
+                            <id>all-its</id>
+                            <productIds>
+                                <productId>${product}</productId>
+                            </productIds>
+                            <includes>
+                                <include>it/**/*Test.java</include>
+                            </includes>
+                        </testGroup>
+                    </testGroups>
                 </configuration>
             </plugin>
         </plugins>
