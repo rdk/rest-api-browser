@@ -2,4 +2,9 @@
 #More details can be found here: https://hello.atlassian.net/wiki/spaces/AB/pages/1098077426/Initiatives+delegated+to+the+HCL+team
 
 owner: mulaganathan@atlassian.com
+lowerSeverityPaths:
+  - path: src/test/**
+    reasoning: "This is a test directory"
+
+fileSnykTicketsWithFutureSLODates: true
 file-sourceclear-tickets: true
