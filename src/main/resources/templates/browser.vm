@@ -45,7 +45,7 @@ RAB.rest.services = RAB.rest.services.concat(RAB.rest.jsonRpcs);
             <div class="aui-page-header">
                 <div class="aui-page-header-inner">
                     <form class="aui">
-                        <input class="text rab-search" type="text" class="search" ng-model="searchQuery" placeholder="Search">
+                        <input id="searchField" class="text rab-search" type="text" class="search" ng-model="searchQuery" placeholder="Search">
                         <input type="checkbox" id="publicOnlyFilter" name="publicOnlyFilter" class="checkbox" ng-model="publicOnly" />
                         <label for="publicOnlyFilter">Show only public APIs</label>
                     </form>

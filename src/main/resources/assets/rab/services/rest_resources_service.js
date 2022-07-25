@@ -25,8 +25,6 @@ angular.module('RAB')
                 '^auth/'
             ];
 
-            var STASH_PUBLIC_APIS = BITBUCKET_PUBLIC_APIS;
-
             var BAMBOO_PUBLIC_APIS = [
                 '^api/'
             ];
@@ -40,7 +38,6 @@ angular.module('RAB')
             if(/JIRA/i.test(RAB.product)) { PUBLIC_APIS = JIRA_PUBLIC_APIS }
             else if(/Confluence/i.test(RAB.product)) { PUBLIC_APIS = CONFLUENCE_PUBLIC_APIS }
             else if(/Bitbucket/i.test(RAB.product)) { PUBLIC_APIS = BITBUCKET_PUBLIC_APIS }
-            else if(/Stash/i.test(RAB.product)) { PUBLIC_APIS = STASH_PUBLIC_APIS }
             else if(/Bamboo/i.test(RAB.product)) { PUBLIC_APIS = BAMBOO_PUBLIC_APIS }
 
             var compiledPublicAPIRe = new RegExp("("+PUBLIC_APIS.join("|")+")");

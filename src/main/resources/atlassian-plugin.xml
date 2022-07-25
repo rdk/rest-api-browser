@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-
-<atlassian-plugin key="${project.groupId}.${project.artifactId}" name="${project.name}" plugins-version="2">
+<atlassian-plugin key="${atlassian.plugin.key}" name="${project.name}" plugins-version="2">
     <plugin-info>
         <description>${project.description}</description>
         <version>${project.version}</version>
@@ -10,64 +9,11 @@
     <resource type="i18n" name="i18n" location="rest-api-browser"/>
 
     <!--
-        Imported SAL/TemplateRenderer components for basic functionality
-     -->
-    <component-import key="template-renderer" interface="com.atlassian.templaterenderer.velocity.one.six.VelocityTemplateRenderer" />
-    <component-import key="application-properties" interface="com.atlassian.sal.api.ApplicationProperties" />
-    <component-import key="userManager" interface="com.atlassian.sal.api.user.UserManager" />
-    <component-import key="loginUriProvider" interface="com.atlassian.sal.api.auth.LoginUriProvider" />
-    <component-import key="webInterfaceManager" interface="com.atlassian.plugin.web.WebInterfaceManager" />
-
-    <!--
-        SOAP module descriptor providers for each product
-     -->
-    <component key="jiraSoapServiceProvider" application="jira"
-               class="com.atlassian.labs.restbrowser.provider.JiraSoapServiceProviderFactory">
-        <interface>com.atlassian.labs.restbrowser.provider.SoapServiceProvider</interface>
-    </component>
-
-    <component key="confluenceSoapServiceProvider" application="confluence"
-               class="com.atlassian.labs.restbrowser.provider.ConfluenceSoapServiceProvider">
-        <interface>com.atlassian.labs.restbrowser.provider.SoapServiceProvider</interface>
-    </component>
-
-    <component key="bambooSoapServiceProvider" application="bamboo"
-               class="com.atlassian.labs.restbrowser.provider.NoopSoapServiceProvider">
-        <interface>com.atlassian.labs.restbrowser.provider.SoapServiceProvider</interface>
-    </component>
-
-    <component key="fecruSoapServiceProvider" application="fisheye"
-               class="com.atlassian.labs.restbrowser.provider.NoopSoapServiceProvider">
-        <interface>com.atlassian.labs.restbrowser.provider.SoapServiceProvider</interface>
-    </component>
-
-    <component key="crowdSoapServiceProvider" application="crowd"
-               class="com.atlassian.labs.restbrowser.provider.NoopSoapServiceProvider">
-        <interface>com.atlassian.labs.restbrowser.provider.SoapServiceProvider</interface>
-    </component>
-
-    <component key="refappSoapServiceProvider" application="refapp"
-               class="com.atlassian.labs.restbrowser.provider.NoopSoapServiceProvider">
-        <interface>com.atlassian.labs.restbrowser.provider.SoapServiceProvider</interface>
-    </component>
-
-    <component key="stashSoapServiceProvider" application="stash"
-               class="com.atlassian.labs.restbrowser.provider.NoopSoapServiceProvider">
-        <interface>com.atlassian.labs.restbrowser.provider.SoapServiceProvider</interface>
-    </component>
-
-    <component key="bitbucketSoapServiceProvider" application="bitbucket"
-               class="com.atlassian.labs.restbrowser.provider.NoopSoapServiceProvider">
-        <interface>com.atlassian.labs.restbrowser.provider.SoapServiceProvider</interface>
-    </component>
-
-    <!--
         Customized Velocity context items
      -->
-    <component key="textUtils" class="com.atlassian.labs.restbrowser.util.TextUtils"/>
     <template-context-item key="textUtilsContextItem" component-ref="textUtils"
                            context-key="textUtils" name="TextUtils Context Item"/>
-    <template-context-item key="applicationPropertiesContextItem" component-ref="application-properties"
+    <template-context-item key="applicationPropertiesContextItem" component-ref="applicationProperties"
                            context-key="applicationProperties" name="Application Properties Context Item"/>
 
     <!--
@@ -123,6 +69,7 @@
         <resource name="codemirror-match-highlighter.js" type="download" location="assets/rab/vendor/codemirror-3.15/addon/search/match-highlighter.js"/>
         <resource name="ui-codemirror.min.js" type="download" location="assets/rab/vendor/ui-codemirror.min.js"/>
         <resource name="unique.js" type="download" location="assets/rab/vendor/ui-utils/modules/unique/unique.js"/>
+        <resource name="underscore-umd.js" type="download" location="assets/rab/vendor/underscore-umd.js"/>
         <resource name="process-wadl.js" type="download" location="assets/rab/process-wadl.js"/>
         <resource name="app.js" type="download" location="assets/rab/app.js"/>
         <resource name="rest_resources_service.js" type="download" location="assets/rab/services/rest_resources_service.js"/>
@@ -176,16 +123,6 @@
         <!--<link linkId="restapi-browser-link">/rest</link>-->
     </web-item>
 
-    <web-item name="REST API Browser" i18n-name-key="restapi-browser.name-stash" key="rest-browser-link-stash"
-              section="atl.admin/admin-plugins-section" weight="15"
-              application="stash">
-        <description key="restapi-browser.description.stash">Discover the Stash REST APIs</description>
-        <tooltip key="stash.web.admin.settings.rab.tooltip">Interact and browse the REST resources bundled with Stash.</tooltip>
-        <label key="restapi-browser.label"/>
-        <link linkId="restapi-browser-link">/plugins/servlet/restbrowser</link>
-        <!--<link linkId="restapi-browser-link">/rest</link>-->
-    </web-item>
-
     <web-item name="REST API Browser" i18n-name-key="restapi-browser.name-bitbucket" key="rest-browser-link-bitbucket"
               section="atl.admin/admin-plugins-section" weight="15"
               application="bitbucket">
@@ -220,6 +157,5 @@
         <get from="" to="/plugins/servlet/restbrowser" />
     </routing>
     <sitemesh key="rest-browser-decorator" path="/restbrowser"/>
-
 
 </atlassian-plugin>

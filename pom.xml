@@ -1,63 +1,228 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
         <groupId>com.atlassian.pom</groupId>
         <artifactId>public-pom</artifactId>
-        <version>5.0.21</version>
+        <version>6.2.2</version>
     </parent>
 
     <groupId>com.atlassian.labs</groupId>
     <artifactId>rest-api-browser</artifactId>
-    <packaging>atlassian-plugin</packaging>
-    <name>Atlassian REST API Browser</name>
     <version>3.2.6-SNAPSHOT</version>
+    <packaging>atlassian-plugin</packaging>
+
+    <name>Atlassian REST API Browser</name>
     <description>Discover, browse, and try Atlassian's rich set of REST and JSON-RPC APIs</description>
+    <licenses>
+        <license>
+            <name>Apache License 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <scm>
+        <connection>scm:git:ssh://git@bitbucket.org/atlassian/rest-api-browser.git</connection>
+        <developerConnection>scm:git:ssh://git@bitbucket.org/atlassian/rest-api-browser.git</developerConnection>
+        <url>https://bitbucket.org/atlassian/rest-api-browser</url>
+        <tag>HEAD</tag>
+    </scm>
+    <issueManagement>
+        <system>Jira</system>
+        <url>https://ecosystem.atlassian.net/browse/RAB</url>
+    </issueManagement>
+    <ciManagement>
+        <system>Bamboo</system>
+        <url>https://ecosystem-bamboo.internal.atlassian.com/browse/RESTAB-RESTAB</url>
+    </ciManagement>
 
     <properties>
-        <amps.version>5.1.18</amps.version>
-        <bamboo.version>5.0</bamboo.version>
-        <confluence.rpc.version>5.3-OD-3</confluence.rpc.version>
-        <confluence.version>5.3-OD-3</confluence.version>
-        <jira.version>6.4.9</jira.version>
-        <stash.version>2.6.4</stash.version>
-        <fecru.version>3.0.3-20130723010312</fecru.version>
+        <atlassian.plugin.key>${project.groupId}.${project.artifactId}</atlassian.plugin.key>
+        <!-- All the Bamboo 7.x test licenses seem to have expired  -->
+        <bamboo.version>8.0.9</bamboo.version>
+        <bitbucket.version>7.5.2</bitbucket.version>
+        <confluence.version>7.4.18</confluence.version>
+        <crowd.version>4.2.5</crowd.version>
+        <fecru.version>4.8.10-20220620091927</fecru.version>
+        <jackson.version>1.9.14-atlassian-6</jackson.version>
+        <jira.version>8.8.1</jira.version>
+        <platform.version>5.2.9</platform.version>
+        <!-- Override this to test in a different product -->
+        <product>refapp</product>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <template.renderer.version>1.3.1</template.renderer.version>
-        <refapp.version>3.0.0-m11</refapp.version>
-        <rest.api.browser.anonymous>false</rest.api.browser.anonymous>
+        <refapp.version>6.0.3</refapp.version>
+        <!-- For ease of testing -->
+        <rest.api.browser.anonymous>true</rest.api.browser.anonymous>
     </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.atlassian.platform</groupId>
+                <artifactId>platform</artifactId>
+                <version>${platform.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.atlassian.platform</groupId>
+                <artifactId>third-party</artifactId>
+                <version>${platform.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.codehaus.jackson</groupId>
+                <artifactId>jackson-mapper-asl</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.codehaus.jackson</groupId>
+                <artifactId>jackson-core-asl</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>com.atlassian.confluence</groupId>
+            <artifactId>confluence</artifactId>
+            <version>${confluence.version}</version>
+            <scope>provided</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>commons-collections</groupId>
+                    <artifactId>commons-collections</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>com.atlassian.plugins</groupId>
+            <artifactId>atlassian-plugins-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.atlassian.plugins</groupId>
+            <artifactId>atlassian-plugins-osgi-javaconfig</artifactId>
+            <version>0.5.0</version>
+        </dependency>
+        <dependency>
+            <groupId>com.atlassian.plugins</groupId>
+            <artifactId>atlassian-plugins-webfragment-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.atlassian.plugins.rest</groupId>
+            <artifactId>atlassian-rest-module</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.atlassian.sal</groupId>
+            <artifactId>sal-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.atlassian.templaterenderer</groupId>
+            <artifactId>atlassian-template-renderer-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.atlassian.templaterenderer</groupId>
+            <artifactId>atlassian-template-renderer-velocity16-plugin</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.atlassian.prettyurls</groupId>
+            <artifactId>atlassian-pretty-urls-plugin</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.atlassian.refapp</groupId>
+            <artifactId>atlassian-refapp-pageobjects</artifactId>
+            <version>${refapp.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.atlassian.selenium</groupId>
+            <artifactId>atlassian-pageobjects-api</artifactId>
+            <version>3.3.0</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.thoughtworks.paranamer</groupId>
+            <artifactId>paranamer</artifactId>
+            <version>2.8</version>
+        </dependency>
+        <dependency>
+            <groupId>javax.servlet</groupId>
+            <artifactId>javax.servlet-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.httpcomponents</groupId>
+            <artifactId>httpclient</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.hamcrest</groupId>
+            <artifactId>hamcrest-library</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.osgi</groupId>
+            <artifactId>osgi.core</artifactId>
+            <version>6.0.0</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-beans</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
 
     <build>
         <plugins>
             <plugin>
                 <groupId>com.atlassian.maven.plugins</groupId>
-                <artifactId>maven-amps-plugin</artifactId>
-                <version>${amps.version}</version>
+                <artifactId>amps-maven-plugin</artifactId>
+                <version>8.4.2</version>
                 <extensions>true</extensions>
                 <configuration>
-                    <systemPropertyVariables>
-                        <rest.api.browser.anonymous>${rest.api.browser.anonymous}</rest.api.browser.anonymous>
-                    </systemPropertyVariables>
                     <compressResources>false</compressResources>
+                    <!-- Disabled because it causes AMPS to overwrite the RAB with an older version, see AMPS-1609 -->
+                    <enableDevToolbox>false</enableDevToolbox>
+                    <enableQuickReload>true</enableQuickReload>
                     <instructions>
+                        <Atlassian-Plugin-Key>${atlassian.plugin.key}</Atlassian-Plugin-Key>
+                        <Export-Package>com.atlassian.labs.restbrowser.*</Export-Package>
                         <Import-Package>
-                            com.atlassian.confluence.plugin.descriptor.rpc;version="0.0.0";resolution:="optional",
-                            com.atlassian.jira.plugin.rpc;version="0.0.0";resolution:="optional",
-                            com.atlassian.plugins.rest.common*;version="1.0.5",
-                            com.atlassian.plugin*;version="2.5",
-                            com.atlassian.templaterenderer*;version="1.1",
-                            com.google.common*;version="1.0",
-                            javax.servlet*;version="0.0",
-                            <!-- JIRA exports this as version 0.0 -->
-                            javax.ws.rs*;version="1.0",
-                            org.osgi.framework;version="1.3",
-                            org.osgi.service.packageadmin*;version="1.2",
-                            org.slf4j*;version="1.5",
-                            org.springframework.beans.factory.*;resolution:="optional"
+                            com.atlassian.confluence.*;resolution:="optional",
+                            *
                         </Import-Package>
-                        <Export-Package>com.atlassian.labs.restbrowser*</Export-Package>
+                        <Spring-Context>*</Spring-Context>
                     </instructions>
                     <pluginDependencies>
                         <pluginDependency>
@@ -73,168 +238,54 @@
                     </pluginArtifacts>
                     <products>
                         <product>
-                            <id>jira</id>
-                            <version>${jira.version}</version>
-                            <systemPropertyVariables>
-                                <product>jira</product>
-                            </systemPropertyVariables>
+                            <id>bamboo</id>
+                            <version>${bamboo.version}</version>
+                        </product>
+                        <product>
+                            <id>bitbucket</id>
+                            <version>${bitbucket.version}</version>
                         </product>
                         <product>
                             <id>confluence</id>
                             <version>${confluence.version}</version>
-                            <systemPropertyVariables>
-                                <product>confluence</product>
-                            </systemPropertyVariables>
                         </product>
                         <product>
-                            <id>stash</id>
-                            <version>${stash.version}</version>
-                            <systemPropertyVariables>
-                                <product>stash</product>
-                            </systemPropertyVariables>
+                            <id>crowd</id>
+                            <version>${crowd.version}</version>
                         </product>
                         <product>
-                            <id>bamboo</id>
-                            <version>${bamboo.version}</version>
-                            <systemPropertyVariables>
-                                <product>bamboo</product>
-                            </systemPropertyVariables>
+                            <id>fecru</id>
+                            <version>${fecru.version}</version>
+                        </product>
+                        <product>
+                            <id>jira</id>
+                            <version>${jira.version}</version>
+                        </product>
+                        <product>
+                            <id>refapp</id>
+                            <version>${refapp.version}</version>
                         </product>
                     </products>
+                    <server>localhost</server>
+                    <systemPropertyVariables>
+                        <product>${product}</product>
+                        <rest.api.browser.anonymous>${rest.api.browser.anonymous}</rest.api.browser.anonymous>
+                        <!-- Stop UPM connecting to Marketplace, too noisy in the logs -->
+                        <upm.pac.disable>true</upm.pac.disable>
+                    </systemPropertyVariables>
+                    <testGroups>
+                        <testGroup>
+                            <id>all-its</id>
+                            <productIds>
+                                <productId>${product}</productId>
+                            </productIds>
+                            <includes>
+                                <include>it/**/*Test.java</include>
+                            </includes>
+                        </testGroup>
+                    </testGroups>
                 </configuration>
             </plugin>
         </plugins>
     </build>
-
-    <dependencies>
-        <dependency>
-            <groupId>com.atlassian.jira</groupId>
-            <artifactId>jira-core</artifactId>
-            <version>${jira.version}</version>
-            <scope>provided</scope>
-            <exclusions>
-                <exclusion>
-                    <groupId>commons-collections</groupId>
-                    <artifactId>commons-collections</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>org.springframework.data</groupId>
-                    <artifactId>spring-data-commons</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-        <dependency>
-            <groupId>com.atlassian.confluence</groupId>
-            <artifactId>confluence</artifactId>
-            <version>${confluence.version}</version>
-            <scope>provided</scope>
-            <exclusions>
-                <exclusion>
-                    <groupId>commons-collections</groupId>
-                    <artifactId>commons-collections</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-        <dependency>
-            <groupId>junit</groupId>
-            <artifactId>junit</artifactId>
-            <version>4.8.1</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.atlassian.jira</groupId>
-            <artifactId>jira-tests</artifactId>
-            <version>${jira.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.atlassian.jira</groupId>
-            <artifactId>jira-func-tests</artifactId>
-            <version>${jira.version}</version>
-            <scope>test</scope>
-            <exclusions>
-                <exclusion>
-                    <groupId>commons-collections</groupId>
-                    <artifactId>commons-collections</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-        <dependency>
-            <groupId>org.mockito</groupId>
-            <artifactId>mockito-all</artifactId>
-            <version>1.8.5</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>javax.servlet</groupId>
-            <artifactId>servlet-api</artifactId>
-            <version>2.4</version>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.httpcomponents</groupId>
-            <artifactId>httpclient</artifactId>
-            <version>4.1.1</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.atlassian.plugins.rest</groupId>
-            <artifactId>atlassian-rest-module</artifactId>
-            <version>2.5.0</version>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.atlassian.templaterenderer</groupId>
-            <artifactId>atlassian-template-renderer-api</artifactId>
-            <version>${template.renderer.version}</version>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.thoughtworks.paranamer</groupId>
-            <artifactId>paranamer</artifactId>
-            <version>2.4</version>
-        </dependency>
-        <dependency>
-            <groupId>com.atlassian.prettyurls</groupId>
-            <artifactId>atlassian-pretty-urls-plugin</artifactId>
-            <version>1.9</version>
-            <scope>provided</scope>
-        </dependency>
-    </dependencies>
-
-    <dependencyManagement>
-        <dependencies>
-            <dependency>
-                <groupId>org.codehaus.jackson</groupId>
-                <artifactId>jackson-mapper-asl</artifactId>
-                <version>1.9.13-atlassian-6</version>
-            </dependency>
-            <dependency>
-                <groupId>org.codehaus.jackson</groupId>
-                <artifactId>jackson-core-asl</artifactId>
-                <version>1.9.13-atlassian-6</version>
-            </dependency>
-            <dependency>
-                <groupId>org.springframework</groupId>
-                <artifactId>spring-beans</artifactId>
-                <version>5.3.18</version>
-                <scope>compile</scope>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
-
-    <licenses>
-        <license>
-            <name>Apache License 2.0</name>
-            <url>http://www.apache.org/licenses/LICENSE-2.0</url>
-            <distribution>repo</distribution>
-        </license>
-    </licenses>
-
-    <scm>
-        <connection>scm:git:ssh://git@bitbucket.org/atlassian/rest-api-browser.git</connection>
-        <developerConnection>scm:git:ssh://git@bitbucket.org/atlassian/rest-api-browser.git</developerConnection>
-        <url>https://bitbucket.org/atlassian/rest-api-browser</url>
-      <tag>HEAD</tag>
-  </scm>
 </project>

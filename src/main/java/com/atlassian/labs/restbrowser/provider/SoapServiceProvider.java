@@ -13,5 +13,4 @@ public interface SoapServiceProvider {
      * @return an {@code Iterable} of {@code SoapService}
      */
     Iterable<? extends SoapService> getSoapServices();
-
 }

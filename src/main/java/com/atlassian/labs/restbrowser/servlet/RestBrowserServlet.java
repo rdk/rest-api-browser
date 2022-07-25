@@ -11,125 +11,119 @@ import com.atlassian.sal.api.ApplicationProperties;
 import com.atlassian.sal.api.auth.LoginUriProvider;
 import com.atlassian.sal.api.user.UserManager;
 import com.atlassian.templaterenderer.TemplateRenderer;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
 import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import javax.servlet.http.HttpServletRequest;
 import java.lang.reflect.Method;
-import java.util.ArrayList;
-import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import static java.util.Objects.requireNonNull;
+import static java.util.stream.Collectors.toList;
+import static java.util.stream.StreamSupport.stream;
+import static org.slf4j.LoggerFactory.getLogger;
 
+/**
+ * Renders the main page of this app.
+ */
 public class RestBrowserServlet extends RequiresLoginServlet {
-    private static final Logger log = LoggerFactory.getLogger(RestBrowserServlet.class);
+
+    private static final Logger LOGGER = getLogger(RestBrowserServlet.class);
+    
     private static final String BROWSER_TEMPLATE = "/templates/browser.vm";
 
+    private final ApplicationProperties applicationProperties;
     private final PluginAccessor pluginAccessor;
     private final SoapServiceProvider soapServiceProvider;
-    private final ApplicationProperties applicationProperties;
 
-    public RestBrowserServlet(PluginAccessor pluginAccessor, SoapServiceProvider soapServiceProvider,
-                              UserManager userManager,TemplateRenderer renderer, LoginUriProvider loginUriProvider,
-                              ApplicationProperties applicationProperties) {
+    public RestBrowserServlet(final PluginAccessor pluginAccessor,
+                              final SoapServiceProvider soapServiceProvider,
+                              final UserManager userManager,
+                              final TemplateRenderer renderer,
+                              final LoginUriProvider loginUriProvider,
+                              final ApplicationProperties applicationProperties) {
         super(userManager, renderer, loginUriProvider);
-        this.applicationProperties = applicationProperties;
-        this.pluginAccessor = checkNotNull(pluginAccessor, "pluginAccessor");
-        this.soapServiceProvider = checkNotNull(soapServiceProvider, "soapServiceProvider");
+        this.applicationProperties = requireNonNull(applicationProperties);
+        this.pluginAccessor = requireNonNull(pluginAccessor);
+        this.soapServiceProvider = requireNonNull(soapServiceProvider);
     }
 
     @Override
-    public Map<String, Object> getContext(HttpServletRequest req) {
-        Map<String, Object> context = Maps.newHashMap();
-
-        context.put("restDescriptors", getRestDescriptors());
-        context.put("jsonRpcDescriptors", getJsonRpcDescriptors());
-        context.put("devMode", System.getProperty("atlassian.dev.mode"));
+    protected Map<String, Object> getContext(final HttpServletRequest req) {
+        final Map<String, Object> context = new HashMap<>();
         context.put("applicationProperties", applicationProperties);
-
+        context.put("devMode", System.getProperty("atlassian.dev.mode"));
+        context.put("jsonRpcDescriptors", getJsonRpcDescriptors());
+        context.put("restDescriptors", getRestDescriptors());
         return context;
     }
 
     @Override
-    public String getTemplatePath() {
+    protected String getTemplatePath() {
         return BROWSER_TEMPLATE;
     }
 
     private List<RestDescriptor> getJsonRpcDescriptors() {
-        List<RestDescriptor> jsonRpcDescriptors = Lists.newArrayList();
-
-        Iterable<? extends SoapService> soaps = soapServiceProvider.getSoapServices();
-
-        for (SoapService soap: soaps) {
-            RestDescriptor.Builder builder = new RestDescriptor.Builder();
-            Plugin plugin = soap.getPlugin();
-            builder.pluginKey(plugin.getKey()).pluginCompleteKey(soap.getCompleteKey()).
-                    pluginName(plugin.getName()).pluginDescription(soap.getDescription()).
-                    basePath("/json-rpc").version(soap.getServicePath());
-            jsonRpcDescriptors.add(builder.build());
-        }
-
-        return jsonRpcDescriptors;
+        return stream(soapServiceProvider.getSoapServices().spliterator(), false)
+                .map(RestBrowserServlet::toRestDescriptor)
+                .collect(toList());
     }
 
-    private List<RestDescriptor> getRestDescriptors()
-    {
-        Collection<ModuleDescriptor> restServlets = pluginAccessor.getModuleDescriptors(
-                new ModuleDescriptorOfClassNamePredicate("com.atlassian.plugins.rest.module.RestServletFilterModuleDescriptor"));
-
-        List<RestDescriptor> restDescriptors = new ArrayList<RestDescriptor>(restServlets.size());
-
-        for (ModuleDescriptor servlet : restServlets)
-        {
-            //com.atlassian.plugins.rest.module is exported as private and so we have to use reflection to access the concrete descriptor we want
-            Class params[] = {};
-            Object args[] = {};
-            String basePath;
-            Object apiVersion;
-            String version;
-            try
-            {
-                Method getBasePath = servlet.getClass().getMethod("getBasePath",params);
-                basePath = (String)getBasePath.invoke(servlet,args);
-
-                Method getVersion = servlet.getClass().getMethod("getVersion",params);
-                apiVersion = getVersion.invoke(servlet,args);
-                version = apiVersion.toString();
-
-            } catch (Exception e)
-            {
-                continue;
-            }
-
-
-            Plugin plugin = servlet.getPlugin();
-
-            RestDescriptor.Builder builder = new RestDescriptor.Builder().
-                basePath(basePath).version(version).pluginCompleteKey(servlet.getCompleteKey()).
-                pluginKey(plugin.getKey()).pluginName(plugin.getName()).pluginDescription(servlet.getDescription());
-            restDescriptors.add(builder.build());
-        }
-
-        return restDescriptors;
+    private static RestDescriptor toRestDescriptor(final SoapService soapService) {
+        final Plugin plugin = soapService.getPlugin();
+        return new RestDescriptor.Builder().pluginKey(plugin.getKey())
+                .pluginCompleteKey(soapService.getCompleteKey())
+                .pluginName(plugin.getName())
+                .pluginDescription(soapService.getDescription())
+                .basePath("/json-rpc")
+                .version(soapService.getServicePath())
+                .build();
     }
 
-    public class ModuleDescriptorOfClassNamePredicate<T> implements ModuleDescriptorPredicate<T>
-    {
-        private final String moduleDescriptorClass;
-
-        public ModuleDescriptorOfClassNamePredicate(String targetClass)
-        {
-            moduleDescriptorClass = targetClass;
-        }
-
-        public boolean matches(final ModuleDescriptor<? extends T> moduleDescriptor)
-        {
-            return (moduleDescriptor != null) && moduleDescriptor.getClass().getName().equals(moduleDescriptorClass);
-        }
+    // Can't use the non-deprecated getModuleDescriptors method until Fecru is on a newer version of Atlassian Plugins
+    @SuppressWarnings("deprecation")
+    private List<RestDescriptor> getRestDescriptors() {
+        return pluginAccessor.getModuleDescriptors(describesRestModule()).stream()
+                .map(RestBrowserServlet::getRestDescriptor)
+                .filter(Optional::isPresent)
+                .map(Optional::get)
+                .collect(toList());
     }
 
+    @SuppressWarnings("deprecation")
+    private static <T> ModuleDescriptorPredicate<T> describesRestModule() {
+        return md -> md != null &&
+                "com.atlassian.plugins.rest.module.RestServletFilterModuleDescriptor".equals(md.getClass().getName());
+    }
+
+    private static Optional<RestDescriptor> getRestDescriptor(final ModuleDescriptor<?> servlet) {
+        // com.atlassian.plugins.rest.module is exported as private, so we have to use reflection to access the
+        // concrete descriptor we want
+        Class<?>[] params = {};
+        Object[] args = {};
+        String basePath;
+        Object apiVersion;
+        String version;
+        try {
+            Method getBasePath = servlet.getClass().getMethod("getBasePath", params);
+            basePath = (String) getBasePath.invoke(servlet, args);
+            Method getVersion = servlet.getClass().getMethod("getVersion", params);
+            apiVersion = getVersion.invoke(servlet, args);
+            version = apiVersion.toString();
+        } catch (final Exception e) {
+            LOGGER.debug("Couldn't get REST module info from {}", servlet, e);
+            return Optional.empty();
+        }
+        final Plugin plugin = servlet.getPlugin();
+        return Optional.of(new RestDescriptor.Builder()
+                .basePath(basePath)
+                .pluginCompleteKey(servlet.getCompleteKey())
+                .pluginDescription(servlet.getDescription())
+                .pluginKey(plugin.getKey())
+                .pluginName(plugin.getName())
+                .version(version)
+                .build());
+    }
 }
