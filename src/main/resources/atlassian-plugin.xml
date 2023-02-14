@@ -114,6 +114,15 @@
         <!--<link linkId="restapi-browser-link">/rest</link>-->
     </web-item>
 
+<!--    <web-item name="REST API Browser" i18n-name-key="restapi-browser.name-confluence" key="rest-browser-link-confluence"-->
+<!--              section="system.admin/administration" weight="900"-->
+<!--              application="confluence">-->
+<!--        <description key="restapi-browser.description">REST API Browser</description>-->
+<!--        <label key="restapi-browser.label"/>-->
+<!--        <link linkId="restapi-browser-link">/plugins/servlet/restbrowser</link>-->
+<!--        &lt;!&ndash;<link linkId="restapi-browser-link">/rest</link>&ndash;&gt;-->
+<!--    </web-item>-->
+
     <web-item name="REST API Browser" i18n-name-key="restapi-browser.name-fisheye" key="rest-browser-link-fisheye"
               section="system.admin/system" weight="15"
               application="fisheye">

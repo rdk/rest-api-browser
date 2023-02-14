@@ -40,19 +40,19 @@
 
     <properties>
         <atlassian.plugin.key>${project.groupId}.${project.artifactId}</atlassian.plugin.key>
-        <!-- All the Bamboo 7.x test licenses seem to have expired  -->
-        <bamboo.version>8.0.9</bamboo.version>
-        <bitbucket.version>7.5.2</bitbucket.version>
-        <confluence.version>7.4.18</confluence.version>
-        <crowd.version>4.2.5</crowd.version>
+        <bamboo.version>8.1.12</bamboo.version>
+        <bitbucket.version>7.17.18</bitbucket.version>
+        <confluence.version>7.13.19</confluence.version>
+        <crowd.version>4.4.5</crowd.version>
         <fecru.version>4.8.10-20220620091927</fecru.version>
+<!--        <fecru.version>4.8.15</fecru.version>-->
         <jackson.version>1.9.14-atlassian-6</jackson.version>
-        <jira.version>8.8.1</jira.version>
-        <platform.version>5.3.30</platform.version>
+        <jira.version>8.20.24</jira.version>
+        <platform.version>5.0.32</platform.version>
+        <refapp.version>5.2.6</refapp.version>
         <!-- Override this to test in a different product -->
         <product>refapp</product>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <refapp.version>6.1.12</refapp.version>
         <!-- For ease of testing -->
         <rest.api.browser.anonymous>true</rest.api.browser.anonymous>
     </properties>
@@ -216,12 +216,10 @@
             <plugin>
                 <groupId>com.atlassian.maven.plugins</groupId>
                 <artifactId>amps-maven-plugin</artifactId>
-                <version>8.4.2</version>
+                <version>8.11.0</version>
                 <extensions>true</extensions>
                 <configuration>
                     <compressResources>false</compressResources>
-                    <!-- Disabled because it causes AMPS to overwrite the RAB with an older version, see AMPS-1609 -->
-                    <enableDevToolbox>false</enableDevToolbox>
                     <enableQuickReload>true</enableQuickReload>
                     <instructions>
                         <Atlassian-Plugin-Key>${atlassian.plugin.key}</Atlassian-Plugin-Key>
@@ -232,6 +230,7 @@
                         </Import-Package>
                         <Spring-Context>*</Spring-Context>
                     </instructions>
+                    <parallel>true</parallel>
                     <pluginDependencies>
                         <pluginDependency>
                             <groupId>com.atlassian.prettyurls</groupId>
@@ -246,32 +245,40 @@
                     </pluginArtifacts>
                     <products>
                         <product>
+<!--                            works-->
                             <id>bamboo</id>
                             <version>${bamboo.version}</version>
+                            <ajpPort>8010</ajpPort>
                         </product>
                         <product>
                             <id>bitbucket</id>
                             <version>${bitbucket.version}</version>
+                            <ajpPort>8011</ajpPort>
                         </product>
                         <product>
                             <id>confluence</id>
                             <version>${confluence.version}</version>
+                            <ajpPort>8012</ajpPort>
                         </product>
                         <product>
                             <id>crowd</id>
                             <version>${crowd.version}</version>
+                            <ajpPort>8013</ajpPort>
                         </product>
                         <product>
                             <id>fecru</id>
                             <version>${fecru.version}</version>
+                            <ajpPort>8014</ajpPort>
                         </product>
                         <product>
                             <id>jira</id>
                             <version>${jira.version}</version>
+                            <ajpPort>8015</ajpPort>
                         </product>
                         <product>
                             <id>refapp</id>
                             <version>${refapp.version}</version>
+                            <ajpPort>8016</ajpPort>
                         </product>
                     </products>
                     <server>localhost</server>
