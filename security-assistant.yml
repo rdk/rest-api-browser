@@ -7,5 +7,4 @@ lowerSeverityPaths:
     reasoning: "This is a test directory"
 
 fileSnykTicketsWithFutureSLODates: true
-file-sourceclear-tickets: true
 fileAllSnykTicketsNow: true
