@@ -52,7 +52,7 @@
         <!-- Override this to test in a different product -->
         <product>refapp</product>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <refapp.version>6.0.3</refapp.version>
+        <refapp.version>6.1.11</refapp.version>
         <!-- For ease of testing -->
         <rest.api.browser.anonymous>true</rest.api.browser.anonymous>
     </properties>
