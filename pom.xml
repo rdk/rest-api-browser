@@ -48,7 +48,7 @@
         <fecru.version>4.8.10-20220620091927</fecru.version>
         <jackson.version>1.9.14-atlassian-6</jackson.version>
         <jira.version>8.8.1</jira.version>
-        <platform.version>5.2.9</platform.version>
+        <platform.version>5.3.29</platform.version>
         <!-- Override this to test in a different product -->
         <product>refapp</product>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
