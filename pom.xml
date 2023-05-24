@@ -5,7 +5,7 @@
     <parent>
         <groupId>com.atlassian.pom</groupId>
         <artifactId>public-pom</artifactId>
-        <version>6.2.2</version>
+        <version>6.2.5</version>
     </parent>
 
     <groupId>com.atlassian.labs</groupId>
@@ -48,11 +48,11 @@
         <fecru.version>4.8.10-20220620091927</fecru.version>
         <jackson.version>1.9.14-atlassian-6</jackson.version>
         <jira.version>8.8.1</jira.version>
-        <platform.version>5.3.29</platform.version>
+        <platform.version>5.3.30</platform.version>
         <!-- Override this to test in a different product -->
         <product>refapp</product>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <refapp.version>6.1.11</refapp.version>
+        <refapp.version>6.1.12</refapp.version>
         <!-- For ease of testing -->
         <rest.api.browser.anonymous>true</rest.api.browser.anonymous>
     </properties>
@@ -114,7 +114,7 @@
         <dependency>
             <groupId>com.atlassian.plugins</groupId>
             <artifactId>atlassian-plugins-osgi-javaconfig</artifactId>
-            <version>0.5.0</version>
+            <version>0.5.2</version>
         </dependency>
         <dependency>
             <groupId>com.atlassian.plugins</groupId>
@@ -155,7 +155,7 @@
         <dependency>
             <groupId>com.atlassian.selenium</groupId>
             <artifactId>atlassian-pageobjects-api</artifactId>
-            <version>3.3.0</version>
+            <version>3.3.2</version>
             <scope>test</scope>
         </dependency>
         <dependency>
