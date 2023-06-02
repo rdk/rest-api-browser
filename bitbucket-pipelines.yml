@@ -29,4 +29,4 @@ pipelines:
           script:
             # Run a security scan for sensitive data.
             # See more security tools at https://bitbucket.org/product/features/pipelines/integrations?&category=security
-            - pipe: atlassian/git-secrets-scan:0.4.3
+            - pipe: atlassian/git-secrets-scan:0.6.1
