@@ -1,7 +1,7 @@
 #This file was generated automatically from a template as part of "Enterprise DC Platform" security uplift work.
 #More details can be found here: https://hello.atlassian.net/wiki/spaces/AB/pages/1098077426/Initiatives+delegated+to+the+HCL+team
 
-owner: mulaganathan@atlassian.com
+owner: rsukhach@atlassian.com
 lowerSeverityPaths:
   - path: src/test/**
     reasoning: "This is a test directory"
