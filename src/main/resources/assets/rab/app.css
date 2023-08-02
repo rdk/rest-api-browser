@@ -265,6 +265,11 @@ html>body.aui-layout.aui-theme-default.dec_atl_general>div#page>section#content>
     padding:0;
 }
 /* Bamboo specific hacks: end */
+/* Crowd specific hacks: begin */
+section.aui-page-panel-content {
+    padding: 0;
+}
+/* Crowd specific hacks: end */
 /* FeCru specific hacks: begin */
 /* Otherwise the UI gets crushed */
 #rab, #rootpage {
