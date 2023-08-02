@@ -69,6 +69,7 @@ RAB.rest.services = RAB.rest.services.concat(RAB.rest.jsonRpcs);
                                 </li>
                             </ul>
                         </div>
+                        <i ng-show="resourcesLoaded">That's all the APIs folks!</i>
                     </nav>
                 </div>
                 <div class="rab-divider-container"><div class="rab-divider"></div></div>
