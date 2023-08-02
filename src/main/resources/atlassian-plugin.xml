@@ -95,7 +95,6 @@
         <description key="restapi-browser.description">REST API Browser</description>
         <label>REST API Browser</label>
         <link linkId="restapi-browser-link">/plugins/servlet/restbrowser</link>
-        <!--<link linkId="restapi-browser-link">/rest</link>-->
     </web-item>
 
     <web-item name="REST API Browser" i18n-name-key="restapi-browser.name-jira" key="rest-browser-link-jira"
@@ -104,7 +103,6 @@
         <description key="restapi-browser.description">REST API Browser</description>
         <label key="restapi-browser.label"/>
         <link linkId="restapi-browser-link">/plugins/servlet/restbrowser</link>
-        <!--<link linkId="restapi-browser-link">/rest</link>-->
     </web-item>
 
     <web-item name="REST API Browser" i18n-name-key="restapi-browser.name-confluence" key="rest-browser-link-confluence"
@@ -113,17 +111,15 @@
         <description key="restapi-browser.description">REST API Browser</description>
         <label key="restapi-browser.label"/>
         <link linkId="restapi-browser-link">/plugins/servlet/restbrowser</link>
-        <!--<link linkId="restapi-browser-link">/rest</link>-->
     </web-item>
 
-<!--    <web-item name="REST API Browser" i18n-name-key="restapi-browser.name-confluence" key="rest-browser-link-confluence"-->
-<!--              section="system.admin/administration" weight="900"-->
-<!--              application="confluence">-->
-<!--        <description key="restapi-browser.description">REST API Browser</description>-->
-<!--        <label key="restapi-browser.label"/>-->
-<!--        <link linkId="restapi-browser-link">/plugins/servlet/restbrowser</link>-->
-<!--        &lt;!&ndash;<link linkId="restapi-browser-link">/rest</link>&ndash;&gt;-->
-<!--    </web-item>-->
+    <web-item name="REST API Browser" i18n-name-key="restapi-browser.name-crowd" key="rest-browser-link-crowd"
+              section="administrationnav" weight="24"
+              application="crowd">
+        <description key="restapi-browser.description">REST API Browser</description>
+        <label key="restapi-browser.label"/>
+        <link linkId="restapi-browser-link">/plugins/servlet/restbrowser</link>
+    </web-item>
 
     <web-item name="REST API Browser" i18n-name-key="restapi-browser.name-fisheye" key="rest-browser-link-fisheye"
               section="system.admin/system" weight="15"
@@ -131,7 +127,6 @@
         <description key="restapi-browser.description">REST API Browser</description>
         <label>REST API Browser</label>
         <link linkId="restapi-browser-link">/plugins/servlet/restbrowser</link>
-        <!--<link linkId="restapi-browser-link">/rest</link>-->
     </web-item>
 
     <web-item name="REST API Browser" i18n-name-key="restapi-browser.name-bitbucket" key="rest-browser-link-bitbucket"
@@ -141,7 +136,6 @@
         <tooltip key="bitbucket.web.admin.settings.rab.tooltip">Interact and browse the REST resources bundled with Bitbucket Server.</tooltip>
         <label key="restapi-browser.label"/>
         <link linkId="restapi-browser-link">/plugins/servlet/restbrowser</link>
-        <!--<link linkId="restapi-browser-link">/rest</link>-->
     </web-item>
 
     <web-item name="REST API Browser" key="rest-browser-link-bamboo"
@@ -150,7 +144,6 @@
         <description key="restapi-browser.description">REST API Browser</description>
         <label key="restapi-browser.label"/>
         <link linkId="restapi-browser-link">/plugins/servlet/restbrowser</link>
-        <!--<link linkId="restapi-browser-link">/rest</link>-->
     </web-item>
 
     <web-item name="REST API Browser" key="rest-browser-link-devtoolbar"
