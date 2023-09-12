@@ -1,20 +1,20 @@
 .CodeMirror-dialog {
   position: absolute;
   left: 0; right: 0;
-  background: white;
+  background: var(--ds-surface, white);
   z-index: 15;
   padding: .1em .8em;
   overflow: hidden;
-  color: #333;
+  color: var(--ds-text, #333);
 }
 
 .CodeMirror-dialog-top {
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--ds-surface-sunken, #eee);
   top: 0;
 }
 
 .CodeMirror-dialog-bottom {
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--ds-surface-sunken, #eee);
   bottom: 0;
 }
 

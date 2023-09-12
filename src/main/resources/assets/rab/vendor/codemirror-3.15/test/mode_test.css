@@ -1,5 +1,5 @@
 .mt-output .mt-token {
-  border: 1px solid #ddd;
+  border: 1px solid var(--ds-border, #ddd);
   white-space: pre;
   font-family: "Consolas", monospace;
   text-align: center;

@@ -1,6 +1,6 @@
 .cm-tw-syntaxerror {
-	color: #FFF;
-	background-color: #900;
+	color: var(--ds-surface, #FFF);
+	background-color: var(--ds-background-danger, #900);
 }
 
 .cm-tw-deleted {
