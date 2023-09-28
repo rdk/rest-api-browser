@@ -9,11 +9,11 @@
 
   -webkit-box-shadow: 2px 3px 5px rgba(0,0,0,.2);
   -moz-box-shadow: 2px 3px 5px rgba(0,0,0,.2);
-  box-shadow: 2px 3px 5px rgba(0,0,0,.2);
+  box-shadow: var(--ds-shadow-overflow-spread, 2px 3px 5px rgba(0,0,0,.2));
   border-radius: 3px;
-  border: 1px solid silver;
+  border: 1px solid var(--ds-surface, silver);
 
-  background: white;
+  background: var(--ds-surface, white);
   font-size: 90%;
   font-family: monospace;
 
@@ -28,11 +28,11 @@
   max-width: 19em;
   overflow: hidden;
   white-space: pre;
-  color: black;
+  color: var(--ds-text, black);
   cursor: pointer;
 }
 
 .CodeMirror-hint-active {
-  background: #08f;
-  color: white;
+  background: var(--ds-background-information-bold, #08f);
+  color: var(--ds-surface, white);
 }

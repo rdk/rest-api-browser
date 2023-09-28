@@ -1,5 +1,5 @@
 body {
-    background-color: #fff;
+    background-color: var(--ds-surface, #fff);
 }
 #footer {
     display:none;
@@ -87,18 +87,18 @@ body,
 
 .rab-header {
     padding:5px 10px;
-    background-color:#f5f5f5;
+    background-color: var(--ds-surface-sunken, #f5f5f5);
 }
 .rab-header form.aui input.text.rab-search {
     width:240px;
     outline-width: 0;
-    background: #fff url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAo0lEQVQ4y7WSUQ2AIBCGL4IRiGAEoxjBBkTwmSciGIEIRjCCEU7YfuaNwelkPnxDhPvkPyFmJudcyRCZMFKLVEuFIBWFCAsC3j8KZhScER+xGLNo1gQGhQee5cYRa2cZSQosvjI18ubTLS1Bzk0KaX3rFYTfIhhs0JrIWhPf/EbG/PEi7ZWLtNUkNUHGQCbj+FKiCVp4EdN8ESRWNPY+QQ/dggvAl0v7SYIpuAAAAABJRU5ErkJggg==) no-repeat 97% 6px;
+    background: var(--ds-background-input, #fff) url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAE0SURBVHgBpVO9SsNQFL5/Bko07eCug2/gLNLeSRAkdnAR2yfo0AfIkAfo4BvEzSlkcjGWPoK7g3mDEiqFkuZ4T2iHJDe30HwQDiQn3/nO991LAYCTFmCkJYTuZRjHvVXKbongS0tkydPd4LeJgFZXCKL5BLb5rNREmT9y+76OoLRCEMYe/kwp8btdco4P5TAFyL0gnE+MCt4/vi7Xa/hR06Zq2muNGIiHhK6US62CTUYusDpO/lad4jhnBWHhS+MKQHvkEJSpjQSntr3Amqastmu6+nvBam2zpPqtlEIQfaoE6Ax92K+ChGiial2MHwfSSFCQ7Awrd7GIQP6gi7N2Ekeu9DuMXvETKrlgQ3R+7PaHGO0uTs+owIS9OmFZ18/3N99aBSagOlRldzbJUQp0aH0b/wG0LoOcMbICkgAAAABJRU5ErkJggg==) no-repeat 97% 6px;
 }
 .rab-sidebar {
     width:20%;
     padding:0;
     margin:0;
-    background:#f5f5f5;
+    background:var(--ds-surface-sunken, #f5f5f5);
     position: relative;
 }
 .rab-sidebar-item {
@@ -121,7 +121,7 @@ body,
 }
 .rab-main > section {
     display: block;
-    background:#fff;
+    background:var(--ds-surface, #fff);
     padding:10px 20px 20px 20px;
 }
 .rab-scope {
@@ -163,7 +163,7 @@ form.aui.rab-resource-url input {
     width:10%;
 }
 .rab-param-required {
-    color:red;
+    color: var(--ds-text-danger, red);
     font-size:1.2em;
 }
 table.aui .rab-param-actions {
@@ -174,9 +174,9 @@ table.aui .rab-param-actions {
 }
 .CodeMirror {
     margin:10px 0;
-    border:1px solid #ccc;
+    border:1px solid var(--ds-border, #ccc);
     border-radius: 5px;
-    background: #f5f5f5;
+    background: var(--ds-surface-sunken, #f5f5f5);
     font-family: Menlo, sans-serif;
     font-size:12px;
     line-height: 150%;
@@ -187,7 +187,7 @@ table.aui .rab-param-actions {
     overflow-x: auto;
 }
 .CodeMirror-foldmarker {
-    color: blue;
+    color: var(--ds-text-accent-blue, blue);
     text-shadow: #b9f 1px 1px 2px, #b9f -1px -1px 2px, #b9f 1px -1px 2px, #b9f -1px 1px 2px;
     font-family: arial;
     line-height: .3;
@@ -198,7 +198,7 @@ table.aui .rab-param-actions {
 }
 .CodeMirror-foldgutter-open,
 .CodeMirror-foldgutter-folded {
-    color: #555;
+    color: var(--ds-text, #555);
     cursor: pointer;
 }
 .CodeMirror-foldgutter-open:after {
@@ -208,11 +208,11 @@ table.aui .rab-param-actions {
     content: "\25B8";
 }
 .cm-searching {
-    border-bottom:1px dotted #000;
+    border-bottom:1px dotted var(--ds-border, #000);
 }
 div.CodeMirror span.CodeMirror-matchingbracket {
-    color:red;
-    border-bottom:1px dotted #000;
+    color:var(--ds-background-accent-orange-subtle, red);
+    border-bottom:1px dotted var(--ds-border, #000);
 }
 .rab-req-rep {
     text-align: right;
@@ -223,9 +223,9 @@ div.CodeMirror span.CodeMirror-matchingbracket {
 }
 .rab-response-headers {
     padding:5px;
-    border:1px solid #ccc;
+    border:1px solid var(--ds-border, #ccc);
     border-radius:5px;
-    background: #f5f5f5;
+    background: var(--ds-surface-sunken, #f5f5f5);
 }
 .rab-response-headers .aui-lozenge {
     font-size:13px;
@@ -241,7 +241,7 @@ div.CodeMirror span.CodeMirror-matchingbracket {
     padding: 0;
     margin: 0;
     border: 0;
-    color: #000;
+    color: var(--ds-text, #000);
     background-color:transparent;
 }
 /* Confluence specific hacks: begin */
