@@ -33,12 +33,12 @@ function processWADL(resource) {
     jQuery.ajax({
         url:resource.wadl,
         dataType:"text xml"
-    }).error(function() {
+    }).fail(function() {
             // Reject the promise if there's an ajax error
             dfd.reject({
                 error: "Something shitty happened. Sorry."
             });
-        }).success(function(x) {
+        }).done(function(x) {
             // Ajax call was successful
             var outResources = [];
 
