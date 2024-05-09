@@ -162,4 +162,20 @@
     </routing>
     <sitemesh key="rest-browser-decorator" path="/restbrowser"/>
 
+    <velocity-allowlist key="rest-browser-allowlist">
+        <method>com.atlassian.labs.restbrowser.rest.model.JsonRpcMethod#getName()</method>
+        <method>com.atlassian.labs.restbrowser.rest.model.JsonRpcMethod#getParams()</method>
+        <method>com.atlassian.labs.restbrowser.rest.model.JsonRpcMethod$Parameter#getName()</method>
+        <method>com.atlassian.labs.restbrowser.rest.model.JsonRpcMethod$Parameter#getXmlnsType()</method>
+        <method>com.atlassian.labs.restbrowser.rest.model.RestDescriptor#getBasePath()</method>
+        <method>com.atlassian.labs.restbrowser.rest.model.RestDescriptor#getDisplayPath()</method>
+        <method>com.atlassian.labs.restbrowser.rest.model.RestDescriptor#getPluginCompleteKey()</method>
+        <method>com.atlassian.labs.restbrowser.rest.model.RestDescriptor#getPluginDescription()</method>
+        <method>com.atlassian.labs.restbrowser.rest.model.RestDescriptor#getPluginKey()</method>
+        <method>com.atlassian.labs.restbrowser.rest.model.RestDescriptor#getPluginName()</method>
+        <method>com.atlassian.labs.restbrowser.rest.model.RestDescriptor#getRestPath()</method>
+        <method>com.atlassian.labs.restbrowser.rest.model.RestDescriptor#getVersion()</method>
+        <method>com.atlassian.labs.restbrowser.util.TextUtils#htmlEncode(java.lang.String)</method>
+    </velocity-allowlist>
+
 </atlassian-plugin>
