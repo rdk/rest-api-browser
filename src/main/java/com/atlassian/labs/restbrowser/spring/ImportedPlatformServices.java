@@ -5,9 +5,9 @@ import com.atlassian.plugin.web.WebInterfaceManager;
 import com.atlassian.sal.api.ApplicationProperties;
 import com.atlassian.sal.api.auth.LoginUriProvider;
 import com.atlassian.sal.api.user.UserManager;
+import com.atlassian.templaterenderer.TemplateRenderer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import com.atlassian.templaterenderer.velocity.one.six.VelocityTemplateRenderer;
 
 import static com.atlassian.plugins.osgi.javaconfig.OsgiServices.importOsgiService;
 
@@ -35,8 +35,8 @@ public class ImportedPlatformServices {
     }
 
     @Bean
-    public VelocityTemplateRenderer velocityTemplateRenderer() {
-        return importOsgiService(VelocityTemplateRenderer.class);
+    public TemplateRenderer velocityTemplateRenderer() {
+        return importOsgiService(TemplateRenderer.class);
     }
 
     @Bean
