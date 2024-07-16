@@ -48,7 +48,7 @@
         <jira.latest.version>10.0.0-QR-20240607105938</jira.latest.version>
         <!-- Use platform 6.5 to ensure compatibility with REST v1 and v2 -->
         <platform.version>6.5.15</platform.version>
-        <refapp.latest.version>7.0.14</refapp.latest.version>
+        <refapp.version>${platform.version}</refapp.version>
         <fecru.latest.version>4.8.10-20220620091927</fecru.latest.version>
         <!-- Override this to test in a different product -->
         <product>refapp</product>
@@ -281,7 +281,7 @@
                         </product>
                         <product>
                             <id>refapp</id>
-                            <version>${refapp.latest.version}</version>
+                            <version>${refapp.version}</version>
                             <ajpPort>8016</ajpPort>
                         </product>
                     </products>
