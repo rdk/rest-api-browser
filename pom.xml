@@ -40,19 +40,26 @@
 
     <properties>
         <atlassian.plugin.key>${project.groupId}.${project.artifactId}</atlassian.plugin.key>
-        <bamboo.latest.version>10.0.0-m022</bamboo.latest.version>
-        <bitbucket.latest.version>9.0.0-eap04</bitbucket.latest.version>
-        <confluence.compile.version>7.13.19</confluence.compile.version>
+
+        <bamboo.eldest-supported.version>9.2.16</bamboo.eldest-supported.version>
+        <bitbucket.eldest-supported.version>8.9.17</bitbucket.eldest-supported.version>
+        <confluence.eldest-supported.version>7.19.25</confluence.eldest-supported.version>
+        <!-- Test with a Plat 7 product that's compiled against the eldest version to
+                catch unexpected incompatibility -->
         <confluence.latest.version>9.0.0-m135</confluence.latest.version>
-        <crowd.latest.version>6.0.0-EAP01</crowd.latest.version>
-        <jira.latest.version>10.0.0-QR-20240607105938</jira.latest.version>
+        <crowd.eldest-supported.version>6.0.0</crowd.eldest-supported.version>
+        <fecru.latest.version>4.8.10-20220620091927</fecru.latest.version>
+        <jira.eldest-supported.version>9.4.22</jira.eldest-supported.version>
+
         <!-- Use platform 6.5 to ensure compatibility with REST v1 and v2 -->
         <platform.version>6.5.15</platform.version>
+        <!-- Test with a Platform 6.5 product for when REST v1 and v2 are around -->
         <refapp.version>${platform.version}</refapp.version>
-        <fecru.latest.version>4.8.10-20220620091927</fecru.latest.version>
+
         <!-- Override this to test in a different product -->
         <product>refapp</product>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
         <!-- For ease of testing -->
         <rest.api.browser.anonymous>true</rest.api.browser.anonymous>
     </properties>
@@ -72,7 +79,7 @@
         <dependency>
             <groupId>com.atlassian.confluence</groupId>
             <artifactId>confluence</artifactId>
-            <version>${confluence.compile.version}</version>
+            <version>${confluence.eldest-supported.version}</version>
             <scope>provided</scope>
             <exclusions>
                 <exclusion>
@@ -258,12 +265,12 @@
                     <products>
                         <product>
                             <id>bamboo</id>
-                            <version>${bamboo.latest.version}</version>
+                            <version>${bamboo.eldest-supported.version}</version>
                             <ajpPort>8010</ajpPort>
                         </product>
                         <product>
                             <id>bitbucket</id>
-                            <version>${bitbucket.latest.version}</version>
+                            <version>${bitbucket.eldest-supported.version}</version>
                             <ajpPort>8011</ajpPort>
                         </product>
                         <product>
@@ -273,7 +280,7 @@
                         </product>
                         <product>
                             <id>crowd</id>
-                            <version>${crowd.latest.version}</version>
+                            <version>${crowd.eldest-supported.version}</version>
                             <ajpPort>8013</ajpPort>
                         </product>
                         <product>
@@ -283,7 +290,7 @@
                         </product>
                         <product>
                             <id>jira</id>
-                            <version>${jira.latest.version}</version>
+                            <version>${jira.eldest-supported.version}</version>
                             <ajpPort>8015</ajpPort>
                         </product>
                         <product>
