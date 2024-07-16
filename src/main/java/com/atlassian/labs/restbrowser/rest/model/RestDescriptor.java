@@ -1,7 +1,6 @@
 package com.atlassian.labs.restbrowser.rest.model;
 
 import com.atlassian.labs.restbrowser.util.TextUtils;
-import com.atlassian.plugins.rest.module.ApiVersion;
 
 public class RestDescriptor {
     private final String basePath;

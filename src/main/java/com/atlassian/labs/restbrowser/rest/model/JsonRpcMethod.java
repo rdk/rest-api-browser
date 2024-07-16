@@ -1,7 +1,5 @@
 package com.atlassian.labs.restbrowser.rest.model;
 
-import com.google.common.collect.Lists;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -51,7 +49,7 @@ public class JsonRpcMethod {
 
         public Builder name(String name) {
             this.name = name;
-            params = Lists.newArrayList();
+            params = new ArrayList<>();
             return this;
         }
 

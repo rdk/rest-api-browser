@@ -19,6 +19,10 @@
     <!--
         Defined REST services
      -->
+    <rest-migration key="rest-migration-key">
+        <rest-v2/>
+    </rest-migration>
+
     <rest key="rest-services" path="/devtools" version="1">
         <description>Provides REST services to get at the bundled JSON-RPC endpoints.</description>
     </rest>

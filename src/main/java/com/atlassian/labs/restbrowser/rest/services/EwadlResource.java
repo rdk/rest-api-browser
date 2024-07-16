@@ -1,8 +1,9 @@
 package com.atlassian.labs.restbrowser.rest.services;
 
-import com.atlassian.plugins.rest.common.security.AnonymousAllowed;
+import com.atlassian.annotations.security.AnonymousSiteAccess;
 import com.atlassian.templaterenderer.TemplateRenderer;
 
+import javax.inject.Inject;
 import javax.ws.rs.GET;
 import javax.ws.rs.Path;
 import javax.ws.rs.Produces;
@@ -22,11 +23,12 @@ public class EwadlResource {
 
     private final TemplateRenderer renderer;
 
+    @Inject
     public EwadlResource(TemplateRenderer renderer) {
         this.renderer = renderer;
     }
 
-    @AnonymousAllowed
+    @AnonymousSiteAccess
     @GET
     @Produces(MediaType.APPLICATION_XML)
     public Response getWadl() throws IOException {
