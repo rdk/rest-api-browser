@@ -6,6 +6,7 @@ import com.atlassian.labs.restbrowser.provider.SoapServiceProvider;
 import com.atlassian.labs.restbrowser.rest.model.JsonRpcMethod;
 import com.atlassian.plugin.Plugin;
 import com.atlassian.plugin.PluginAccessor;
+import com.atlassian.plugins.rest.common.security.AnonymousAllowed;
 import com.atlassian.sal.api.ApplicationProperties;
 import com.atlassian.templaterenderer.TemplateRenderer;
 import com.thoughtworks.paranamer.CachingParanamer;
@@ -53,6 +54,7 @@ public class JsonRpcResource {
     @Path("/{pluginKey}/wadl")
     @Produces(MediaType.APPLICATION_XML)
     @AnonymousSiteAccess
+    @AnonymousAllowed
     public Response getWadlForService(@PathParam("pluginKey") String pluginKey) throws IOException {
         Plugin plugin = pluginAccessor.getEnabledPlugin(pluginKey);
         if (plugin == null) {

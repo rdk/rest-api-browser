@@ -111,6 +111,11 @@
             <scope>provided</scope>
         </dependency>
         <dependency>
+            <groupId>com.atlassian.plugins.rest</groupId>
+            <artifactId>atlassian-rest-common</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
             <groupId>com.atlassian.sal</groupId>
             <artifactId>sal-api</artifactId>
             <scope>provided</scope>
@@ -231,6 +236,8 @@
                         <Export-Package>com.atlassian.labs.restbrowser.*</Export-Package>
                         <Import-Package>
                             com.atlassian.confluence.*;resolution:="optional",
+                            com.atlassian.annotations.security*;resolution:="optional",
+                            com.atlassian.plugins.rest.common.security*;resolution:="optional",
                             *
                         </Import-Package>
                         <Spring-Context>*</Spring-Context>
