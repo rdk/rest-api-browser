@@ -1,5 +1,6 @@
 package com.atlassian.labs.restbrowser.servlet;
 
+import com.atlassian.annotations.security.AnonymousSiteAccess;
 import com.atlassian.labs.restbrowser.plugin.SoapService;
 import com.atlassian.labs.restbrowser.provider.SoapServiceProvider;
 import com.atlassian.labs.restbrowser.rest.model.RestDescriptor;
@@ -28,10 +29,11 @@ import static org.slf4j.LoggerFactory.getLogger;
 /**
  * Renders the main page of this app.
  */
+@AnonymousSiteAccess
 public class RestBrowserServlet extends RequiresLoginServlet {
 
     private static final Logger LOGGER = getLogger(RestBrowserServlet.class);
-    
+
     private static final String BROWSER_TEMPLATE = "/templates/browser.vm";
 
     private final ApplicationProperties applicationProperties;
@@ -95,12 +97,13 @@ public class RestBrowserServlet extends RequiresLoginServlet {
     @SuppressWarnings("deprecation")
     private static <T> ModuleDescriptorPredicate<T> describesRestModule() {
         return md -> md != null &&
-                "com.atlassian.plugins.rest.module.RestServletFilterModuleDescriptor".equals(md.getClass().getName());
+                ("com.atlassian.plugins.rest.module.RestServletFilterModuleDescriptor".equals(md.getClass().getName())
+                        || "com.atlassian.plugins.rest.v2.descriptor.RestServletFilterModuleDescriptor".equals(md.getClass().getName()));
     }
 
     private static Optional<RestDescriptor> getRestDescriptor(final ModuleDescriptor<?> servlet) {
-        // com.atlassian.plugins.rest.module is exported as private, so we have to use reflection to access the
-        // concrete descriptor we want
+        // com.atlassian.plugins.rest.module is exported as private, and com.atlassian.plugins.rest.v2.descriptor is not exported,
+        // so we have to use reflection to access the concrete descriptor we want
         Class<?>[] params = {};
         Object[] args = {};
         String basePath;

@@ -1,6 +1,6 @@
 package com.atlassian.labs.restbrowser.util;
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import static java.util.Objects.requireNonNull;
 
 /**
  * Ripped from opensymphony core so we don't have to depend on it
@@ -21,7 +21,7 @@ public class TextUtils {
      * @return the escaped string
      */
     public static String htmlEncode(String s, boolean encodeSpecialChars) {
-        s = checkNotNull(s);
+        s = requireNonNull(s);
 
         StringBuilder str = new StringBuilder();
 
