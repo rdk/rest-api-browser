@@ -1,23 +1,29 @@
 package com.atlassian.labs.restbrowser.rest.services;
 
+import com.atlassian.annotations.security.AnonymousSiteAccess;
 import com.atlassian.labs.restbrowser.plugin.SoapService;
 import com.atlassian.labs.restbrowser.provider.SoapServiceProvider;
 import com.atlassian.labs.restbrowser.rest.model.JsonRpcMethod;
 import com.atlassian.plugin.Plugin;
 import com.atlassian.plugin.PluginAccessor;
+import com.atlassian.plugins.rest.common.security.AnonymousAllowed;
 import com.atlassian.sal.api.ApplicationProperties;
 import com.atlassian.templaterenderer.TemplateRenderer;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
 import com.thoughtworks.paranamer.CachingParanamer;
 import com.thoughtworks.paranamer.Paranamer;
 
-import javax.ws.rs.*;
+import javax.inject.Inject;
+import javax.ws.rs.GET;
+import javax.ws.rs.Path;
+import javax.ws.rs.PathParam;
+import javax.ws.rs.Produces;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -34,6 +40,7 @@ public class JsonRpcResource {
 
     private final Paranamer paranamer = new CachingParanamer();
 
+    @Inject
     public JsonRpcResource(PluginAccessor pluginAccessor, TemplateRenderer renderer,
                            SoapServiceProvider soapServiceProvider,
                            ApplicationProperties applicationProperties) {
@@ -46,15 +53,17 @@ public class JsonRpcResource {
     @GET
     @Path("/{pluginKey}/wadl")
     @Produces(MediaType.APPLICATION_XML)
+    @AnonymousSiteAccess
+    @AnonymousAllowed
     public Response getWadlForService(@PathParam("pluginKey") String pluginKey) throws IOException {
         Plugin plugin = pluginAccessor.getEnabledPlugin(pluginKey);
         if (plugin == null) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }
 
-        Map<String, Object> context = Maps.newHashMap();
+        Map<String, Object> context = new HashMap<>();
 
-        List<JsonRpcMethod> jsonRpcMethods = Lists.newArrayList();
+        List<JsonRpcMethod> jsonRpcMethods = new ArrayList<>();
         for (SoapService soap: soapServiceProvider.getSoapServices()) {
             if (soap.getPluginKey().equals(pluginKey)) {
 

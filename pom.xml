@@ -40,25 +40,26 @@
 
     <properties>
         <atlassian.plugin.key>${project.groupId}.${project.artifactId}</atlassian.plugin.key>
-        <bamboo.compile.version>8.1.12</bamboo.compile.version>
-        <bamboo.latest.version>9.3.1</bamboo.latest.version>
-        <bitbucket.compile.version>7.17.18</bitbucket.compile.version>
-        <bitbucket.latest.version>8.12.0</bitbucket.latest.version>
-        <confluence.compile.version>7.13.19</confluence.compile.version>
-        <confluence.latest.version>8.4.0</confluence.latest.version>
-        <crowd.compile.version>4.4.5</crowd.compile.version>
-        <crowd.latest.version>5.1.3</crowd.latest.version>
-        <fecru.compile.version>4.8.10-20220620091927</fecru.compile.version>
+
+        <bamboo.eldest-supported.version>9.2.16</bamboo.eldest-supported.version>
+        <bitbucket.eldest-supported.version>8.9.17</bitbucket.eldest-supported.version>
+        <confluence.eldest-supported.version>7.19.25</confluence.eldest-supported.version>
+        <!-- Test with a Plat 7 product that's compiled against the eldest version to
+                catch unexpected incompatibility -->
+        <confluence.latest.version>9.0.0-m135</confluence.latest.version>
+        <crowd.eldest-supported.version>6.0.0</crowd.eldest-supported.version>
         <fecru.latest.version>4.8.10-20220620091927</fecru.latest.version>
-        <jackson.version>1.9.14-atlassian-6</jackson.version>
-        <jira.compile.version>8.20.24</jira.compile.version>
-        <jira.latest.version>9.10.0</jira.latest.version>
-        <platform.version>5.0.32</platform.version>
-        <refapp.compile.version>5.2.6</refapp.compile.version>
-        <refapp.latest.version>6.2.2</refapp.latest.version>
+        <jira.eldest-supported.version>9.4.22</jira.eldest-supported.version>
+
+        <!-- Use platform 6.5 to ensure compatibility with REST v1 and v2 -->
+        <platform.version>6.5.15</platform.version>
+        <!-- Test with a Platform 6.5 product for when REST v1 and v2 are around -->
+        <refapp.version>${platform.version}</refapp.version>
+
         <!-- Override this to test in a different product -->
         <product>refapp</product>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
         <!-- For ease of testing -->
         <rest.api.browser.anonymous>true</rest.api.browser.anonymous>
     </properties>
@@ -66,36 +67,104 @@
     <dependencyManagement>
         <dependencies>
             <dependency>
-                <groupId>com.atlassian.platform</groupId>
-                <artifactId>platform</artifactId>
+                <groupId>com.atlassian.platform.dependencies</groupId>
+                <artifactId>platform-public-api</artifactId>
                 <version>${platform.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
-            </dependency>
-            <dependency>
-                <groupId>com.atlassian.platform</groupId>
-                <artifactId>third-party</artifactId>
-                <version>${platform.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-            <dependency>
-                <groupId>org.codehaus.jackson</groupId>
-                <artifactId>jackson-mapper-asl</artifactId>
-                <version>${jackson.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.codehaus.jackson</groupId>
-                <artifactId>jackson-core-asl</artifactId>
-                <version>${jackson.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
+
     <dependencies>
+        <dependency>
+            <groupId>jakarta.servlet</groupId>
+            <artifactId>jakarta.servlet-api</artifactId>
+            <version>4.0.4</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.inject</groupId>
+            <artifactId>jakarta.inject-api</artifactId>
+            <version>1.0.5</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.ws.rs</groupId>
+            <artifactId>jakarta.ws.rs-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>com.atlassian.plugins</groupId>
+            <artifactId>atlassian-plugins-osgi-javaconfig</artifactId>
+            <version>0.6.0</version>
+            <scope>compile</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>com.thoughtworks.paranamer</groupId>
+            <artifactId>paranamer</artifactId>
+            <version>2.8</version>
+            <scope>compile</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>com.atlassian.annotations</groupId>
+            <artifactId>atlassian-annotations</artifactId>
+            <!-- Has annotations for Plat7 and is JDK 8 for back compat -->
+            <version>4.0.3</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.atlassian.plugins</groupId>
+            <artifactId>atlassian-plugins-api</artifactId>
+            <scope>provided</scope>
+            <!-- Prevent someone accidentally compiling against something that's a compatibility footgun -->
+            <exclusions>
+                <exclusion>
+                    <groupId>*</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>com.atlassian.plugins</groupId>
+            <artifactId>atlassian-plugins-webfragment-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.atlassian.prettyurls</groupId>
+            <artifactId>atlassian-pretty-urls-plugin</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.atlassian.plugins.rest</groupId>
+            <artifactId>atlassian-rest-common</artifactId>
+            <scope>provided</scope>
+            <!-- Prevent someone accidentally compiling against something that's a compatibility footgun -->
+            <exclusions>
+                <exclusion>
+                    <groupId>*</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>com.atlassian.sal</groupId>
+            <artifactId>sal-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.atlassian.templaterenderer</groupId>
+            <artifactId>atlassian-template-renderer-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
         <dependency>
             <groupId>com.atlassian.confluence</groupId>
             <artifactId>confluence</artifactId>
-            <version>${confluence.compile.version}</version>
+            <version>${confluence.eldest-supported.version}</version>
             <scope>provided</scope>
             <exclusions>
                 <exclusion>
@@ -112,92 +181,11 @@
                 </exclusion>
             </exclusions>
         </dependency>
-        <dependency>
-            <groupId>com.atlassian.plugins</groupId>
-            <artifactId>atlassian-plugins-api</artifactId>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.atlassian.plugins</groupId>
-            <artifactId>atlassian-plugins-osgi-javaconfig</artifactId>
-            <version>0.5.2</version>
-        </dependency>
-        <dependency>
-            <groupId>com.atlassian.plugins</groupId>
-            <artifactId>atlassian-plugins-webfragment-api</artifactId>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.atlassian.plugins.rest</groupId>
-            <artifactId>atlassian-rest-module</artifactId>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.atlassian.sal</groupId>
-            <artifactId>sal-api</artifactId>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.atlassian.templaterenderer</groupId>
-            <artifactId>atlassian-template-renderer-api</artifactId>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.atlassian.templaterenderer</groupId>
-            <artifactId>atlassian-template-renderer-velocity16-plugin</artifactId>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.atlassian.prettyurls</groupId>
-            <artifactId>atlassian-pretty-urls-plugin</artifactId>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.atlassian.refapp</groupId>
-            <artifactId>atlassian-refapp-pageobjects</artifactId>
-            <version>${refapp.compile.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.atlassian.selenium</groupId>
-            <artifactId>atlassian-pageobjects-api</artifactId>
-            <version>3.3.2</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.thoughtworks.paranamer</groupId>
-            <artifactId>paranamer</artifactId>
-            <version>2.8</version>
-        </dependency>
-        <dependency>
-            <groupId>javax.servlet</groupId>
-            <artifactId>javax.servlet-api</artifactId>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>junit</groupId>
-            <artifactId>junit</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.httpcomponents</groupId>
-            <artifactId>httpclient</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.hamcrest</groupId>
-            <artifactId>hamcrest-library</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.mockito</groupId>
-            <artifactId>mockito-core</artifactId>
-            <scope>test</scope>
-        </dependency>
+
         <dependency>
             <groupId>org.osgi</groupId>
             <artifactId>osgi.core</artifactId>
-            <version>6.0.0</version>
+            <version>8.0.0</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
@@ -215,6 +203,42 @@
             <artifactId>spring-context</artifactId>
             <scope>provided</scope>
         </dependency>
+
+        <dependency>
+            <groupId>com.atlassian.refapp</groupId>
+            <artifactId>atlassian-refapp-pageobjects</artifactId>
+            <version>${refapp.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.atlassian.selenium</groupId>
+            <artifactId>atlassian-pageobjects-api</artifactId>
+            <version>3.3.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>4.13.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.httpcomponents</groupId>
+            <artifactId>httpclient</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.hamcrest</groupId>
+            <artifactId>hamcrest-library</artifactId>
+            <version>1.3</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <version>2.28.2</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -222,7 +246,7 @@
             <plugin>
                 <groupId>com.atlassian.maven.plugins</groupId>
                 <artifactId>amps-maven-plugin</artifactId>
-                <version>8.11.0</version>
+                <version>8.17.0</version>
                 <extensions>true</extensions>
                 <configuration>
                     <compressResources>false</compressResources>
@@ -232,6 +256,8 @@
                         <Export-Package>com.atlassian.labs.restbrowser.*</Export-Package>
                         <Import-Package>
                             com.atlassian.confluence.*;resolution:="optional",
+                            com.atlassian.annotations.security*;resolution:="optional",
+                            com.atlassian.plugins.rest.common.security*;resolution:="optional",
                             *
                         </Import-Package>
                         <Spring-Context>*</Spring-Context>
@@ -252,12 +278,12 @@
                     <products>
                         <product>
                             <id>bamboo</id>
-                            <version>${bamboo.latest.version}</version>
+                            <version>${bamboo.eldest-supported.version}</version>
                             <ajpPort>8010</ajpPort>
                         </product>
                         <product>
                             <id>bitbucket</id>
-                            <version>${bitbucket.latest.version}</version>
+                            <version>${bitbucket.eldest-supported.version}</version>
                             <ajpPort>8011</ajpPort>
                         </product>
                         <product>
@@ -267,7 +293,7 @@
                         </product>
                         <product>
                             <id>crowd</id>
-                            <version>${crowd.latest.version}</version>
+                            <version>${crowd.eldest-supported.version}</version>
                             <ajpPort>8013</ajpPort>
                         </product>
                         <product>
@@ -277,12 +303,12 @@
                         </product>
                         <product>
                             <id>jira</id>
-                            <version>${jira.latest.version}</version>
+                            <version>${jira.eldest-supported.version}</version>
                             <ajpPort>8015</ajpPort>
                         </product>
                         <product>
                             <id>refapp</id>
-                            <version>${refapp.latest.version}</version>
+                            <version>${refapp.version}</version>
                             <ajpPort>8016</ajpPort>
                         </product>
                     </products>
