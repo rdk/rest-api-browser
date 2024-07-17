@@ -10,7 +10,7 @@
 
     <groupId>com.atlassian.labs</groupId>
     <artifactId>rest-api-browser</artifactId>
-    <version>3.2.8-SNAPSHOT</version>
+    <version>3.2.8-a4b709b</version>
     <packaging>atlassian-plugin</packaging>
 
     <name>Atlassian REST API Browser</name>
@@ -27,7 +27,7 @@
         <connection>scm:git:ssh://git@bitbucket.org/atlassian/rest-api-browser.git</connection>
         <developerConnection>scm:git:ssh://git@bitbucket.org/atlassian/rest-api-browser.git</developerConnection>
         <url>https://bitbucket.org/atlassian/rest-api-browser</url>
-        <tag>HEAD</tag>
+        <tag>rest-api-browser-3.2.8-a4b709b</tag>
     </scm>
     <issueManagement>
         <system>Jira</system>
