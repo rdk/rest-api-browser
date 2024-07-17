@@ -10,7 +10,7 @@
 
     <groupId>com.atlassian.labs</groupId>
     <artifactId>rest-api-browser</artifactId>
-    <version>3.2.8-SNAPSHOT</version>
+    <version>3.2.9-SNAPSHOT</version>
     <packaging>atlassian-plugin</packaging>
 
     <name>Atlassian REST API Browser</name>
