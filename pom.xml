@@ -232,9 +232,10 @@
             <plugin>
                 <groupId>com.atlassian.maven.plugins</groupId>
                 <artifactId>amps-maven-plugin</artifactId>
-                <version>8.17.0</version>
+                <version>9.1.11</version>
                 <extensions>true</extensions>
                 <configuration>
+                    <containerId>tomcat10x</containerId>
                     <compressResources>false</compressResources>
                     <enableQuickReload>true</enableQuickReload>
                     <instructions>
