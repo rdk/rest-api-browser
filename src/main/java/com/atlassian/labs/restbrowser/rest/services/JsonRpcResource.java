@@ -6,19 +6,18 @@ import com.atlassian.labs.restbrowser.provider.SoapServiceProvider;
 import com.atlassian.labs.restbrowser.rest.model.JsonRpcMethod;
 import com.atlassian.plugin.Plugin;
 import com.atlassian.plugin.PluginAccessor;
-import com.atlassian.plugins.rest.common.security.AnonymousAllowed;
 import com.atlassian.sal.api.ApplicationProperties;
 import com.atlassian.templaterenderer.TemplateRenderer;
 import com.thoughtworks.paranamer.CachingParanamer;
 import com.thoughtworks.paranamer.Paranamer;
 
-import javax.inject.Inject;
-import javax.ws.rs.GET;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
+import jakarta.inject.Inject;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.lang.reflect.Method;
@@ -54,7 +53,6 @@ public class JsonRpcResource {
     @Path("/{pluginKey}/wadl")
     @Produces(MediaType.APPLICATION_XML)
     @AnonymousSiteAccess
-    @AnonymousAllowed
     public Response getWadlForService(@PathParam("pluginKey") String pluginKey) throws IOException {
         Plugin plugin = pluginAccessor.getEnabledPlugin(pluginKey);
         if (plugin == null) {
