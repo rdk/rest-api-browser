@@ -236,6 +236,9 @@
                 <extensions>true</extensions>
                 <configuration>
                     <containerId>tomcat10x</containerId>
+                    <skipVerifyFeManifestAssociations>true</skipVerifyFeManifestAssociations>
+                    <skipCopyFeModuleManifests>true</skipCopyFeModuleManifests>
+                    <skipReportFeManifestAssociations>true</skipReportFeManifestAssociations>
                     <compressResources>false</compressResources>
                     <enableQuickReload>true</enableQuickReload>
                     <instructions>
