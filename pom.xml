@@ -52,7 +52,7 @@
         <jira.eldest-supported.version>9.4.22</jira.eldest-supported.version>
 
         <!-- Use platform 6.5 to ensure compatibility with REST v1 and v2 -->
-        <platform.version>6.5.15</platform.version>
+        <platform.version>6.5.29</platform.version>
         <!-- Test with a Platform 6.5 product for when REST v1 and v2 are around -->
         <refapp.version>${platform.version}</refapp.version>
 
@@ -213,7 +213,7 @@
         <dependency>
             <groupId>com.atlassian.selenium</groupId>
             <artifactId>atlassian-pageobjects-api</artifactId>
-            <version>3.3.2</version>
+            <version>3.3.7</version>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -246,7 +246,7 @@
             <plugin>
                 <groupId>com.atlassian.maven.plugins</groupId>
                 <artifactId>amps-maven-plugin</artifactId>
-                <version>8.17.0</version>
+                <version>8.17.7</version>
                 <extensions>true</extensions>
                 <configuration>
                     <compressResources>false</compressResources>
