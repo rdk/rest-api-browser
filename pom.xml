@@ -39,6 +39,8 @@
     </ciManagement>
 
     <properties>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
         <atlassian.plugin.key>${project.groupId}.${project.artifactId}</atlassian.plugin.key>
 
         <bamboo.eldest-supported.version>9.2.16</bamboo.eldest-supported.version>
