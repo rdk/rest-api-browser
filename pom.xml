@@ -53,9 +53,7 @@
         <fecru.latest.version>4.8.10-20220620091927</fecru.latest.version>
         <jira.eldest-supported.version>9.4.22</jira.eldest-supported.version>
 
-        <!-- Use platform 6.5 to ensure compatibility with REST v1 and v2 -->
-        <platform.version>8.0.0-jakarta-m014</platform.version>
-        <!-- Test with a Platform 6.5 product for when REST v1 and v2 are around -->
+        <platform.version>8.0.0-m01</platform.version>
         <refapp.version>${platform.version}</refapp.version>
 
         <!-- Override this to test in a different product -->
@@ -201,7 +199,7 @@
         <dependency>
             <groupId>com.atlassian.selenium</groupId>
             <artifactId>atlassian-pageobjects-api</artifactId>
-            <version>3.3.7</version>
+            <version>4.0.0-m005</version>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -234,7 +232,7 @@
             <plugin>
                 <groupId>com.atlassian.maven.plugins</groupId>
                 <artifactId>amps-maven-plugin</artifactId>
-                <version>9.1.11</version>
+                <version>9.3.2</version>
                 <extensions>true</extensions>
                 <configuration>
                     <containerId>tomcat10x</containerId>
