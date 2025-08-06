@@ -1,5 +1,5 @@
-product: DC Core
-team: Unicorns
+product: DC Core Platform
+team: DC Core Platform - Backend
 fileAllSnykTicketsNow: true
 lowerSeverityPaths:
   - path: src/test/**
