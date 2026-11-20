@@ -53,7 +53,7 @@
         <fecru.latest.version>4.8.10-20220620091927</fecru.latest.version>
         <jira.eldest-supported.version>9.4.22</jira.eldest-supported.version>
 
-        <platform.version>8.0.0-m01</platform.version>
+        <platform.version>8.0.0</platform.version>
         <refapp.version>${platform.version}</refapp.version>
 
         <!-- Override this to test in a different product -->
