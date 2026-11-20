@@ -184,6 +184,11 @@
                     <groupId>xalan</groupId>
                     <artifactId>xalan</artifactId>
                 </exclusion>
+                <!-- via atlassian-renderer-legacy; not in any public repository (only in the Plugin SDK's), not needed -->
+                <exclusion>
+                    <groupId>javax.activation</groupId>
+                    <artifactId>activation</artifactId>
+                </exclusion>
             </exclusions>
         </dependency>
 
