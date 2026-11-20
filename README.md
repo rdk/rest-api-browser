@@ -89,8 +89,8 @@ npm install && npx grunt
 ```
 
 In dev mode (`-Datlassian.dev.mode=true`, which the Atlassian Plugin SDK sets for the products it starts) the page loads
-the scripts one by one instead. The committed bundle dates from 2020 and does not contain Atlassian's 2024 change to
-`process-wadl.js`; it passes the real-Jira checks on Jira 11.3.13 outside dev mode (`JIRA_DEV_MODE=false`).
+the scripts one by one instead. Since 4.1.0 the bundle holds the same scripts as dev mode, including underscore and
+Atlassian's 2024 change to `process-wadl.js`; 4.0.5 and earlier ship a bundle built in 2020.
 
 ## License
 

@@ -11,3 +11,4 @@ node_modules
 src/test/jira/shots/
 src/test/jira/__pycache__/
 src/test/jira/local.env
+src/main/resources/assets/rab/package-lock.json

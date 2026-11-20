@@ -27,6 +27,7 @@ module.exports = function(grunt) {
             ,'vendor/codemirror-3.15/addon/search/match-highlighter.js'
             ,'vendor/ui-utils/modules/unique/unique.js'
             ,'vendor/ui-codemirror.min.js'
+            ,'vendor/underscore-umd.js'
             ,'process-wadl.js'
             ,'app.js'
             ,'services/rest_resources_service.js'

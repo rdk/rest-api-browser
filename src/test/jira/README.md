@@ -99,12 +99,13 @@ Never `taskkill /IM java.exe`: it would also kill every other Java process.
 
 ## Last verified
 
-2026-11-20, Jira 11.3.13 (build 11030014) on JDK 21, SDK 9.11.2 (AMPS 9.11.2, Tomcat 10.1.61), plugin 4.0.5
-built against Platform 8.0.0:
+2026-11-20, Jira 11.3.13 (build 11030014) on JDK 21, SDK 9.11.2 (AMPS 9.11.2, Tomcat 10.1.61), plugin 4.0.5 and
+4.1.0 built against Platform 8.0.0:
 
 - dev mode: `smoke_jira.py` 28 checks passed (116 REST modules on the page, 114 WADLs loaded, all served),
   `ui_jira.js` 14 checks passed (261 public resources, 1360 in all);
-- outside dev mode (`JIRA_DEV_MODE=false`, the bundle from 2020): `smoke_jira.py --expect-bundle` 29 checks passed
+- outside dev mode (`JIRA_DEV_MODE=false`; the bundle from 2020 in 4.0.5, the rebuilt one in 4.1.0):
+  `smoke_jira.py --expect-bundle` 29 checks passed
   (113 of 114 WADLs served), `ui_jira.js` 14 checks passed (261 public resources, 1344 in all), with a `WARN` for the
   OAuth 2.0 WADL (see *Things to know*).
 
