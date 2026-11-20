@@ -17,7 +17,7 @@
 #   JIRA_WORKDIR    AMPS work directory (Jira home)   (default $HOME/jira-rab-$JIRA_VERSION-$JIRA_HTTP_PORT)
 #   JIRA_SDK_HOME   Atlassian Plugin SDK, 9.11+       (default: atlas-run-standalone on the PATH; ATLAS_HOME is not
 #                                                     used, so an older SDK there is not picked up by accident)
-#   JIRA_JAVA_HOME  JDK that runs AMPS and Jira       (default $JAVA_HOME; Jira 11 supports 17 and 21)
+#   JIRA_JAVA_HOME  JDK that runs AMPS and Jira       (default $JAVA_HOME; Jira 11 runs on Java 21 only)
 #   JIRA_START_TIMEOUT  seconds to wait for Jira      (default 1800, the first start downloads the WAR)
 #
 # The Jira is reachable at http://localhost:$JIRA_HTTP_PORT/jira with admin/admin. Delete the work directory to start
@@ -137,13 +137,13 @@ launch() {
     # $1 = "bg" or "fg"
     local atlas
     atlas="$(atlas_cmd)" || exit 2
-    [ -n "$JIRA_JAVA_HOME" ] || die "no JDK: set JIRA_JAVA_HOME (or JAVA_HOME) to a JDK 17 or 21"
+    [ -n "$JIRA_JAVA_HOME" ] || die "no JDK: set JIRA_JAVA_HOME (or JAVA_HOME) to a JDK 21"
     [ -x "$JIRA_JAVA_HOME/bin/java" ] || [ -x "$JIRA_JAVA_HOME/bin/java.exe" ] || die "no JDK at $JIRA_JAVA_HOME (set JIRA_JAVA_HOME)"
     local java_version
     java_version="$("$JIRA_JAVA_HOME/bin/java" -version 2>&1 | head -1)"
-    case "$java_version" in
-        *'"17'*|*'"21'*) ;;
-        *) echo "jira.sh: warning: Jira 11 supports JDK 17 and 21, not $java_version (set JIRA_JAVA_HOME)" >&2 ;;
+    case "$JIRA_VERSION:$java_version" in
+        11.*:*'"21'*) ;;
+        11.*:*) echo "jira.sh: warning: Jira 11 runs on Java 21 only, not $java_version (set JIRA_JAVA_HOME)" >&2 ;;
     esac
     mkdir -p "$JIRA_WORKDIR"
     cd "$JIRA_WORKDIR" || die "cannot enter $JIRA_WORKDIR"

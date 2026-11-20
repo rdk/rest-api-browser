@@ -16,8 +16,8 @@ and Seraph login, UPM install).
 - Atlassian Plugin SDK **9.11+** (AMPS 9.11, needed for Jira 11): `atlas-run-standalone` on the `PATH`, or set
   `JIRA_SDK_HOME` to the SDK's directory. `jira.sh` ignores `ATLAS_HOME`, so an older SDK there is not picked up by
   accident.
-- JDK **17 or 21** (the versions Jira 11 supports): set `JIRA_JAVA_HOME`, else `JAVA_HOME` is used. `jira.sh` warns
-  about another version.
+- JDK **21** (Jira 11 runs on Java 21 only): set `JIRA_JAVA_HOME`, else `JAVA_HOME` is used. `jira.sh` warns about
+  another version.
 - Machine-specific settings can go into `src/test/jira/local.env` (git-ignored), which `jira.sh` sources, for example:
 
   ```bash
@@ -106,5 +106,7 @@ WADLs loaded, all served), `ui_jira.js` 13 checks passed (261 public resources, 
   `application/vnd.atl.plugins.plugin+json`.
 - `ui_jira.js` sends Basic credentials only with the page and its XHRs (the WADLs). With Basic credentials on every
   static resource request Jira's decorator drops the session mid-response.
+- The SDK starts Jira in dev mode (`atlassian.dev.mode=true`), in which the page loads its scripts one by one: the
+  checks do not cover `rest-api-browser.min.js`, the bundle a Jira outside dev mode serves.
 - The standalone Jira does not set `-Drest.api.browser.anonymous=true` (the refapp of `mvn verify` does), so an
   anonymous user is sent to the login page; that is what `smoke_jira.py` expects.
