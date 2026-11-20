@@ -1,0 +1,35 @@
+# Pushing a tag such as 4.0.5 builds the jar of that version and creates a draft release with it. Check the jar,
+# write the release notes and publish the draft by hand.
+name: Release
+
+on:
+  push:
+    tags: ['[0-9]+.[0-9]+.[0-9]+']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Check that the tag is the version in pom.xml
+        run: |
+          version="$(mvn -B -ntp -q help:evaluate -Dexpression=project.version -DforceStdout)"
+          if [ "$version" != "$GITHUB_REF_NAME" ]; then
+            echo "pom.xml has version $version, the tag is $GITHUB_REF_NAME"
+            exit 1
+          fi
+      - run: mvn -B -ntp package -DskipTests
+      - name: Create a draft release with the jar
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "target/rest-api-browser-$GITHUB_REF_NAME.jar" \
+            --draft --title "$GITHUB_REF_NAME" --notes "Built by GitHub Actions from $GITHUB_SHA."

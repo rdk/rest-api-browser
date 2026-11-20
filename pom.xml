@@ -13,8 +13,13 @@
     <version>4.0.0-SNAPSHOT</version>
     <packaging>atlassian-plugin</packaging>
 
-    <name>Atlassian REST API Browser</name>
-    <description>Discover, browse, and try Atlassian's rich set of REST and JSON-RPC APIs</description>
+    <name>REST API Browser</name>
+    <description>Discover, browse, and try the REST and JSON-RPC APIs of Atlassian products. Unofficial fork of Atlassian's REST API Browser.</description>
+    <url>https://github.com/rdk/rest-api-browser</url>
+    <organization>
+        <name>rdk</name>
+        <url>https://github.com/rdk/rest-api-browser</url>
+    </organization>
     <licenses>
         <license>
             <name>Apache License 2.0</name>
@@ -24,19 +29,33 @@
     </licenses>
 
     <scm>
-        <connection>scm:git:ssh://git@bitbucket.org/atlassian/rest-api-browser.git</connection>
-        <developerConnection>scm:git:ssh://git@bitbucket.org/atlassian/rest-api-browser.git</developerConnection>
-        <url>https://bitbucket.org/atlassian/rest-api-browser</url>
+        <connection>scm:git:https://github.com/rdk/rest-api-browser.git</connection>
+        <developerConnection>scm:git:git@github.com:rdk/rest-api-browser.git</developerConnection>
+        <url>https://github.com/rdk/rest-api-browser</url>
         <tag>HEAD</tag>
     </scm>
     <issueManagement>
-        <system>Jira</system>
-        <url>https://ecosystem.atlassian.net/browse/RAB</url>
+        <system>GitHub</system>
+        <url>https://github.com/rdk/rest-api-browser/issues</url>
     </issueManagement>
     <ciManagement>
-        <system>Bamboo</system>
-        <url>https://ecosystem-bamboo.internal.atlassian.com/browse/RESTAB-RESTAB</url>
+        <system>GitHub Actions</system>
+        <url>https://github.com/rdk/rest-api-browser/actions</url>
     </ciManagement>
+
+    <!-- The Atlassian dependencies, the parent POM and AMPS are in Atlassian's public repository -->
+    <repositories>
+        <repository>
+            <id>atlassian-public</id>
+            <url>https://packages.atlassian.com/maven/repository/public</url>
+        </repository>
+    </repositories>
+    <pluginRepositories>
+        <pluginRepository>
+            <id>atlassian-public</id>
+            <url>https://packages.atlassian.com/maven/repository/public</url>
+        </pluginRepository>
+    </pluginRepositories>
 
     <properties>
         <maven.compiler.source>21</maven.compiler.source>

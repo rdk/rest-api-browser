@@ -1,0 +1,27 @@
+name: Build
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      # the integration test (mvn verify) needs a browser and a refapp: run it locally, see README.md
+      - run: mvn -B -ntp package -DskipTests
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rest-api-browser-jar
+          path: target/rest-api-browser-*.jar

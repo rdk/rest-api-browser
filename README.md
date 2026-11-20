@@ -1,8 +1,8 @@
-Atlassian REST API Browser
-==========================
+REST API Browser
+================
 
 > [!NOTE]
-> **Unofficial fork** of Atlassian's archived [rest-api-browser](https://bitbucket.org/atlassian/rest-api-browser) 4.0.0 (Platform 8, Jakarta).
+> **Unofficial fork** of Atlassian's archived [REST API Browser](https://bitbucket.org/atlassian/rest-api-browser) 4.0.0 (Platform 8, Jakarta).
 > It builds again (against Platform 8.0.0 instead of the 8.0.0-m01 milestone, which no longer resolves) and is tested
 > on Jira Data Center 11.3.13; see [Testing](#testing). The crossed-out notice below is Atlassian's.
 
@@ -12,11 +12,11 @@ Atlassian REST API Browser
 
 ## Description
 
-The Atlassian REST API Browser add-on allows a developer to browse, discover, and test Atlassian's rich REST and JSON-RPC APIs.
+The REST API Browser add-on allows a developer to browse, discover, and test Atlassian's rich REST and JSON-RPC APIs.
 
 ## Compatibility
 
-| Product | This fork (4.0.0-SNAPSHOT) | Atlassian's latest release | Officially compatible with |
+| Product | This fork (4.0.5 and later) | Atlassian's latest release | Officially compatible with |
 |---|---|---|---|
 | Jira Software, Jira Service Management | 11.x, tested on Jira 11.3.13 | 3.2.8 | 9.4 – 10.x |
 | Confluence | 10.x (untested) | 3.2.8 | 7.19 – 9.x |
@@ -38,9 +38,10 @@ The Atlassian REST API Browser add-on allows a developer to browse, discover, an
 
 ## Install
 
-There is no download: [build](#build) the jar, then upload `target/rest-api-browser-4.0.0-SNAPSHOT.jar` in the product
-under **Manage apps → Upload app**. Products disable uploads by default: start the product with the JVM flag
-`-Dupm.plugin.upload.enabled=true` first.
+Download `rest-api-browser-<version>.jar` from [Releases](https://github.com/rdk/rest-api-browser/releases) (or
+[build](#build) it), then upload it in the product under **Manage apps → Upload app**. Products disable uploads by
+default: start the product with the JVM flag `-Dupm.plugin.upload.enabled=true` first. The plugin keeps Atlassian's
+plugin key, so it replaces Atlassian's REST API Browser if that is installed.
 
 ## Usage
 
@@ -54,14 +55,15 @@ lets them use the page too, so anyone who can reach the product can open it.
 
 ## Build
 
-Needs JDK 21 and Maven 3.9. The `pom.xml` declares no repositories, so Maven has to reach Atlassian's repository
-(`https://maven.atlassian.com/repository/public`) through `~/.m2/settings.xml`, or you build with `atlas-mvn` from the
-Atlassian Plugin SDK, which is set up for it.
+Needs JDK 21 and Maven 3.9; `pom.xml` declares Atlassian's public Maven repository, where the dependencies are.
 
 ```bash
-mvn -B clean package -DskipTests   # target/rest-api-browser-4.0.0-SNAPSHOT.jar
+mvn -B clean package -DskipTests   # target/rest-api-browser-<version>.jar
 mvn -B verify                      # also runs the integration test against the refapp
 ```
+
+GitHub Actions builds every push. Pushing a tag such as `4.0.5` (the version in `pom.xml`) builds that jar and
+creates a draft release with it.
 
 ## Testing
 

@@ -99,8 +99,8 @@ Never `taskkill /IM java.exe`: it would also kill every other Java process.
 
 ## Last verified
 
-2026-11-20, Jira 11.3.13 (build 11030014) on JDK 21, SDK 9.11.2 (AMPS 9.11.2, Tomcat 10.1.61), plugin
-4.0.0-SNAPSHOT built against Platform 8.0.0:
+2026-11-20, Jira 11.3.13 (build 11030014) on JDK 21, SDK 9.11.2 (AMPS 9.11.2, Tomcat 10.1.61), plugin 4.0.5
+built against Platform 8.0.0:
 
 - dev mode: `smoke_jira.py` 28 checks passed (116 REST modules on the page, 114 WADLs loaded, all served),
   `ui_jira.js` 14 checks passed (261 public resources, 1360 in all);
@@ -134,6 +134,8 @@ Never `taskkill /IM java.exe`: it would also kill every other Java process.
   so `jira.sh` also starts Jira with `-Dupm.plugin.upload.enabled=true`, passed as AMPS's `jvmargs` property: the
   SDK's `--jvmargs` option would split it at the `=` on Windows.
 - Outside dev mode Jira's OAuth 2.0 module refuses its WADL over HTTP (400 "Please ensure that your server is using
-  HTTPS…"), so both scripts print a `WARN` for `/rest/oauth2/1.0/application.wadl`.
+  HTTPS…"), so both scripts print a `WARN` for `/rest/oauth2/1.0/application.wadl`. Jira's
+  `/rest/projects/1.0/application.wadl` now and then answers 500 (an error in Jira's WADL generator, in
+  `atlassian-jira.log`); it is one of the few WADLs both scripts tolerate.
 - The standalone Jira does not set `-Drest.api.browser.anonymous=true` (the refapp of `mvn verify` does), so an
   anonymous user is sent to the login page; that is what `smoke_jira.py` expects.
