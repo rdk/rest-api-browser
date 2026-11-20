@@ -9,7 +9,7 @@ and Seraph login, UPM install).
 |---|---|
 | `jira.sh` | Starts, waits for, shows and stops a throwaway Jira (`atlas-run-standalone`) in its own work directory and port. |
 | `smoke_jira.py` | Installs the plugin jar through UPM and checks it over HTTP: all modules enabled, the page as admin (search field, checkbox, Jira's decorator, product name), the list of REST modules on the page and **every WADL on it** (the sidebar is built from them), the plugin's web resources and Angular views, its REST resources (`/rest/devtools/1/ewadl`, `jsonrpc/{key}/wadl`, 404 for an unknown plugin), the pretty URL `/restbrowser`, the redirect of an anonymous user to the login page, and no error or stack trace of the plugin in `atlassian-jira.log` since the run started. |
-| `ui_jira.js` | The page in headless Edge/Chrome: Angular starts, the public APIs load into the sidebar with `api/2` among them, the "Show only public APIs" checkbox is on by default and can be turned off (what `RestApiBrowserSmokeTest` checks on the refapp), all APIs then load, search narrows the list, `api/2/serverInfo` shows its `GET` method and **Send** shows Jira's answer; no JavaScript exception from the plugin and no failed request for its resources or the WADLs. Screenshots in `shots/` (git-ignored). |
+| `ui_jira.js` | The page in headless Edge/Chrome: Angular starts, the public APIs load into the sidebar with `api/2` among them, the "Show only public APIs" checkbox is on by default and can be turned off (what `RestApiBrowserSmokeTest` checks on the refapp), all APIs then load, search narrows the list, `api/2/serverInfo` shows its `GET` method and **Send** shows Jira's answer; no JavaScript exception from the plugin, no failed request for its own resources, and at least 95% of the WADLs load. Screenshots in `shots/` (git-ignored). |
 
 ## Prerequisites
 
@@ -41,6 +41,16 @@ node src/test/jira/ui_jira.js
 src/test/jira/jira.sh stop                             # or keep it running for the next build
 ```
 
+The SDK starts Jira in dev mode, where the page loads its scripts one by one. To check what a production Jira serves,
+the bundle `rest-api-browser.min.js`, run the same outside dev mode:
+
+```bash
+JIRA_DEV_MODE=false src/test/jira/jira.sh start
+python src/test/jira/smoke_jira.py --expect-jira 11.3.13 --expect-bundle
+node src/test/jira/ui_jira.js
+src/test/jira/jira.sh stop
+```
+
 `jira.sh start` returns when Jira answers and its base URL matches the port (see *Things to know*). The first start
 of a work directory downloads the WAR, Tomcat and dependencies and sets up Jira (about 10 minutes, Jira itself about
 5); later starts take about 2 minutes. `jira.sh run` does the same in the foreground (for a terminal
@@ -48,7 +58,9 @@ of its own, or a CI job that keeps it as a background step); `jira.sh wait` then
 
 Settings (environment or `local.env`): `JIRA_VERSION` (default `11.3.13`), `JIRA_HTTP_PORT` (`2992`),
 `JIRA_AJP_PORT` (`8020`), `JIRA_WORKDIR` (`$HOME/jira-rab-$JIRA_VERSION-$JIRA_HTTP_PORT`), `JIRA_SDK_HOME`,
-`JIRA_JAVA_HOME`, `JIRA_START_TIMEOUT` (seconds, `1800`). For another Jira version, set `JIRA_VERSION` for both:
+`JIRA_JAVA_HOME`, `JIRA_START_TIMEOUT` (seconds, `1800`), `JIRA_DEV_MODE` (`true`; `false` starts Jira outside dev
+mode). A running Jira keeps its mode: stop it before starting it in the other one. For another Jira version, set
+`JIRA_VERSION` for both:
 
 ```bash
 JIRA_VERSION=11.3.8 JIRA_HTTP_PORT=2993 JIRA_AJP_PORT=8021 src/test/jira/jira.sh start
@@ -64,6 +76,7 @@ The checks take `JIRA_URL` (default `http://localhost:2992/jira`), `JIRA_USER` a
 - `--uninstall`: uninstall it at the end (by default it stays installed, so the page can be tried by hand at
   `http://localhost:2992/jira/plugins/servlet/restbrowser`);
 - `--expect-jira VERSION`: fail unless Jira reports that version;
+- `--expect-bundle`: fail unless the page loads the bundle `rest-api-browser.min.js` (Jira outside dev mode);
 - `--jira-log PATH`: the `atlassian-jira.log` to scan (default: the `jira.sh` one,
   `$JIRA_WORKDIR/amps-standalone-jira-<version>/target/jira/home/log/atlassian-jira.log`);
 - `--allow-remote`: it installs and removes plugins, so it refuses a host other than localhost without it.
@@ -80,14 +93,23 @@ again from a fresh Jira.
 
 `jira.sh stop` closes AMPS's standard input (a `tail -f /dev/null` keeps it open; AMPS shuts Jira down on EOF) and,
 if Jira still listens after 2 minutes, kills the process listening on the port **by PID** with its child processes.
+When AMPS exits, its run kills its own `tail` (also after a failed start) and no other, so `jira.sh stop` followed at
+once by `jira.sh start` is safe.
 Never `taskkill /IM java.exe`: it would also kill every other Java process.
 
 ## Last verified
 
 2026-11-20, Jira 11.3.13 (build 11030014) on JDK 21, SDK 9.11.2 (AMPS 9.11.2, Tomcat 10.1.61), plugin
-4.0.0-SNAPSHOT built against Platform 8.0.0: `smoke_jira.py` 28 checks passed (116 REST modules on the page, 114
-WADLs loaded, all served), `ui_jira.js` 13 checks passed (261 public resources, 1360 in all). `ui_jira.js` prints two
-`WARN failed request` lines that are Jira's own (`/rest/qr/batching` 404, `/rest/analytics/1.0/publish/bulk` 401).
+4.0.0-SNAPSHOT built against Platform 8.0.0:
+
+- dev mode: `smoke_jira.py` 28 checks passed (116 REST modules on the page, 114 WADLs loaded, all served),
+  `ui_jira.js` 14 checks passed (261 public resources, 1360 in all);
+- outside dev mode (`JIRA_DEV_MODE=false`, the bundle from 2020): `smoke_jira.py --expect-bundle` 29 checks passed
+  (113 of 114 WADLs served), `ui_jira.js` 14 checks passed (261 public resources, 1344 in all), with a `WARN` for the
+  OAuth 2.0 WADL (see *Things to know*).
+
+`ui_jira.js` also prints two `WARN failed request` lines that are Jira's own (`/rest/qr/batching` 404,
+`/rest/analytics/1.0/publish/bulk` 401).
 
 ## Things to know
 
@@ -106,7 +128,12 @@ WADLs loaded, all served), `ui_jira.js` 13 checks passed (261 public resources, 
   `application/vnd.atl.plugins.plugin+json`.
 - `ui_jira.js` sends Basic credentials only with the page and its XHRs (the WADLs). With Basic credentials on every
   static resource request Jira's decorator drops the session mid-response.
-- The SDK starts Jira in dev mode (`atlassian.dev.mode=true`), in which the page loads its scripts one by one: the
-  checks do not cover `rest-api-browser.min.js`, the bundle a Jira outside dev mode serves.
+- **Dev mode**: AMPS starts Jira with `-Datlassian.dev.mode=true` unless the Maven JVM already has that property.
+  `JIRA_DEV_MODE=false` sets it through `ATLAS_OPTS` (the SDK's launcher replaces `MAVEN_OPTS` with
+  `-Xms512M -Xmx768M $ATLAS_OPTS`). Outside dev mode UPM refuses uploads ("Plugins cannot be installed via upload"),
+  so `jira.sh` also starts Jira with `-Dupm.plugin.upload.enabled=true`, passed as AMPS's `jvmargs` property: the
+  SDK's `--jvmargs` option would split it at the `=` on Windows.
+- Outside dev mode Jira's OAuth 2.0 module refuses its WADL over HTTP (400 "Please ensure that your server is using
+  HTTPS…"), so both scripts print a `WARN` for `/rest/oauth2/1.0/application.wadl`.
 - The standalone Jira does not set `-Drest.api.browser.anonymous=true` (the refapp of `mvn verify` does), so an
   anonymous user is sent to the login page; that is what `smoke_jira.py` expects.

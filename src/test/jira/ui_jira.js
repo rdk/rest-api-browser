@@ -59,6 +59,7 @@ function check(name, ok, detail) {
 
         let id = 0;
         const pending = {}, exceptions = [], failedRequests = [], requests = {};
+        let wadlRequests = 0;
         const authHeader = 'Basic ' + Buffer.from(USER + ':' + PASS).toString('base64');
         ws.onmessage = m => {
             const d = JSON.parse(m.data);
@@ -75,6 +76,7 @@ function check(name, ok, detail) {
                 ws.send(JSON.stringify({ id: ++id, method: 'Fetch.continueRequest', params: { requestId: p.requestId, headers } }));
             } else if (d.method === 'Network.requestWillBeSent') {
                 requests[d.params.requestId] = d.params.request.url;
+                if (/application\.wadl/.test(d.params.request.url)) wadlRequests++;
             } else if (d.method === 'Network.responseReceived') {
                 const r = d.params.response;
                 if (r.status >= 400) failedRequests.push(r.status + ' ' + r.url);
@@ -162,8 +164,13 @@ function check(name, ok, detail) {
         const ownErrors = exceptions.filter(e => /rest-api-browser|restbrowser|\brab\b/i.test(e));
         check('no JavaScript exception from the plugin\'s scripts', ownErrors.length === 0, ownErrors);
         exceptions.filter(e => !ownErrors.includes(e)).forEach(e => console.log('WARN JavaScript exception (not the plugin\'s): ' + e));
-        const ownFailures = failedRequests.filter(u => /rest-api-browser|restbrowser|application\.wadl|devtools/i.test(u));
-        check('no failed request for the plugin\'s resources or the WADLs', ownFailures.length === 0, ownFailures.slice(0, 10));
+        const ownFailures = failedRequests.filter(u => /rest-api-browser|restbrowser|devtools/i.test(u));
+        check('no failed request for the plugin\'s own resources', ownFailures.length === 0, ownFailures.slice(0, 10));
+        // a WADL is Jira's (or an app's) to serve: some refuse in some setups, e.g. OAuth 2.0 needs HTTPS outside
+        // dev mode. Like smoke_jira.py, at least 95% have to load.
+        const wadlFailures = failedRequests.filter(u => /application\.wadl/.test(u) && !ownFailures.includes(u));
+        check(`at least 95% of the WADLs load (${wadlRequests - wadlFailures.length} of ${wadlRequests})`,
+            wadlRequests > 0 && wadlFailures.length <= 0.05 * wadlRequests, wadlFailures.slice(0, 10));
         failedRequests.filter(u => !ownFailures.includes(u)).forEach(u => console.log('WARN failed request: ' + u));
         console.log(`Screenshots: ${OUT}`);
     } catch (e) {

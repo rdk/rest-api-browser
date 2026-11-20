@@ -143,6 +143,9 @@ def install(j, jar):
     s, text, _ = j.call('POST', '/rest/plugins/1.0/?token=' + urllib.parse.quote(token), body=body,
                         headers={'Content-Type': 'multipart/form-data; boundary=' + boundary}, timeout=300)
     if not check('UPM accepts the upload', s in (200, 202), (s, text[:300])):
+        if 'via upload' in text:
+            print('  UPM disables uploads outside dev mode: start Jira with -Dupm.plugin.upload.enabled=true '
+                  '(jira.sh does with JIRA_DEV_MODE=false), or use --no-install')
         return False
     want = jar_version(jar)
     info, same_other = None, 0
@@ -192,6 +195,8 @@ def main():
     ap.add_argument('--no-install', action='store_true', help='check the installed plugin, do not upload a jar')
     ap.add_argument('--uninstall', action='store_true', help='uninstall the plugin at the end')
     ap.add_argument('--expect-jira', help='fail unless Jira reports this version (e.g. 11.3.13)')
+    ap.add_argument('--expect-bundle', action='store_true',
+                    help='fail unless the page loads the bundle rest-api-browser.min.js (Jira outside dev mode)')
     ap.add_argument('--jira-log', help='atlassian-jira.log to scan for the plugin\'s errors (default: the jira.sh one)')
     ap.add_argument('--allow-remote', action='store_true', help='allow a host other than localhost')
     a = ap.parse_args()
@@ -302,6 +307,13 @@ def main():
         check('the plugin\'s %d web resource URLs on the page answer 200 with content' % len(res), not res_bad, res_bad)
     else:
         skip('the plugin\'s web resources', 'the page has no URL naming the plugin (batched with others)')
+    # outside dev mode the page loads the bundle rest-api-browser.min.js (web resource assets-production), in dev mode
+    # the scripts one by one (assets-devmode)
+    bundle = any(':assets-production' in u for u in res)
+    print('The page loads its scripts %s' % ('as the bundle rest-api-browser.min.js' if bundle else
+          'one by one (dev mode)' if any(':assets-devmode' in u for u in res) else 'from no URL naming the plugin'))
+    if a.expect_bundle:
+        check('the page loads the bundle rest-api-browser.min.js (Jira outside dev mode)', bundle, res)
     s, body, _ = j.call('GET', '/download/resources/%s:assets-production/rest-api-browser.min.js' % PLUGIN_KEY, auth=False)
     check('the production JavaScript bundle is served', s == 200 and 'RAB' in body, s)
     # the Angular routes load their views from the plugin's "rab/" download resource (app.js, resourcePrefix)

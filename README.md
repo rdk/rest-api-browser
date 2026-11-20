@@ -39,7 +39,8 @@ The Atlassian REST API Browser add-on allows a developer to browse, discover, an
 ## Install
 
 There is no download: [build](#build) the jar, then upload `target/rest-api-browser-4.0.0-SNAPSHOT.jar` in the product
-under **Manage apps → Upload app**.
+under **Manage apps → Upload app**. Products disable uploads by default: start the product with the JVM flag
+`-Dupm.plugin.upload.enabled=true` first.
 
 ## Usage
 
@@ -85,9 +86,9 @@ cd src/main/resources/assets/rab
 npm install && npx grunt
 ```
 
-In dev mode (`-Datlassian.dev.mode=true`, which the Atlassian Plugin SDK sets for the products it starts, including the
-Jira of `src/test/jira`) the page loads the scripts one by one instead. The committed bundle dates from 2020 and does
-not contain Atlassian's 2024 change to `process-wadl.js` yet.
+In dev mode (`-Datlassian.dev.mode=true`, which the Atlassian Plugin SDK sets for the products it starts) the page loads
+the scripts one by one instead. The committed bundle dates from 2020 and does not contain Atlassian's 2024 change to
+`process-wadl.js`; it passes the real-Jira checks on Jira 11.3.13 outside dev mode (`JIRA_DEV_MODE=false`).
 
 ## License
 

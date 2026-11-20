@@ -18,6 +18,8 @@
 #   JIRA_SDK_HOME   Atlassian Plugin SDK, 9.11+       (default: atlas-run-standalone on the PATH; ATLAS_HOME is not
 #                                                     used, so an older SDK there is not picked up by accident)
 #   JIRA_JAVA_HOME  JDK that runs AMPS and Jira       (default $JAVA_HOME; Jira 11 runs on Java 21 only)
+#   JIRA_DEV_MODE   true or false                     (default true, as the SDK; false: the page loads the bundle
+#                                                     rest-api-browser.min.js, as in a Jira outside dev mode)
 #   JIRA_START_TIMEOUT  seconds to wait for Jira      (default 1800, the first start downloads the WAR)
 #
 # The Jira is reachable at http://localhost:$JIRA_HTTP_PORT/jira with admin/admin. Delete the work directory to start
@@ -36,6 +38,7 @@ JIRA_WORKDIR="${JIRA_WORKDIR:-$HOME/jira-rab-$JIRA_VERSION-$JIRA_HTTP_PORT}"
 JIRA_SDK_HOME="${JIRA_SDK_HOME:-}"
 JIRA_JAVA_HOME="${JIRA_JAVA_HOME:-${JAVA_HOME:-}}"
 JIRA_START_TIMEOUT="${JIRA_START_TIMEOUT:-1800}"
+JIRA_DEV_MODE="${JIRA_DEV_MODE:-true}"
 
 BASE_URL="http://localhost:$JIRA_HTTP_PORT/jira"
 LOG="$JIRA_WORKDIR/run.log"
@@ -150,7 +153,13 @@ launch() {
     rm -f "$TAIL_PID_FILE"
     export JAVA_HOME="$JIRA_JAVA_HOME"
     export PATH="$JIRA_JAVA_HOME/bin:$PATH"
-    echo "Starting Jira $JIRA_VERSION on port $JIRA_HTTP_PORT in $JIRA_WORKDIR with $java_version"
+    # AMPS starts Jira in dev mode unless atlassian.dev.mode is already a system property of the Maven JVM. The SDK's
+    # launcher replaces MAVEN_OPTS with "-Xms512M -Xmx768M $ATLAS_OPTS", so the property goes into ATLAS_OPTS.
+    # Outside dev mode UPM refuses uploads unless Jira runs with -Dupm.plugin.upload.enabled=true: it goes in as
+    # AMPS's jvmargs property (the SDK's --jvmargs would split it at "=" on Windows); AMPS keeps its -Xmx/-Xms defaults.
+    [ "$JIRA_DEV_MODE" = "false" ] &&
+        export ATLAS_OPTS="${ATLAS_OPTS:+$ATLAS_OPTS }-Datlassian.dev.mode=false -Djvmargs=-Dupm.plugin.upload.enabled=true"
+    echo "Starting Jira $JIRA_VERSION on port $JIRA_HTTP_PORT in $JIRA_WORKDIR with $java_version, dev mode $JIRA_DEV_MODE"
     local cmd=( "$atlas" --product jira --version "$JIRA_VERSION" --http-port "$JIRA_HTTP_PORT" --ajp-port "$JIRA_AJP_PORT" )
     if [ "$1" = "fg" ]; then
         run_amps "${cmd[@]}" 2>&1 | tee "$LOG"
@@ -163,13 +172,19 @@ launch() {
 
 # AMPS waits on stdin once Jira is up and shuts Jira down on EOF. A tail keeps stdin open, and killing it (jira.sh
 # stop) is the graceful stop; its PID goes to a file. The tail never writes, so it would outlive a failed AMPS
-# forever: it is killed as soon as AMPS exits.
+# forever: it is killed as soon as AMPS exits. Each run kills only its own tail (its PID also goes to a file of the
+# run): after "jira.sh stop" the old AMPS can exit after a new start has already written the shared file.
 run_amps() {
-    local rc i
-    "$@" < <(echo "$BASHPID" > "$TAIL_PID_FILE"; exec tail -f /dev/null)
+    local own="$TAIL_PID_FILE.$BASHPID" rc i holder
+    "$@" < <(echo "$BASHPID" > "$own"; echo "$BASHPID" > "$TAIL_PID_FILE"; exec tail -f /dev/null)
     rc=$?
-    for i in 1 2 3 4 5 6 7 8 9 10; do [ -s "$TAIL_PID_FILE" ] && break; sleep 0.5; done
-    stop_holder
+    for i in 1 2 3 4 5 6 7 8 9 10; do [ -s "$own" ] && break; sleep 0.5; done
+    holder="$(cat "$own" 2>/dev/null)"
+    if [ -n "$holder" ]; then
+        kill "$holder" 2>/dev/null
+        [ "$(cat "$TAIL_PID_FILE" 2>/dev/null)" = "$holder" ] && rm -f "$TAIL_PID_FILE"
+    fi
+    rm -f "$own"
     return $rc
 }
 
@@ -216,5 +231,5 @@ case "${1:-}" in
     wait) wait_ready ;;
     stop) stop ;;
     status) status ;;
-    *) sed -n '3,24p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+    *) sed -n '3,26p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac
