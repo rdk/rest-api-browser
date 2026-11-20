@@ -1,9 +1,14 @@
 Atlassian REST API Browser
 ==========================
 
-# Archived notice
+> [!NOTE]
+> **Unofficial fork** of Atlassian's archived [rest-api-browser](https://bitbucket.org/atlassian/rest-api-browser) 4.0.0 (Platform 8, Jakarta).
+> It builds again (against Platform 8.0.0 instead of the 8.0.0-m01 milestone, which no longer resolves) and is tested
+> on Jira Data Center 11.3.13; see [Testing](#testing). The crossed-out notice below is Atlassian's.
 
-This repository is no longer in active use. Branch `3.2.x` is still used together with Platform 7 and should EOL at the same time.
+# ~~Archived notice~~
+
+~~This repository is no longer in active use. Branch `3.2.x` is still used together with Platform 7 and should EOL at the same time.~~
 
 # Description
 
