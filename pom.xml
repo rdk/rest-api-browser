@@ -64,7 +64,6 @@
 
         <bamboo.eldest-supported.version>9.2.16</bamboo.eldest-supported.version>
         <bitbucket.eldest-supported.version>8.9.17</bitbucket.eldest-supported.version>
-        <confluence.eldest-supported.version>7.19.25</confluence.eldest-supported.version>
         <!-- Test with a Plat 7 product that's compiled against the eldest version to
                 catch unexpected incompatibility -->
         <confluence.latest.version>9.0.0-m135</confluence.latest.version>
@@ -167,32 +166,6 @@
         </dependency>
 
         <dependency>
-            <groupId>com.atlassian.confluence</groupId>
-            <artifactId>confluence</artifactId>
-            <version>${confluence.eldest-supported.version}</version>
-            <scope>provided</scope>
-            <exclusions>
-                <exclusion>
-                    <groupId>commons-collections</groupId>
-                    <artifactId>commons-collections</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>org.apache.commons</groupId>
-                    <artifactId>commons-text</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>xalan</groupId>
-                    <artifactId>xalan</artifactId>
-                </exclusion>
-                <!-- via atlassian-renderer-legacy; not in any public repository (only in the Plugin SDK's), not needed -->
-                <exclusion>
-                    <groupId>javax.activation</groupId>
-                    <artifactId>activation</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-
-        <dependency>
             <groupId>org.osgi</groupId>
             <artifactId>osgi.core</artifactId>
             <version>8.0.0</version>
@@ -269,7 +242,6 @@
                         <Atlassian-Plugin-Key>${atlassian.plugin.key}</Atlassian-Plugin-Key>
                         <Export-Package>com.atlassian.labs.restbrowser.*</Export-Package>
                         <Import-Package>
-                            com.atlassian.confluence.*;resolution:="optional",
                             com.atlassian.annotations.security*;resolution:="optional",
                             com.atlassian.plugins.rest.common.security*;resolution:="optional",
                             !javax.inject,
