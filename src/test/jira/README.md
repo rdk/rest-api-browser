@@ -1,13 +1,13 @@
 # Real-Jira checks
 
-End-to-end checks of the REST API Browser on a **real, standalone Jira Data Center** started with the Atlassian Plugin
-SDK. They complement `mvn verify`, whose integration test (`RestApiBrowserSmokeTest`) runs against the refapp only:
-the refapp does not show whether the plugin runs on Jira (Jira's REST modules and their WADLs, Jira's decorator, AUI
-and Seraph login, UPM install).
+End-to-end checks of the REST API Browser on a **real, standalone Jira Data Center** (or **Confluence Data Center**,
+see [Confluence](#confluence)) started with the Atlassian Plugin SDK. They complement `mvn verify`, whose integration
+test (`RestApiBrowserSmokeTest`) runs against the refapp only: the refapp does not show whether the plugin runs on Jira
+(Jira's REST modules and their WADLs, Jira's decorator, AUI and Seraph login, UPM install).
 
 | File | What it does |
 |---|---|
-| `jira.sh` | Starts, waits for, shows and stops a throwaway Jira (`atlas-run-standalone`) in its own work directory and port. |
+| `jira.sh` | Starts, waits for, shows and stops a throwaway Jira or Confluence (`atlas-run-standalone`) in its own work directory and port. |
 | `smoke_jira.py` | Installs the plugin jar through UPM and checks it over HTTP: all modules enabled, the page as admin (search field, checkbox, Jira's decorator, product name), the list of REST modules on the page and **every WADL on it** (the sidebar is built from them), the plugin's web resources and Angular views, its REST resources (`/rest/devtools/1/ewadl`, `jsonrpc/{key}/wadl`, 404 for an unknown plugin), the pretty URL `/restbrowser`, the redirect of an anonymous user to the login page, and no error or stack trace of the plugin in `atlassian-jira.log` since the run started. |
 | `ui_jira.js` | The page in headless Edge/Chrome: Angular starts, the public APIs load into the sidebar with `api/2` among them, the "Show only public APIs" checkbox is on by default and can be turned off (what `RestApiBrowserSmokeTest` checks on the refapp), all APIs then load, search narrows the list, `api/2/serverInfo` shows its `GET` method and **Send** shows Jira's answer; no JavaScript exception from the plugin, no failed request for its own resources, and at least 95% of the WADLs load. Screenshots in `shots/` (git-ignored). |
 
@@ -26,8 +26,8 @@ and Seraph login, UPM install).
   ```
 - Python 3.9+ (standard library only), Node 22+ and Edge or Chrome for `ui_jira.js`.
 - Git Bash on Windows (or any bash on Linux/macOS).
-- Network access to `maven.atlassian.com` on the first start (Jira's WAR is about 500 MB, then cached in the local
-  Maven repository).
+- Network access to `maven.atlassian.com` on the first start (Jira's WAR is about 500 MB, Confluence's 1 GB, then
+  cached in the local Maven repository).
 
 ## Run
 
@@ -56,7 +56,8 @@ of a work directory downloads the WAR, Tomcat and dependencies and sets up Jira 
 5); later starts take about 2 minutes. `jira.sh run` does the same in the foreground (for a terminal
 of its own, or a CI job that keeps it as a background step); `jira.sh wait` then waits for it. `jira.sh status` shows the URL, the work directory, the listening PID, state and version.
 
-Settings (environment or `local.env`): `JIRA_VERSION` (default `11.3.13`), `JIRA_HTTP_PORT` (`2992`),
+Settings (environment or `local.env`): `RAB_PRODUCT` (`jira`, or `confluence`: see [Confluence](#confluence)),
+`JIRA_VERSION` (default `11.3.13`), `JIRA_HTTP_PORT` (`2992`),
 `JIRA_AJP_PORT` (`8020`), `JIRA_WORKDIR` (`$HOME/jira-rab-$JIRA_VERSION-$JIRA_HTTP_PORT`), `JIRA_SDK_HOME`,
 `JIRA_JAVA_HOME`, `JIRA_START_TIMEOUT` (seconds, `1800`), `JIRA_DEV_MODE` (`true`; `false` starts Jira outside dev
 mode). A running Jira keeps its mode: stop it before starting it in the other one. For another Jira version, set
@@ -85,11 +86,45 @@ Both scripts print one `PASS`/`FAIL` line per check (`WARN` and `SKIP` lines do 
 `N checks, N passed, N failed`. Exit code 0 all passed, 1 a check failed, 2 not run (Jira not reachable, no jar, no
 browser).
 
+## Confluence
+
+`RAB_PRODUCT=confluence` makes the three scripts work on a Confluence instead (default Confluence 10.2.20 at
+`http://localhost:1992/confluence`, AJP port 8022, work directory `$HOME/confluence-rab-<version>-<port>`, admin/admin);
+the `JIRA_*` settings apply to it too, and `smoke_jira.py` also takes `--product confluence`:
+
+```bash
+RAB_PRODUCT=confluence src/test/jira/jira.sh start
+RAB_PRODUCT=confluence python src/test/jira/smoke_jira.py --expect-jira 10.2.20
+RAB_PRODUCT=confluence node src/test/jira/ui_jira.js
+RAB_PRODUCT=confluence src/test/jira/jira.sh stop
+```
+
+On Confluence the checks use its core REST API `/rest/api` instead of Jira's `/rest/api/2` (the UI check searches,
+opens and sends `api/user/current`) and scan `confluence-LATEST.log` in AMPS's `target` directory (AMPS's Confluence
+logs there, not to `atlassian-confluence.log`). A Jira and a Confluence can run at the same time.
+
+**On Confluence 10.2.20 as Atlassian ships it, 2 smoke checks and 3 UI checks fail**, all on Confluence's side:
+Confluence cannot generate the WADL of 26 of its 134 REST modules, its core `/rest/api` among them (500,
+`NoClassDefFoundError: com/sun/xml/txw2/TxwException`). Jersey's WADL generator has JAXB write XML schemas for the
+resources' beans, and JAXB's schema writer `txw2` is not in Confluence's `WEB-INF/lib` (Jira 11 ships `txw2-4.0.6.jar`
+with the same JAXB 4). The page's public APIs come from `/rest/api`, so with "Show only public APIs" the sidebar stays
+empty. To check the plugin itself, put the `txw2` that matches Confluence's `jaxb-runtime` into the test instance and
+restart it; then all checks pass:
+
+```bash
+lib="$HOME/confluence-rab-10.2.20-1992/amps-standalone-confluence-10.2.20/target/confluence/webapp/WEB-INF/lib"
+ls "$lib" | grep jaxb-runtime                          # org.glassfish.jaxb.jaxb-runtime-4.0.5.jar
+curl -fo "$lib/txw2-4.0.5.jar" https://repo.maven.apache.org/maven2/org/glassfish/jaxb/txw2/4.0.5/txw2-4.0.5.jar
+RAB_PRODUCT=confluence src/test/jira/jira.sh stop && RAB_PRODUCT=confluence src/test/jira/jira.sh start
+```
+
+AMPS keeps the jar across restarts of the same work directory.
+
 ## Ports and work directories
 
 Other SDK Jiras usually run on 2990, the SDK's default. A second AMPS instance in the same work directory redeploys
 and stops the first one, so this project uses its own work directory and port 2992. Delete `$JIRA_WORKDIR` to start
-again from a fresh Jira.
+again from a fresh Jira (after `jira.sh stop`; the JVM can hold its files for a few seconds after the port closes).
 
 `jira.sh stop` closes AMPS's standard input (a `tail -f /dev/null` keeps it open; AMPS shuts Jira down on EOF) and,
 if Jira still listens after 2 minutes, kills the process listening on the port **by PID** with its child processes.
@@ -100,7 +135,7 @@ Never `taskkill /IM java.exe`: it would also kill every other Java process.
 ## Last verified
 
 2026-11-20, Jira 11.3.13 (build 11030014) on JDK 21, SDK 9.11.2 (AMPS 9.11.2, Tomcat 10.1.61), plugin 4.0.5 and
-4.1.0 built against Platform 8.0.0:
+4.1.0 built against Platform 8.0.0 (and 4.1.1-SNAPSHOT in dev mode on 2026-11-21, with the same results):
 
 - dev mode: `smoke_jira.py` 28 checks passed (116 REST modules on the page, 114 WADLs loaded, all served),
   `ui_jira.js` 14 checks passed (261 public resources, 1360 in all);
@@ -112,13 +147,33 @@ Never `taskkill /IM java.exe`: it would also kill every other Java process.
 `ui_jira.js` also prints two `WARN failed request` lines that are Jira's own (`/rest/qr/batching` 404,
 `/rest/analytics/1.0/publish/bulk` 401).
 
+2026-11-21, Confluence 10.2.20 (build 23584) on the same JDK and SDK, plugin 4.1.1-SNAPSHOT (4.1.0 and earlier: the
+page answers 500 on Confluence 10, see the commit "Fix the page failing on Confluence 10"):
+
+- as shipped, dev mode: `smoke_jira.py` 25 of 27 checks passed (134 REST modules on the page, 106 WADLs served),
+  `ui_jira.js` 11 of 14 (no public resource, 816 in all): the missing `txw2`, see [Confluence](#confluence);
+- with `txw2-4.0.5.jar` added, dev mode: `smoke_jira.py` 27 checks passed (132 of 134 WADLs served), `ui_jira.js` 14
+  checks passed (148 public resources, 1431 in all);
+- with `txw2-4.0.5.jar` added, outside dev mode: `smoke_jira.py --expect-bundle` 28 checks passed (131 of 134 WADLs
+  served), `ui_jira.js` 14 checks passed (148 public resources, 1415 in all).
+
+`smoke_jira.py` warns on Confluence about the two WADLs of `/rest/token-auth/api`, which answer 200 with an empty body
+(the browser counts them as loaded), and about the ERROR line Confluence logs when it refuses the anonymous request
+(see *Things to know*).
+
 ## Things to know
 
 - **Base URL**: AMPS's Jira test data has the base URL `http://localhost:2990/jira` whatever the port. The page builds
   every WADL URL from the base URL, so on port 2992 it would load the WADLs from another Jira on 2990, or from none.
   `jira.sh start`/`wait` sets it to the URL under test (`PUT /rest/api/2/settings/baseUrl` with the **raw** URL as the
   body: a JSON string answers 400 "The specified URL is not valid."), and `smoke_jira.py` fails first when they differ.
-- Jira 11 refuses an anonymous `/rest/api/2/serverInfo` (an empty error object), so the scripts ask as `admin`.
+- Confluence gets the base URL `http://<server>:<port>/confluence` from AMPS when AMPS creates its home, and AMPS's
+  `server` defaults to the machine's host name (not `localhost`, whatever the SDK's help says): the page would load
+  every WADL from another origin. `jira.sh` passes `--server localhost`. A home created without it keeps the host
+  name: `jira.sh` then stops with an error, and deleting the work directory fixes it.
+- Jira 11 refuses an anonymous `/rest/api/2/serverInfo` (an empty error object), so the scripts read the version and
+  the base URL from the application links manifest (`/rest/applinks/1.0/manifest`), which Jira and Confluence serve
+  anonymously.
 - Git Bash gives a `.bat` no executable bit, so `jira.sh` tests the SDK launcher with `-f`.
 - `jira.sh` reads itself while it runs (bash does): editing it while `jira.sh run` is running can end that run with a
   syntax error after Jira stops.
@@ -140,3 +195,9 @@ Never `taskkill /IM java.exe`: it would also kill every other Java process.
   `atlassian-jira.log`); it is one of the few WADLs both scripts tolerate.
 - The standalone Jira does not set `-Drest.api.browser.anonymous=true` (the refapp of `mvn verify` does), so an
   anonymous user is sent to the login page; that is what `smoke_jira.py` expects.
+- Confluence 10 itself sends an anonymous user to the login page before the plugin's servlet runs: the servlet is
+  `@AnonymousSiteAccess`, and AMPS's Confluence does not allow anonymous access to the site. Confluence logs that as an
+  ERROR ("Unhandled exception occurred whilst decorating page", `AuthorisationException`), which `smoke_jira.py`
+  reports as a `WARN`, not as an error of the plugin.
+- Outside dev mode Confluence sends an admin to its post-upgrade landing page (`/pulp/pulp-render.action`) once; then
+  `smoke_jira.py` asks for the page again.

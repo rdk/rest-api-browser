@@ -19,16 +19,24 @@ The REST API Browser add-on allows a developer to browse, discover, and test Atl
 | Product | This fork (4.0.5 and later) | Atlassian's latest release | Officially compatible with |
 |---|---|---|---|
 | Jira Software, Jira Service Management | 11.x, tested on Jira 11.3.13 | 3.2.8 | 9.4 – 10.x |
-| Confluence | 10.x (untested) | 3.2.8 | 7.19 – 9.x |
+| Confluence | 10.x from 4.1.1, tested on Confluence 10.2.20 (see below) | 3.2.8 | 7.19 – 9.x |
 | Bitbucket | 10.x (untested) | 3.2.8 | 8.9 – 9.x |
 | Bamboo | 12.x (untested) | 3.2.8 | 9.2 – 10.x |
 | Crowd | 7.x (untested) | 3.2.8 | 6.x |
 | Fisheye / Crucible | none (not on Atlassian's Platform 8 list) | 3.2.8 | 4.8 |
 
-- **This fork** needs Platform 8 (Spring 6, Jakarta EE 10) and Java 21. Only Jira 11.3.13 is tested. The other versions
-  are the ones Atlassian [moved to Platform 8](https://developer.atlassian.com/platform/marketplace/dc-apps-platform-8);
-  they run on Java 21 only, which is what the plugin is compiled for. Atlassian's next majors (Jira 12, Confluence 11,
-  Bitbucket 11, Bamboo 13, Crowd 8) move to Spring 7 and Jakarta 11, so the fork may not run on them.
+- **This fork** needs Platform 8 (Spring 6, Jakarta EE 10) and Java 21. Only Jira 11.3.13 and Confluence 10.2.20 are
+  tested. The other versions are the ones Atlassian
+  [moved to Platform 8](https://developer.atlassian.com/platform/marketplace/dc-apps-platform-8); they run on Java 21
+  only, which is what the plugin is compiled for. Atlassian's next majors (Jira 12, Confluence 11, Bitbucket 11,
+  Bamboo 13, Crowd 8) move to Spring 7 and Jakarta 11, so the fork may not run on them.
+- **Confluence 10**: 4.0.5 and 4.1.0 fail there (the page answers 500: Atlassian's code looked for Confluence's SOAP
+  modules, which Confluence 10 removed). From 4.1.1 the page works, but Confluence 10.2.20 itself cannot describe 26 of
+  its 134 REST modules, its core REST API `/rest/api` among them: its WADL generator needs JAXB's `txw2`, which
+  Confluence does not ship (Jira 11 does). With "Show only public APIs" the sidebar is therefore empty; unchecked, it
+  shows the other modules' resources. Copying `txw2-4.0.5.jar` (`org.glassfish.jaxb:txw2:4.0.5` on Maven Central, the
+  version of Confluence's `jaxb-runtime`) into Confluence's `confluence/WEB-INF/lib` and restarting fixes this, but it
+  is a change to Confluence that Atlassian does not support.
 - **Atlassian's latest release** is 3.2.8 (July 2024), in Atlassian's Maven repository; its Marketplace listing has been
   removed. Atlassian also published two 4.0.0 pre-releases but no final 4.0.0: 4.0.0-94f0bee (July 2024, Platform 7)
   and 4.0.0-jakarta-m001 (February 2025, a Platform 8 milestone).
@@ -67,7 +75,7 @@ creates a draft release with it.
 
 ## Testing
 
-`mvn verify` runs the integration test against the refapp. To check the plugin on a real Jira Data Center (Jira 11.3.13 by default), see [src/test/jira/README.md](src/test/jira/README.md):
+`mvn verify` runs the integration test against the refapp. To check the plugin on a real Jira Data Center (Jira 11.3.13 by default), see [src/test/jira/README.md](src/test/jira/README.md); with `RAB_PRODUCT=confluence` the same scripts check it on Confluence 10.2.20:
 
 ```bash
 mvn -B clean package -DskipTests

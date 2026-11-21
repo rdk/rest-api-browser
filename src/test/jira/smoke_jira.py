@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
-"""Real-Jira smoke check of the REST API Browser (RAB): installs the plugin jar through UPM and checks it over HTTP.
+"""Real-Jira (or Confluence) smoke check of the REST API Browser (RAB): installs the plugin jar through UPM and
+checks it over HTTP.
 
     python src/test/jira/smoke_jira.py --expect-jira 11.3.13            # newest target/rest-api-browser-*.jar
     python src/test/jira/smoke_jira.py --jar target/rest-api-browser-4.0.0-SNAPSHOT.jar
     python src/test/jira/smoke_jira.py --no-install                     # check what is installed
     python src/test/jira/smoke_jira.py --uninstall                      # remove the plugin at the end
+    python src/test/jira/smoke_jira.py --product confluence --expect-jira 10.2.20
 
-Settings: JIRA_URL (default http://localhost:2992/jira, the Jira of src/test/jira/jira.sh) or --url, JIRA_USER /
+Settings: RAB_PRODUCT or --product (jira, the default, or confluence), JIRA_URL or --url (default
+http://localhost:2992/jira, or http://localhost:1992/confluence: the instance of src/test/jira/jira.sh), JIRA_USER /
 JIRA_PASSWORD (default admin/admin) or --user / --password. It installs a plugin, so it refuses a host other than
 localhost unless --allow-remote. Python 3.9+, standard library only.
 
-Exit code: 0 all checks passed (WARN and SKIP lines do not count), 1 a check failed, 2 not run (Jira not reachable,
-not authorized, no jar). The last line is "N checks, N passed, N failed".
+Exit code: 0 all checks passed (WARN and SKIP lines do not count), 1 a check failed, 2 not run (product not
+reachable, not authorized, no jar). The last line is "N checks, N passed, N failed".
 """
 import argparse
 import base64
@@ -31,6 +34,14 @@ PLUGIN_KEY = 'com.atlassian.labs.rest-api-browser'
 SERVLET = '/plugins/servlet/restbrowser'
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.normpath(os.path.join(HERE, '..', '..', '..'))
+# per product: the URL of the jira.sh instance, a REST resource that needs a login, the core REST API, the main log
+# under AMPS's target directory (AMPS's Confluence logs to the console, which AMPS writes to confluence-LATEST.log)
+PRODUCTS = {
+    'jira': {'name': 'Jira', 'url': 'http://localhost:2992/jira', 'myself': '/rest/api/2/myself',
+             'core': '/rest/api/2', 'log': ('jira', 'home', 'log', 'atlassian-jira.log')},
+    'confluence': {'name': 'Confluence', 'url': 'http://localhost:1992/confluence', 'myself': '/rest/api/user/current',
+                   'core': '/rest/api', 'log': ('confluence-LATEST.log',)},
+}
 
 results = []
 warnings = []
@@ -58,7 +69,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-class Jira:
+class Instance:
     def __init__(self, url, user, password):
         self.url = url.rstrip('/')
         self.auth = 'Basic ' + base64.b64encode(('%s:%s' % (user, password)).encode()).decode()
@@ -144,24 +155,24 @@ def install(j, jar):
                         headers={'Content-Type': 'multipart/form-data; boundary=' + boundary}, timeout=300)
     if not check('UPM accepts the upload', s in (200, 202), (s, text[:300])):
         if 'via upload' in text:
-            print('  UPM disables uploads outside dev mode: start Jira with -Dupm.plugin.upload.enabled=true '
+            print('  UPM disables uploads outside dev mode: start the product with -Dupm.plugin.upload.enabled=true '
                   '(jira.sh does with JIRA_DEV_MODE=false), or use --no-install')
         return False
     want = jar_version(jar)
     info, same_other = None, 0
-    for _ in range(150):  # enabling a freshly uploaded plugin can take a few minutes on a cold Jira
+    for _ in range(150):  # enabling a freshly uploaded plugin can take a few minutes on a cold instance
         time.sleep(2)
         info = plugin_info(j)
         if info and info.get('enabled') and (want is None or info.get('version') == want):
             return check('plugin %s is installed and enabled' % (want or ''), True)
-        # Jira keeps the higher version of a plugin key and drops a lower upload while UPM reports success
+        # the product keeps the higher version of a plugin key and drops a lower upload while UPM reports success
         same_other = same_other + 1 if info and info.get('enabled') else 0
         if same_other >= 30:
             break
     got = info.get('version') if info else None
     if want and got and got != want:
         return check('plugin %s is installed and enabled' % want, False,
-                     'Jira runs version %s, not the jar\'s %s: Jira keeps the higher version of a plugin key, '
+                     'it runs version %s, not the jar\'s %s: the product keeps the higher version of a plugin key, '
                      'run with --uninstall once (or uninstall it in Manage apps) and again' % (got, want))
     return check('plugin %s is installed and enabled' % (want or ''), False,
                  'not enabled after 5 minutes: %s' % ({k: info.get(k) for k in ('enabled', 'version')} if info else 'not installed'))
@@ -178,28 +189,34 @@ def default_jar():
     return max(jars, key=os.path.getmtime) if jars else None
 
 
-def jira_log_path(j, version):
-    """atlassian-jira.log of the jira.sh Jira, when it is on this machine."""
+def product_log_path(j, version, product):
+    """atlassian-jira.log (confluence-LATEST.log) of the jira.sh instance, when it is on this machine."""
     port = urllib.parse.urlparse(j.url).port or 80
-    workdir = os.environ.get('JIRA_WORKDIR') or os.path.join(os.path.expanduser('~'), 'jira-rab-%s-%s' % (version, port))
-    p = os.path.join(workdir, 'amps-standalone-jira-%s' % version, 'target', 'jira', 'home', 'log', 'atlassian-jira.log')
+    workdir = os.environ.get('JIRA_WORKDIR') or os.path.join(os.path.expanduser('~'),
+                                                             '%s-rab-%s-%s' % (product, version, port))
+    p = os.path.join(workdir, 'amps-standalone-%s-%s' % (product, version), 'target',
+                     *PRODUCTS[product]['log'])
     return p if os.path.isfile(p) else None
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
-    ap.add_argument('--url', default=os.environ.get('JIRA_URL', 'http://localhost:2992/jira'))
+    ap.add_argument('--product', choices=sorted(PRODUCTS), default=os.environ.get('RAB_PRODUCT', 'jira'))
+    ap.add_argument('--url', default=os.environ.get('JIRA_URL'), help='default: the jira.sh instance of the product')
     ap.add_argument('--user', default=os.environ.get('JIRA_USER', 'admin'))
     ap.add_argument('--password', default=os.environ.get('JIRA_PASSWORD', 'admin'))
     ap.add_argument('--jar', help='plugin jar to install (default: the newest target/rest-api-browser-*.jar)')
     ap.add_argument('--no-install', action='store_true', help='check the installed plugin, do not upload a jar')
     ap.add_argument('--uninstall', action='store_true', help='uninstall the plugin at the end')
-    ap.add_argument('--expect-jira', help='fail unless Jira reports this version (e.g. 11.3.13)')
+    ap.add_argument('--expect-jira', help='fail unless the product reports this version (e.g. 11.3.13)')
     ap.add_argument('--expect-bundle', action='store_true',
-                    help='fail unless the page loads the bundle rest-api-browser.min.js (Jira outside dev mode)')
-    ap.add_argument('--jira-log', help='atlassian-jira.log to scan for the plugin\'s errors (default: the jira.sh one)')
+                    help='fail unless the page loads the bundle rest-api-browser.min.js (outside dev mode)')
+    ap.add_argument('--jira-log', help='atlassian-jira.log (confluence-LATEST.log) to scan for the plugin\'s errors '
+                                       '(default: the jira.sh one)')
     ap.add_argument('--allow-remote', action='store_true', help='allow a host other than localhost')
     a = ap.parse_args()
+    P = PRODUCTS[a.product]
+    a.url = a.url or P['url']
 
     host = urllib.parse.urlparse(a.url).hostname
     if host not in ('localhost', '127.0.0.1', '::1') and not a.allow_remote:
@@ -211,32 +228,38 @@ def main():
         if not jar or not os.path.isfile(jar):
             print('smoke_jira.py: no plugin jar (build it with: mvn package -DskipTests, or pass --jar)')
             return 2
-    j = Jira(a.url, a.user, a.password)
+    j = Instance(a.url, a.user, a.password)
 
-    # ---- Jira itself
+    # ---- the product itself: the application links manifest, anonymous in Jira and Confluence
     try:
-        s, info, _ = j.json('/rest/api/2/serverInfo')
+        s, info, _ = j.json('/rest/applinks/1.0/manifest', auth=False)
     except OSError as e:
-        print('smoke_jira.py: %s does not answer: %s (start it with src/test/jira/jira.sh start)' % (a.url, e))
+        print('smoke_jira.py: %s does not answer: %s (start it with %ssrc/test/jira/jira.sh start)'
+              % (a.url, e, '' if a.product == 'jira' else 'RAB_PRODUCT=%s ' % a.product))
         return 2
     if s != 200 or not info:
-        print('smoke_jira.py: %s/rest/api/2/serverInfo answered %s' % (a.url, s))
+        print('smoke_jira.py: %s/rest/applinks/1.0/manifest answered %s' % (a.url, s))
         return 2
     version = info.get('version')
-    print('Jira %s (build %s, %s) at %s' % (version, info.get('buildNumber'), info.get('deploymentType'), a.url))
-    s, _, _ = j.json('/rest/api/2/myself')
+    print('%s %s (build %s) at %s' % (P['name'], version, info.get('buildNumber'), a.url))
+    if info.get('typeId') != a.product:
+        print('smoke_jira.py: %s is %s, not %s (--product)' % (a.url, info.get('typeId'), a.product))
+        return 2
+    s, _, _ = j.json(P['myself'])
     if s != 200:
         print('smoke_jira.py: %s cannot log in as %s (%s)' % (a.url, a.user, s))
         return 2
     if a.expect_jira:
-        check('Jira is version %s' % a.expect_jira, version == a.expect_jira, version)
-    # the page builds every WADL URL from the base URL; AMPS's test data has :2990 whatever the port (jira.sh fixes it)
-    check('Jira\'s base URL is the URL under test', (info.get('baseUrl') or '').rstrip('/') == j.url,
-          '%s; set it with: curl -u admin:admin -X PUT -H "Content-Type: application/json" -H "X-Atlassian-Token: '
-          'no-check" --data %s %s/rest/api/2/settings/baseUrl (the raw URL, not a JSON string; jira.sh start/wait does it)'
-          % (info.get('baseUrl'), j.url, j.url))
+        check('%s is version %s' % (P['name'], a.expect_jira), version == a.expect_jira, version)
+    # the page builds every WADL URL from the base URL; AMPS's test data has the SDK's default port whatever the port
+    # (jira.sh start/wait fixes it)
+    hint = ('; set it with: curl -u admin:admin -X PUT -H "Content-Type: application/json" -H "X-Atlassian-Token: '
+            'no-check" --data %s %s/rest/api/2/settings/baseUrl (the raw URL, not a JSON string)' % (j.url, j.url)
+            if a.product == 'jira' else '')
+    check('%s\'s base URL is the URL under test' % P['name'], (info.get('url') or '').rstrip('/') == j.url,
+          '%s; jira.sh start/wait sets it%s' % (info.get('url'), hint))
 
-    log = a.jira_log or jira_log_path(j, version)
+    log = a.jira_log or product_log_path(j, version, a.product)
     log_start = os.path.getsize(log) if log else 0
 
     # ---- install
@@ -252,47 +275,60 @@ def main():
     if not check('plugin is installed and enabled', info and info.get('enabled'), info and info.get('version')):
         return finish()
 
-    # ---- every module enabled (a module whose class or OSGi import fails on this Jira ends up disabled)
+    # ---- every module enabled (a module whose class or OSGi import fails on this product ends up disabled)
     modules = info.get('modules') or []
     disabled = ['%s (%s)' % (m.get('key'), m.get('name')) for m in modules if not m.get('enabled')]
     check('all %d modules are enabled' % len(modules), modules and not disabled, disabled)
 
     # ---- the page as admin
     s, page, h = j.call('GET', SERVLET + '?os_authType=basic', headers={'Accept': 'text/html'})
+    if s in (301, 302, 303) and '/pulp/' in h.get('location', ''):
+        # outside dev mode Confluence sends an admin to its post-upgrade landing page once after a start
+        print('%s sent %s to its post-upgrade landing page (%s) once: asking again' % (P['name'], a.user, h['location']))
+        s, page, h = j.call('GET', SERVLET + '?os_authType=basic', headers={'Accept': 'text/html'})
     check('GET %s as %s answers 200 text/html' % (SERVLET, a.user),
           s == 200 and 'text/html' in h.get('content-type', ''), (s, h.get('content-type'), h.get('location')))
     check('the page has the search field and the "public only" checkbox',
           'id="searchField"' in page and 'id="publicOnlyFilter"' in page, page[:300])
-    check('the page is decorated by Jira (header and the plugin\'s web resources)',
+    check('the page is decorated by %s (header and the plugin\'s web resources)' % P['name'],
           'rest-api-browser' in page and re.search(r'download/(batch|resources|contextbatch)', page), page[:300])
     m = re.search(r'RAB\.product = "([^"]*)"', page)
-    check('the page names the product as Jira', m and re.search('jira', m.group(1), re.I), m and m.group(1))
+    check('the page names the product as %s' % P['name'], m and re.search(a.product, m.group(1), re.I),
+          m and m.group(1))
     services = [html.unescape(w) for w in re.findall(r'"wadl":"([^"]+)"', page)]
     jsonrpcs = re.search(r'RAB\.rest\.jsonRpcs = \[\s*\];', page)
     print('The page lists %d REST modules' % len(services))
-    check('the page lists the REST modules of Jira (at least 20)', len(services) >= 20, len(services))
-    core = [w for w in services if re.search(r'/rest/api/2/application\.wadl$', w)]
-    check('the list has Jira\'s core REST API (/rest/api/2)', core, services[:10])
+    check('the page lists the REST modules of %s (at least 20)' % P['name'], len(services) >= 20, len(services))
+    core_wadl = P['core'] + '/application.wadl'
+    core = [w for w in services if w.endswith(core_wadl)]
+    check('the list has %s\'s core REST API (%s)' % (P['name'], P['core']), core, services[:10])
     check('the list has the plugin\'s own REST module (/rest/devtools/1)',
           any(w.endswith('/rest/devtools/1/application.wadl') for w in services), services[:10])
-    check('the JSON-RPC list is empty on Jira (JiraBeans has no SOAP services)', jsonrpcs)
+    if a.product == 'jira':
+        check('the JSON-RPC list is empty on Jira (JiraBeans has no SOAP services)', jsonrpcs)
+    else:
+        print('The page lists %s JSON-RPC services' % ('no' if jsonrpcs else 'some'))
 
     # ---- the WADLs the page loads in the browser: the sidebar is built from them. The page itself leaves out Crowd's
     # usermanagement and appmanagement modules (rest_resources_service.js: they need application credentials)
     loaded = [w for w in services if not re.search(r'usermanagement|appmanagement', w)]
-    bad = []
+    bad, no_txw2 = [], 0
     for w in loaded:
         s, body, h = j.call('GET', w, headers={'Accept': 'application/xml'}, timeout=60)
         if s != 200 or not is_wadl(body):
             bad.append('%s -> %s' % (w.replace(j.url, ''), s))
+            no_txw2 += 'com/sun/xml/txw2/' in body
     ok = len(loaded) - len(bad)
     print('WADLs served: %d of the %d the page loads (%d left out like the page does)'
           % (ok, len(loaded), len(services) - len(loaded)))
     for b in bad:
         warn('WADL not served: ' + b)
-    check('Jira serves the WADL of /rest/api/2 (the sidebar\'s public APIs)',
-          core and not any('/rest/api/2/application.wadl ' in b + ' ' for b in bad), bad[:5])
-    check('Jira serves at least 95%% of the WADLs the page loads (%d of %d)' % (ok, len(loaded)),
+    if no_txw2:
+        print('  %d of them fail in %s itself: JAXB\'s schema writer txw2 is missing from its WEB-INF/lib (Confluence '
+              '10.2.20 does not ship it; see src/test/jira/README.md)' % (no_txw2, P['name']))
+    check('%s serves the WADL of %s (the sidebar\'s public APIs)' % (P['name'], P['core']),
+          core and not any(b.startswith(core_wadl + ' ') for b in bad), [b for b in bad if b.startswith(core_wadl + ' ')])
+    check('%s serves at least 95%% of the WADLs the page loads (%d of %d)' % (P['name'], ok, len(loaded)),
           loaded and ok >= 0.95 * len(loaded), bad[:10])
 
     # ---- the web resources of the page
@@ -313,7 +349,7 @@ def main():
     print('The page loads its scripts %s' % ('as the bundle rest-api-browser.min.js' if bundle else
           'one by one (dev mode)' if any(':assets-devmode' in u for u in res) else 'from no URL naming the plugin'))
     if a.expect_bundle:
-        check('the page loads the bundle rest-api-browser.min.js (Jira outside dev mode)', bundle, res)
+        check('the page loads the bundle rest-api-browser.min.js (outside dev mode)', bundle, res)
     s, body, _ = j.call('GET', '/download/resources/%s:assets-production/rest-api-browser.min.js' % PLUGIN_KEY, auth=False)
     check('the production JavaScript bundle is served', s == 200 and 'RAB' in body, s)
     # the Angular routes load their views from the plugin's "rab/" download resource (app.js, resourcePrefix)
@@ -339,26 +375,33 @@ def main():
     check('GET /restbrowser (pretty URL) shows the page', s == 200 and 'id="publicOnlyFilter"' in body,
           (s, h.get('location')))
 
-    # ---- anonymous: Jira's standalone instance does not set -Drest.api.browser.anonymous=true
+    # ---- anonymous: the standalone instance does not set -Drest.api.browser.anonymous=true
     s, body, h = j.call('GET', SERVLET, auth=False, headers={'Accept': 'text/html'})
     loc = h.get('location', '')
     check('anonymous GET %s is sent to the login page' % SERVLET,
           s in (301, 302, 303) and 'login' in loc.lower() and 'restbrowser' in urllib.parse.unquote(loc), (s, loc))
 
-    # ---- Jira's log: no error of the plugin since the install
+    # ---- the product's log: no error of the plugin since the install
     if log:
         with open(log, 'rb') as f:
             f.seek(log_start)
             new = f.read().decode('utf-8', 'replace')
         lines = new.splitlines()
-        errs = [ln for i, ln in enumerate(lines)
-                if re.search(r'\b(ERROR|FATAL)\b', ln) and re.search(r'restbrowser|rest-api-browser|labs\.restbrowser', ln)]
+        err_at = [i for i, ln in enumerate(lines)
+                  if re.search(r'\b(ERROR|FATAL)\b', ln) and re.search(r'restbrowser|rest-api-browser|labs\.restbrowser', ln)]
+        # Confluence 10 refuses the anonymous request above itself (the site has no anonymous access, and the servlet
+        # is @AnonymousSiteAccess) and logs that as an ERROR with an AuthorisationException: not the plugin's error
+        refused = [i for i in err_at if any('AuthorisationException' in ln for ln in lines[i + 1:i + 4])]
+        for i in refused:
+            warn('%s logs its refusal of the anonymous request as an ERROR: %s' % (P['name'], lines[i][:120]))
+        errs = [lines[i] for i in err_at if i not in refused]
         traces = len(re.findall(r'at com\.atlassian\.labs\.restbrowser\.', new))
-        print('Jira log: %s (%d new lines)' % (log, len(lines)))
-        check('no ERROR line naming the plugin in Jira\'s log since the run started', not errs, errs[:5])
-        check('no stack trace through the plugin\'s classes in Jira\'s log', traces == 0, '%d frames' % traces)
+        print('%s log: %s (%d new lines)' % (P['name'], log, len(lines)))
+        check('no ERROR line naming the plugin in %s\'s log since the run started' % P['name'], not errs, errs[:5])
+        check('no stack trace through the plugin\'s classes in %s\'s log' % P['name'], traces == 0,
+              '%d frames' % traces)
     else:
-        skip('Jira log', 'atlassian-jira.log not found (pass --jira-log)')
+        skip('%s log' % P['name'], '%s not found (pass --jira-log)' % P['log'][-1])
 
     if a.uninstall:
         uninstall(j)
