@@ -4,7 +4,7 @@ REST API Browser
 > [!NOTE]
 > **Unofficial fork** of Atlassian's archived [REST API Browser](https://bitbucket.org/atlassian/rest-api-browser) 4.0.0 (Platform 8, Jakarta).
 > It builds again (against Platform 8.0.0 instead of the 8.0.0-m01 milestone, which no longer resolves) and is tested
-> on Jira Data Center 11.3.13; see [Testing](#testing). The crossed-out notice below is Atlassian's.
+> on Jira 11.3.13 and Confluence 10.2.20; see [Testing](#testing). The crossed-out notice below is Atlassian's.
 
 ## ~~Archived notice~~
 
@@ -16,33 +16,31 @@ The REST API Browser add-on allows a developer to browse, discover, and test Atl
 
 ## Compatibility
 
-| Product | This fork (4.0.5 and later) | Atlassian's latest release | Officially compatible with |
-|---|---|---|---|
-| Jira Software, Jira Service Management | 11.x, tested on Jira 11.3.13 | 3.2.8 | 9.4 – 10.x |
-| Confluence | 10.x from 4.1.1, tested on Confluence 10.2.20 (see below) | 3.2.8 | 7.19 – 9.x |
-| Bitbucket | 10.x (untested) | 3.2.8 | 8.9 – 9.x |
-| Bamboo | 12.x (untested) | 3.2.8 | 9.2 – 10.x |
-| Crowd | 7.x (untested) | 3.2.8 | 6.x |
-| Fisheye / Crucible | none (not on Atlassian's Platform 8 list) | 3.2.8 | 4.8 |
+Which release to install depends on the product's version:
 
-- **This fork** needs Platform 8 (Spring 6, Jakarta EE 10) and Java 21. Only Jira 11.3.13 and Confluence 10.2.20 are
-  tested. The other versions are the ones Atlassian
-  [moved to Platform 8](https://developer.atlassian.com/platform/marketplace/dc-apps-platform-8); they run on Java 21
-  only, which is what the plugin is compiled for. Atlassian's next majors (Jira 12, Confluence 11, Bitbucket 11,
-  Bamboo 13, Crowd 8) move to Spring 7 and Jakarta 11, so the fork may not run on them.
-- **Confluence 10**: 4.0.5 and 4.1.0 fail there (the page answers 500: Atlassian's code looked for Confluence's SOAP
-  modules, which Confluence 10 removed). From 4.1.1 the page works, but Confluence 10.2.20 itself cannot describe 26 of
-  its 134 REST modules, its core REST API `/rest/api` among them: its WADL generator needs JAXB's `txw2`, which
-  Confluence does not ship (Jira 11 does). With "Show only public APIs" the sidebar is therefore empty; unchecked, it
-  shows the other modules' resources. Copying `txw2-4.0.5.jar` (`org.glassfish.jaxb:txw2:4.0.5` on Maven Central, the
-  version of Confluence's `jaxb-runtime`) into Confluence's `confluence/WEB-INF/lib` and restarting fixes this, but it
-  is a change to Confluence that Atlassian does not support.
-- **Atlassian's latest release** is 3.2.8 (July 2024), in Atlassian's Maven repository; its Marketplace listing has been
-  removed. Atlassian also published two 4.0.0 pre-releases but no final 4.0.0: 4.0.0-94f0bee (July 2024, Platform 7)
-  and 4.0.0-jakarta-m001 (February 2025, a Platform 8 milestone).
-- **Officially compatible with**: from the oldest versions that the build of 3.2.8 declares as supported
-  (`*.eldest-supported.version` in its `pom.xml`) up to the Platform 7 versions (Jira 10, Confluence 9, Bitbucket 9,
-  Bamboo 10, Crowd 6), which Atlassian's archived notice assigns to the 3.2.x line.
+| Product | This fork (latest release) | Atlassian's 3.2.8 |
+|---|---|---|
+| Jira | 11.x, tested on 11.3.13 | 9.4 – 10.x |
+| Confluence | 10.x, tested on 10.2.20 (see below) | 7.19 – 9.x |
+| Bitbucket | 10.x, untested | 8.9 – 9.x |
+| Bamboo | 12.x, untested | 9.2 – 10.x |
+| Crowd | 7.x, untested | 6.x |
+| Fisheye / Crucible | not supported | 4.8 |
+
+- **Untested** products are built on the same Atlassian platform as Jira 11 and Confluence 10
+  ([Platform 8](https://developer.atlassian.com/platform/marketplace/dc-apps-platform-8): Spring 6, Jakarta EE 10,
+  Java 21), so the fork should run on them too. Fisheye and Crucible were not moved to it. The next major versions
+  (Jira 12, Confluence 11, Bitbucket 11, Bamboo 13, Crowd 8) move to Spring 7 and Jakarta EE 11, so the fork may not
+  run on them.
+- **Confluence 10** needs 4.1.1 or later: 4.0.5 and 4.1.0 answer 500 there. Even then the sidebar is empty while "Show
+  only public APIs" is checked: Confluence 10.2.20 cannot describe 26 of its REST modules, its core REST API
+  `/rest/api` among them, because it does not ship JAXB's `txw2`. Copying `txw2-4.0.5.jar`
+  (`org.glassfish.jaxb:txw2:4.0.5` on Maven Central) into `confluence/WEB-INF/lib` and restarting fixes that, but
+  Atlassian does not support this change.
+- **Atlassian's 3.2.8** (July 2024) is Atlassian's last release. It is in Atlassian's Maven repository but no longer on
+  the Marketplace. Its range starts at the oldest versions its build declares as supported and ends at the Platform 7
+  versions, which Atlassian's archived notice assigns to 3.2.x. Atlassian never released a final 4.0.0, the version
+  this fork is based on.
 
 ## Install
 
