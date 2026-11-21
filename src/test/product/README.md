@@ -139,26 +139,25 @@ Never `taskkill /IM java.exe`: it would also kill every other Java process.
 
 ## Last verified
 
-2026-11-20, Jira 11.3.13 (build 11030014) on JDK 21, SDK 9.11.2 (AMPS 9.11.2, Tomcat 10.1.61), plugin 4.0.5 and
-4.1.0 built against Platform 8.0.0 (and 4.1.1-SNAPSHOT in dev mode on 2026-11-21, with the same results):
+Jira 11.3.13 (build 11030014) on JDK 21, SDK 9.11.2 (AMPS 9.11.2, Tomcat 10.1.61), plugin 4.0.5 and 4.1.0
+(2026-11-20) and the released 4.1.1 jar (2026-11-21), all built against Platform 8.0.0, with the same results:
 
 - dev mode: `smoke.py` 28 checks passed (116 REST modules on the page, 114 WADLs loaded, all served),
   `ui.js` 14 checks passed (261 public resources, 1360 in all);
-- outside dev mode (`RAB_DEV_MODE=false`; the bundle from 2020 in 4.0.5, the rebuilt one in 4.1.0):
-  `smoke.py --expect-bundle` 29 checks passed
-  (113 of 114 WADLs served), `ui.js` 14 checks passed (261 public resources, 1344 in all), with a `WARN` for the
-  OAuth 2.0 WADL (see *Things to know*).
+- outside dev mode (`RAB_DEV_MODE=false`; the bundle from 2020 in 4.0.5, the rebuilt one from 4.1.0):
+  `smoke.py --expect-bundle` 29 checks passed (113 of 114 WADLs served), `ui.js` 14 checks passed (261 public
+  resources, 1344 in all), with a `WARN` for the OAuth 2.0 WADL (see *Things to know*).
 
 `ui.js` also prints two `WARN failed request` lines that are Jira's own (`/rest/qr/batching` 404,
 `/rest/analytics/1.0/publish/bulk` 401).
 
-2026-11-21, Confluence 10.2.20 (build 23584) on the same JDK and SDK, plugin 4.1.1-SNAPSHOT (4.1.0 and earlier: the
+2026-11-21, Confluence 10.2.20 (build 23584) on the same JDK and SDK, the released 4.1.1 jar (4.1.0 and earlier: the
 page answers 500 on Confluence 10, see the commit "Fix the page failing on Confluence 10"):
 
 - as shipped, dev mode: `smoke.py` 25 of 27 checks passed (134 REST modules on the page, 106 WADLs served),
   `ui.js` 11 of 14 (no public resource, 816 in all): the missing `txw2`, see [Confluence](#confluence);
-- with `txw2-4.0.5.jar` added, dev mode: `smoke.py` 27 checks passed (132 of 134 WADLs served), `ui.js` 14
-  checks passed (148 public resources, 1431 in all);
+- with `txw2-4.0.5.jar` added, dev mode (4.1.1-SNAPSHOT): `smoke.py` 27 checks passed (132 of 134 WADLs served),
+  `ui.js` 14 checks passed (148 public resources, 1431 in all);
 - with `txw2-4.0.5.jar` added, outside dev mode: `smoke.py --expect-bundle` 28 checks passed (131 of 134 WADLs
   served), `ui.js` 14 checks passed (148 public resources, 1415 in all).
 
