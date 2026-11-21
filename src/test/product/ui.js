@@ -1,11 +1,11 @@
 // The REST API Browser page in headless Edge/Chrome against a REAL Jira or Confluence (the one of
-// src/test/jira/jira.sh): the browser-side half of the smoke check, which smoke_jira.py cannot see (Angular app, WADL
-// loading, AUI on the product's page). Run it after smoke_jira.py has installed the plugin.
+// src/test/product/product.sh): the browser-side half of the smoke check, which smoke.py cannot see (Angular app,
+// WADL loading, AUI on the product's page). Run it after smoke.py has installed the plugin.
 //
-//   node src/test/jira/ui_jira.js                 # http://localhost:2992/jira, admin/admin; screenshots in src/test/jira/shots/
-//   RAB_PRODUCT=confluence node src/test/jira/ui_jira.js        # http://localhost:1992/confluence
-//   JIRA_URL=... JIRA_USER=... JIRA_PASSWORD=... node src/test/jira/ui_jira.js
-//   RAB_BROWSER="C:/path/to/msedge.exe" node src/test/jira/ui_jira.js
+//   node src/test/product/ui.js                            # http://localhost:2992/jira, admin/admin; shots in shots/
+//   RAB_PRODUCT=confluence node src/test/product/ui.js     # http://localhost:1992/confluence
+//   RAB_URL=... RAB_USER=... RAB_PASSWORD=... node src/test/product/ui.js
+//   RAB_BROWSER="C:/path/to/msedge.exe" node src/test/product/ui.js
 //
 // Needs Node 22+ (fetch, WebSocket) and Edge or Chrome; no npm packages (it speaks the DevTools protocol itself).
 // Exit code: 0 all checks passed, 1 a check failed, 2 not run. The last line is "N checks, N passed, N failed".
@@ -19,9 +19,9 @@ const PRODUCTS = {
         resource: 'user/current', answer: /"username"|"userKey"/ },
 };
 const PRODUCT = process.env.RAB_PRODUCT || 'jira', P = PRODUCTS[PRODUCT];
-if (!P) { console.log(`ui_jira.js: RAB_PRODUCT is ${Object.keys(PRODUCTS).join(' or ')}, not ${PRODUCT}`); process.exit(2); }
-const BASE = (process.env.JIRA_URL || P.url).replace(/\/$/, '');
-const USER = process.env.JIRA_USER || 'admin', PASS = process.env.JIRA_PASSWORD || 'admin';
+if (!P) { console.log(`ui.js: RAB_PRODUCT is ${Object.keys(PRODUCTS).join(' or ')}, not ${PRODUCT}`); process.exit(2); }
+const BASE = (process.env.RAB_URL || P.url).replace(/\/$/, '');
+const USER = process.env.RAB_USER || 'admin', PASS = process.env.RAB_PASSWORD || 'admin';
 const OUT = path.join(__dirname, 'shots');
 const BROWSERS = [
     process.env.RAB_BROWSER,
@@ -42,18 +42,18 @@ function check(name, ok, detail) {
 
 (async () => {
     const exe = BROWSERS.find(p => fs.existsSync(p));
-    if (!exe) { console.log('ui_jira.js: no Edge or Chrome found (set RAB_BROWSER)'); process.exit(2); }
+    if (!exe) { console.log('ui.js: no Edge or Chrome found (set RAB_BROWSER)'); process.exit(2); }
     try {
         const r = await fetch(BASE + '/status');
         if (!r.ok) throw new Error('HTTP ' + r.status);
     } catch (e) {
-        console.log(`ui_jira.js: ${BASE} does not answer (${e.message}); start it with ${PRODUCT === 'jira' ? '' : 'RAB_PRODUCT=' + PRODUCT + ' '}src/test/jira/jira.sh start`);
+        console.log(`ui.js: ${BASE} does not answer (${e.message}); start it with ${PRODUCT === 'jira' ? '' : 'RAB_PRODUCT=' + PRODUCT + ' '}src/test/product/product.sh start`);
         process.exit(2);
     }
     fs.mkdirSync(OUT, { recursive: true });
 
     const port = 9400 + Math.floor(Math.random() * 500);
-    const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'rab-jira-ui-'));
+    const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'rab-ui-'));
     const browser = spawn(exe, ['--headless=new', '--disable-gpu', '--no-first-run', '--user-data-dir=' + profile,
         '--remote-debugging-port=' + port, '--window-size=1500,1000', 'about:blank'], { stdio: 'ignore' });
     let ws;
@@ -178,7 +178,7 @@ function check(name, ok, detail) {
         const ownFailures = failedRequests.filter(u => /rest-api-browser|restbrowser|devtools/i.test(u));
         check('no failed request for the plugin\'s own resources', ownFailures.length === 0, ownFailures.slice(0, 10));
         // a WADL is the product's (or an app's) to serve: some refuse in some setups, e.g. OAuth 2.0 needs HTTPS outside
-        // dev mode. Like smoke_jira.py, at least 95% have to load.
+        // dev mode. Like smoke.py, at least 95% have to load.
         const wadlFailures = failedRequests.filter(u => /application\.wadl/.test(u) && !ownFailures.includes(u));
         check(`at least 95% of the WADLs load (${wadlRequests - wadlFailures.length} of ${wadlRequests})`,
             wadlRequests > 0 && wadlFailures.length <= 0.05 * wadlRequests, wadlFailures.slice(0, 10));

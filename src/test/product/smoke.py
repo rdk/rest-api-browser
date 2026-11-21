@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Real-Jira (or Confluence) smoke check of the REST API Browser (RAB): installs the plugin jar through UPM and
+"""Smoke check of the REST API Browser (RAB) on a real Jira or Confluence: installs the plugin jar through UPM and
 checks it over HTTP.
 
-    python src/test/jira/smoke_jira.py --expect-jira 11.3.13            # newest target/rest-api-browser-*.jar
-    python src/test/jira/smoke_jira.py --jar target/rest-api-browser-4.0.0-SNAPSHOT.jar
-    python src/test/jira/smoke_jira.py --no-install                     # check what is installed
-    python src/test/jira/smoke_jira.py --uninstall                      # remove the plugin at the end
-    python src/test/jira/smoke_jira.py --product confluence --expect-jira 10.2.20
+    python src/test/product/smoke.py --expect-version 11.3.13     # newest target/rest-api-browser-*.jar
+    python src/test/product/smoke.py --jar target/rest-api-browser-4.0.0-SNAPSHOT.jar
+    python src/test/product/smoke.py --no-install                 # check what is installed
+    python src/test/product/smoke.py --uninstall                  # remove the plugin at the end
+    python src/test/product/smoke.py --product confluence --expect-version 10.2.20
 
-Settings: RAB_PRODUCT or --product (jira, the default, or confluence), JIRA_URL or --url (default
-http://localhost:2992/jira, or http://localhost:1992/confluence: the instance of src/test/jira/jira.sh), JIRA_USER /
-JIRA_PASSWORD (default admin/admin) or --user / --password. It installs a plugin, so it refuses a host other than
-localhost unless --allow-remote. Python 3.9+, standard library only.
+Settings: RAB_PRODUCT or --product (jira, the default, or confluence), RAB_URL or --url (default
+http://localhost:2992/jira, or http://localhost:1992/confluence: the instance of src/test/product/product.sh),
+RAB_USER / RAB_PASSWORD (default admin/admin) or --user / --password. It installs a plugin, so it refuses a host other
+than localhost unless --allow-remote. Python 3.9+, standard library only.
 
 Exit code: 0 all checks passed (WARN and SKIP lines do not count), 1 a check failed, 2 not run (product not
 reachable, not authorized, no jar). The last line is "N checks, N passed, N failed".
@@ -34,7 +34,7 @@ PLUGIN_KEY = 'com.atlassian.labs.rest-api-browser'
 SERVLET = '/plugins/servlet/restbrowser'
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.normpath(os.path.join(HERE, '..', '..', '..'))
-# per product: the URL of the jira.sh instance, a REST resource that needs a login, the core REST API, the main log
+# per product: the URL of the product.sh instance, a REST resource that needs a login, the core REST API, the main log
 # under AMPS's target directory (AMPS's Confluence logs to the console, which AMPS writes to confluence-LATEST.log)
 PRODUCTS = {
     'jira': {'name': 'Jira', 'url': 'http://localhost:2992/jira', 'myself': '/rest/api/2/myself',
@@ -156,7 +156,7 @@ def install(j, jar):
     if not check('UPM accepts the upload', s in (200, 202), (s, text[:300])):
         if 'via upload' in text:
             print('  UPM disables uploads outside dev mode: start the product with -Dupm.plugin.upload.enabled=true '
-                  '(jira.sh does with JIRA_DEV_MODE=false), or use --no-install')
+                  '(product.sh does with RAB_DEV_MODE=false), or use --no-install')
         return False
     want = jar_version(jar)
     info, same_other = None, 0
@@ -190,9 +190,9 @@ def default_jar():
 
 
 def product_log_path(j, version, product):
-    """atlassian-jira.log (confluence-LATEST.log) of the jira.sh instance, when it is on this machine."""
+    """atlassian-jira.log (confluence-LATEST.log) of the product.sh instance, when it is on this machine."""
     port = urllib.parse.urlparse(j.url).port or 80
-    workdir = os.environ.get('JIRA_WORKDIR') or os.path.join(os.path.expanduser('~'),
+    workdir = os.environ.get('RAB_WORKDIR') or os.path.join(os.path.expanduser('~'),
                                                              '%s-rab-%s-%s' % (product, version, port))
     p = os.path.join(workdir, 'amps-standalone-%s-%s' % (product, version), 'target',
                      *PRODUCTS[product]['log'])
@@ -202,17 +202,17 @@ def product_log_path(j, version, product):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('--product', choices=sorted(PRODUCTS), default=os.environ.get('RAB_PRODUCT', 'jira'))
-    ap.add_argument('--url', default=os.environ.get('JIRA_URL'), help='default: the jira.sh instance of the product')
-    ap.add_argument('--user', default=os.environ.get('JIRA_USER', 'admin'))
-    ap.add_argument('--password', default=os.environ.get('JIRA_PASSWORD', 'admin'))
+    ap.add_argument('--url', default=os.environ.get('RAB_URL'), help='default: the product.sh instance of the product')
+    ap.add_argument('--user', default=os.environ.get('RAB_USER', 'admin'))
+    ap.add_argument('--password', default=os.environ.get('RAB_PASSWORD', 'admin'))
     ap.add_argument('--jar', help='plugin jar to install (default: the newest target/rest-api-browser-*.jar)')
     ap.add_argument('--no-install', action='store_true', help='check the installed plugin, do not upload a jar')
     ap.add_argument('--uninstall', action='store_true', help='uninstall the plugin at the end')
-    ap.add_argument('--expect-jira', help='fail unless the product reports this version (e.g. 11.3.13)')
+    ap.add_argument('--expect-version', help='fail unless the product reports this version (e.g. 11.3.13)')
     ap.add_argument('--expect-bundle', action='store_true',
                     help='fail unless the page loads the bundle rest-api-browser.min.js (outside dev mode)')
-    ap.add_argument('--jira-log', help='atlassian-jira.log (confluence-LATEST.log) to scan for the plugin\'s errors '
-                                       '(default: the jira.sh one)')
+    ap.add_argument('--log', help='atlassian-jira.log (confluence-LATEST.log) to scan for the plugin\'s errors '
+                                  '(default: the product.sh one)')
     ap.add_argument('--allow-remote', action='store_true', help='allow a host other than localhost')
     a = ap.parse_args()
     P = PRODUCTS[a.product]
@@ -220,13 +220,13 @@ def main():
 
     host = urllib.parse.urlparse(a.url).hostname
     if host not in ('localhost', '127.0.0.1', '::1') and not a.allow_remote:
-        print('smoke_jira.py: %s is not localhost; this check installs and removes plugins (--allow-remote)' % host)
+        print('smoke.py: %s is not localhost; this check installs and removes plugins (--allow-remote)' % host)
         return 2
     jar = None
     if not a.no_install:
         jar = a.jar or default_jar()
         if not jar or not os.path.isfile(jar):
-            print('smoke_jira.py: no plugin jar (build it with: mvn package -DskipTests, or pass --jar)')
+            print('smoke.py: no plugin jar (build it with: mvn package -DskipTests, or pass --jar)')
             return 2
     j = Instance(a.url, a.user, a.password)
 
@@ -234,32 +234,32 @@ def main():
     try:
         s, info, _ = j.json('/rest/applinks/1.0/manifest', auth=False)
     except OSError as e:
-        print('smoke_jira.py: %s does not answer: %s (start it with %ssrc/test/jira/jira.sh start)'
+        print('smoke.py: %s does not answer: %s (start it with %ssrc/test/product/product.sh start)'
               % (a.url, e, '' if a.product == 'jira' else 'RAB_PRODUCT=%s ' % a.product))
         return 2
     if s != 200 or not info:
-        print('smoke_jira.py: %s/rest/applinks/1.0/manifest answered %s' % (a.url, s))
+        print('smoke.py: %s/rest/applinks/1.0/manifest answered %s' % (a.url, s))
         return 2
     version = info.get('version')
     print('%s %s (build %s) at %s' % (P['name'], version, info.get('buildNumber'), a.url))
     if info.get('typeId') != a.product:
-        print('smoke_jira.py: %s is %s, not %s (--product)' % (a.url, info.get('typeId'), a.product))
+        print('smoke.py: %s is %s, not %s (--product)' % (a.url, info.get('typeId'), a.product))
         return 2
     s, _, _ = j.json(P['myself'])
     if s != 200:
-        print('smoke_jira.py: %s cannot log in as %s (%s)' % (a.url, a.user, s))
+        print('smoke.py: %s cannot log in as %s (%s)' % (a.url, a.user, s))
         return 2
-    if a.expect_jira:
-        check('%s is version %s' % (P['name'], a.expect_jira), version == a.expect_jira, version)
+    if a.expect_version:
+        check('%s is version %s' % (P['name'], a.expect_version), version == a.expect_version, version)
     # the page builds every WADL URL from the base URL; AMPS's test data has the SDK's default port whatever the port
-    # (jira.sh start/wait fixes it)
+    # (product.sh start/wait fixes it)
     hint = ('; set it with: curl -u admin:admin -X PUT -H "Content-Type: application/json" -H "X-Atlassian-Token: '
             'no-check" --data %s %s/rest/api/2/settings/baseUrl (the raw URL, not a JSON string)' % (j.url, j.url)
             if a.product == 'jira' else '')
     check('%s\'s base URL is the URL under test' % P['name'], (info.get('url') or '').rstrip('/') == j.url,
-          '%s; jira.sh start/wait sets it%s' % (info.get('url'), hint))
+          '%s; product.sh start/wait sets it%s' % (info.get('url'), hint))
 
-    log = a.jira_log or product_log_path(j, version, a.product)
+    log = a.log or product_log_path(j, version, a.product)
     log_start = os.path.getsize(log) if log else 0
 
     # ---- install
@@ -325,7 +325,7 @@ def main():
         warn('WADL not served: ' + b)
     if no_txw2:
         print('  %d of them fail in %s itself: JAXB\'s schema writer txw2 is missing from its WEB-INF/lib (Confluence '
-              '10.2.20 does not ship it; see src/test/jira/README.md)' % (no_txw2, P['name']))
+              '10.2.20 does not ship it; see src/test/product/README.md)' % (no_txw2, P['name']))
     check('%s serves the WADL of %s (the sidebar\'s public APIs)' % (P['name'], P['core']),
           core and not any(b.startswith(core_wadl + ' ') for b in bad), [b for b in bad if b.startswith(core_wadl + ' ')])
     check('%s serves at least 95%% of the WADLs the page loads (%d of %d)' % (P['name'], ok, len(loaded)),
@@ -401,7 +401,7 @@ def main():
         check('no stack trace through the plugin\'s classes in %s\'s log' % P['name'], traces == 0,
               '%d frames' % traces)
     else:
-        skip('%s log' % P['name'], '%s not found (pass --jira-log)' % P['log'][-1])
+        skip('%s log' % P['name'], '%s not found (pass --log)' % P['log'][-1])
 
     if a.uninstall:
         uninstall(j)

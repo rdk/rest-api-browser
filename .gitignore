@@ -8,7 +8,7 @@ target/
 .idea
 node_modules
 .DS_Store
-src/test/jira/shots/
-src/test/jira/__pycache__/
-src/test/jira/local.env
+src/test/product/shots/
+src/test/product/__pycache__/
+src/test/product/local.env
 src/main/resources/assets/rab/package-lock.json

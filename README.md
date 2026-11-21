@@ -75,14 +75,14 @@ creates a draft release with it.
 
 ## Testing
 
-`mvn verify` runs the integration test against the refapp. To check the plugin on a real Jira Data Center (Jira 11.3.13 by default), see [src/test/jira/README.md](src/test/jira/README.md); with `RAB_PRODUCT=confluence` the same scripts check it on Confluence 10.2.20:
+`mvn verify` runs the integration test against the refapp. To check the plugin on a real Jira Data Center (Jira 11.3.13 by default), see [src/test/product/README.md](src/test/product/README.md); with `RAB_PRODUCT=confluence` the same scripts check it on Confluence 10.2.20:
 
 ```bash
 mvn -B clean package -DskipTests
-src/test/jira/jira.sh start
-python src/test/jira/smoke_jira.py --expect-jira 11.3.13
-node src/test/jira/ui_jira.js
-src/test/jira/jira.sh stop
+src/test/product/product.sh start
+python src/test/product/smoke.py --expect-version 11.3.13
+node src/test/product/ui.js
+src/test/product/product.sh stop
 ```
 
 ## Changing the JavaScript
