@@ -1,7 +1,6 @@
 #* @vtlvariable name="textUtils" type="com.opensymphony.util.TextUtils" *#
 #* @vtlvariable name="webResourceManager" type="com.atlassian.plugin.webresource.WebResourceManager" *#
 #* @vtlvariable name="restDescriptors" type="java.util.List<com.atlassian.labs.restbrowser.rest.model.RestDescriptor>" *#
-#* @vtlvariable name="jsonRpcDescriptors" type="java.util.List<com.atlassian.labs.restbrowser.rest.model.RestDescriptor>" *#
 #* @vtlvariable name="applicationProperties" type="com.atlassian.sal.api.ApplicationProperties" *#
 #* @vtlvariable name="devMode" type="java.lang.String" *#
 <html>
@@ -29,16 +28,6 @@ RAB.rest.services = [
         }#if($velocityCount < $restDescriptors.size()),#end
     #end
 ];
-RAB.rest.jsonRpcs = [
-    #foreach($descriptor in $jsonRpcDescriptors)
-        {
-            "wadl": "$textUtils.htmlEncode($applicationProperties.baseUrl)/rest/devtools/1/jsonrpc/${descriptor.pluginKey}/wadl",
-            "path": "$textUtils.htmlEncode($applicationProperties.baseUrl)/rpc$textUtils.htmlEncode(${descriptor.basePath})/$textUtils.htmlEncode($descriptor.version)",
-            "relativeResource": "${descriptor.displayPath}"
-        }#if($velocityCount < $jsonRpcDescriptors.size()),#end
-    #end
-];
-RAB.rest.services = RAB.rest.services.concat(RAB.rest.jsonRpcs);
     </script>
     <div id="rab" ng-app="RAB" ng-controller="SidebarCtrl">
         <header class="aui-page-header rab-header">

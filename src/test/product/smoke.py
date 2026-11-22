@@ -296,18 +296,11 @@ def main():
     check('the page names the product as %s' % P['name'], m and re.search(a.product, m.group(1), re.I),
           m and m.group(1))
     services = [html.unescape(w) for w in re.findall(r'"wadl":"([^"]+)"', page)]
-    jsonrpcs = re.search(r'RAB\.rest\.jsonRpcs = \[\s*\];', page)
     print('The page lists %d REST modules' % len(services))
     check('the page lists the REST modules of %s (at least 20)' % P['name'], len(services) >= 20, len(services))
     core_wadl = P['core'] + '/application.wadl'
     core = [w for w in services if w.endswith(core_wadl)]
     check('the list has %s\'s core REST API (%s)' % (P['name'], P['core']), core, services[:10])
-    check('the list has the plugin\'s own REST module (/rest/devtools/1)',
-          any(w.endswith('/rest/devtools/1/application.wadl') for w in services), services[:10])
-    if a.product == 'jira':
-        check('the JSON-RPC list is empty on Jira (JiraBeans has no SOAP services)', jsonrpcs)
-    else:
-        print('The page lists %s JSON-RPC services' % ('no' if jsonrpcs else 'some'))
 
     # ---- the WADLs the page loads in the browser: the sidebar is built from them. The page itself leaves out Crowd's
     # usermanagement and appmanagement modules (rest_resources_service.js: they need application credentials)
@@ -359,16 +352,6 @@ def main():
         check('the Angular view %s is served (as in the jar)' % view,
               s == 200 and body.strip() and (want is None or body.replace('\r\n', '\n').strip() == want.replace('\r\n', '\n').strip()),
               (s, body[:120]))
-
-    # ---- the plugin's REST resources (REST v2, jakarta.ws.rs)
-    s, body, h = j.call('GET', '/rest/devtools/1/ewadl', headers={'Accept': 'application/xml'})
-    check('GET /rest/devtools/1/ewadl answers 200 WADL', s == 200 and is_wadl(body),
-          (s, h.get('content-type'), body[:200]))
-    s, body, _ = j.call('GET', '/rest/devtools/1/jsonrpc/%s/wadl' % PLUGIN_KEY, headers={'Accept': 'application/xml'})
-    check('GET /rest/devtools/1/jsonrpc/{an enabled plugin}/wadl answers 200 WADL', s == 200 and is_wadl(body),
-          (s, body[:200]))
-    s, body, _ = j.call('GET', '/rest/devtools/1/jsonrpc/no.such.plugin/wadl', headers={'Accept': 'application/xml'})
-    check('GET /rest/devtools/1/jsonrpc/{unknown plugin}/wadl answers 404', s == 404, s)
 
     # ---- the pretty URL (routing module, atlassian-pretty-urls-plugin)
     s, body, h = j.call('GET', '/restbrowser?os_authType=basic', headers={'Accept': 'text/html'})

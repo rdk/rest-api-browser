@@ -17,17 +17,6 @@
                            context-key="applicationProperties" name="Application Properties Context Item"/>
 
     <!--
-        Defined REST services
-     -->
-    <rest-migration key="rest-migration-key">
-        <rest-v2/>
-    </rest-migration>
-
-    <rest key="rest-services" path="/devtools" version="1">
-        <description>Provides REST services to get at the bundled JSON-RPC endpoints.</description>
-    </rest>
-
-    <!--
         MVC servlets
      -->
     <servlet name="Rest Browser Servlet" i18n-name-key="rest-browser-servlet.name"
@@ -167,10 +156,6 @@
     <sitemesh key="rest-browser-decorator" path="/restbrowser"/>
 
     <velocity-allowlist key="rest-browser-allowlist">
-        <method>com.atlassian.labs.restbrowser.rest.model.JsonRpcMethod#getName()</method>
-        <method>com.atlassian.labs.restbrowser.rest.model.JsonRpcMethod#getParams()</method>
-        <method>com.atlassian.labs.restbrowser.rest.model.JsonRpcMethod$Parameter#getName()</method>
-        <method>com.atlassian.labs.restbrowser.rest.model.JsonRpcMethod$Parameter#getXmlnsType()</method>
         <method>com.atlassian.labs.restbrowser.rest.model.RestDescriptor#getBasePath()</method>
         <method>com.atlassian.labs.restbrowser.rest.model.RestDescriptor#getDisplayPath()</method>
         <method>com.atlassian.labs.restbrowser.rest.model.RestDescriptor#getPluginCompleteKey()</method>

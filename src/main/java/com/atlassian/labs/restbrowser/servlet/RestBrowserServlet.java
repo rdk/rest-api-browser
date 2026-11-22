@@ -1,8 +1,6 @@
 package com.atlassian.labs.restbrowser.servlet;
 
 import com.atlassian.annotations.security.AnonymousSiteAccess;
-import com.atlassian.labs.restbrowser.plugin.SoapService;
-import com.atlassian.labs.restbrowser.provider.SoapServiceProvider;
 import com.atlassian.labs.restbrowser.rest.model.RestDescriptor;
 import com.atlassian.plugin.ModuleDescriptor;
 import com.atlassian.plugin.Plugin;
@@ -23,7 +21,6 @@ import java.util.Optional;
 
 import static java.util.Objects.requireNonNull;
 import static java.util.stream.Collectors.toList;
-import static java.util.stream.StreamSupport.stream;
 import static org.slf4j.LoggerFactory.getLogger;
 
 /**
@@ -38,10 +35,8 @@ public class RestBrowserServlet extends RequiresLoginServlet {
 
     private final ApplicationProperties applicationProperties;
     private final PluginAccessor pluginAccessor;
-    private final SoapServiceProvider soapServiceProvider;
 
     public RestBrowserServlet(final PluginAccessor pluginAccessor,
-                              final SoapServiceProvider soapServiceProvider,
                               final UserManager userManager,
                               final TemplateRenderer renderer,
                               final LoginUriProvider loginUriProvider,
@@ -49,7 +44,6 @@ public class RestBrowserServlet extends RequiresLoginServlet {
         super(userManager, renderer, loginUriProvider);
         this.applicationProperties = requireNonNull(applicationProperties);
         this.pluginAccessor = requireNonNull(pluginAccessor);
-        this.soapServiceProvider = requireNonNull(soapServiceProvider);
     }
 
     @Override
@@ -57,7 +51,6 @@ public class RestBrowserServlet extends RequiresLoginServlet {
         final Map<String, Object> context = new HashMap<>();
         context.put("applicationProperties", applicationProperties);
         context.put("devMode", System.getProperty("atlassian.dev.mode"));
-        context.put("jsonRpcDescriptors", getJsonRpcDescriptors());
         context.put("restDescriptors", getRestDescriptors());
         return context;
     }
@@ -65,23 +58,6 @@ public class RestBrowserServlet extends RequiresLoginServlet {
     @Override
     protected String getTemplatePath() {
         return BROWSER_TEMPLATE;
-    }
-
-    private List<RestDescriptor> getJsonRpcDescriptors() {
-        return stream(soapServiceProvider.getSoapServices().spliterator(), false)
-                .map(RestBrowserServlet::toRestDescriptor)
-                .collect(toList());
-    }
-
-    private static RestDescriptor toRestDescriptor(final SoapService soapService) {
-        final Plugin plugin = soapService.getPlugin();
-        return new RestDescriptor.Builder().pluginKey(plugin.getKey())
-                .pluginCompleteKey(soapService.getCompleteKey())
-                .pluginName(plugin.getName())
-                .pluginDescription(soapService.getDescription())
-                .basePath("/json-rpc")
-                .version(soapService.getServicePath())
-                .build();
     }
 
     // Can't use the non-deprecated getModuleDescriptors method until Fecru is on a newer version of Atlassian Plugins

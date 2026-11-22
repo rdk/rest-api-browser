@@ -14,7 +14,7 @@
     <packaging>atlassian-plugin</packaging>
 
     <name>REST API Browser</name>
-    <description>Discover, browse, and try the REST and JSON-RPC APIs of Atlassian products. Unofficial fork of Atlassian's REST API Browser.</description>
+    <description>Discover, browse, and try the REST APIs of Atlassian products. Unofficial fork of Atlassian's REST API Browser.</description>
     <url>https://github.com/rdk/rest-api-browser</url>
     <organization>
         <name>rdk</name>
@@ -100,28 +100,11 @@
             <artifactId>jakarta.servlet-api</artifactId>
             <scope>provided</scope>
         </dependency>
-        <dependency>
-            <groupId>jakarta.inject</groupId>
-            <artifactId>jakarta.inject-api</artifactId>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>jakarta.ws.rs</groupId>
-            <artifactId>jakarta.ws.rs-api</artifactId>
-            <scope>provided</scope>
-        </dependency>
 
         <dependency>
             <groupId>com.atlassian.plugins</groupId>
             <artifactId>atlassian-plugins-osgi-javaconfig</artifactId>
             <version>0.6.0</version>
-            <scope>compile</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>com.thoughtworks.paranamer</groupId>
-            <artifactId>paranamer</artifactId>
-            <version>2.8</version>
             <scope>compile</scope>
         </dependency>
 

@@ -12,7 +12,7 @@ REST API Browser
 
 ## Description
 
-The REST API Browser add-on allows a developer to browse, discover, and test Atlassian's rich REST and JSON-RPC APIs.
+The REST API Browser add-on allows a developer to browse, discover, and test Atlassian's rich REST APIs.
 
 ## Compatibility
 
