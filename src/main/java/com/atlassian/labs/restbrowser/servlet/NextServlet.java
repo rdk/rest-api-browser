@@ -1,6 +1,9 @@
 package com.atlassian.labs.restbrowser.servlet;
 
 import com.atlassian.annotations.security.AnonymousSiteAccess;
+import com.atlassian.labs.restbrowser.spring.LocalBeans;
+import com.atlassian.plugin.Plugin;
+import com.atlassian.plugin.PluginAccessor;
 import com.atlassian.sal.api.ApplicationProperties;
 import com.atlassian.sal.api.UrlMode;
 import com.atlassian.sal.api.auth.LoginUriProvider;
@@ -21,11 +24,13 @@ import static java.util.Objects.requireNonNull;
 public class NextServlet extends RequiresLoginServlet {
 
     private final ApplicationProperties applicationProperties;
+    private final PluginAccessor pluginAccessor;
 
     public NextServlet(UserManager userManager, TemplateRenderer renderer, LoginUriProvider loginUriProvider,
-                       ApplicationProperties applicationProperties) {
+                       ApplicationProperties applicationProperties, PluginAccessor pluginAccessor) {
         super(userManager, renderer, loginUriProvider);
         this.applicationProperties = requireNonNull(applicationProperties);
+        this.pluginAccessor = requireNonNull(pluginAccessor);
     }
 
     @Override
@@ -38,6 +43,18 @@ public class NextServlet extends RequiresLoginServlet {
         Map<String, Object> context = new HashMap<>();
         context.put("baseUrl", applicationProperties.getBaseUrl(UrlMode.RELATIVE));
         context.put("productName", applicationProperties.getDisplayName());
+        context.put("pluginVersion", pluginVersion());
         return context;
+    }
+
+    /** This app's version, for the page's header; empty when the plugin system does not know it. */
+    private String pluginVersion() {
+        try {
+            Plugin own = pluginAccessor.getPlugin(LocalBeans.PLUGIN_KEY);
+            String version = own == null ? null : own.getPluginInformation().getVersion();
+            return version == null ? "" : version;
+        } catch (RuntimeException e) {
+            return "";
+        }
     }
 }

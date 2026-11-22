@@ -61,6 +61,32 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         console.log(`Catalog: ${status.trim()} (${Date.now() - t0} ms to a usable list)`);
         await b.shot(path.join(SHOTS, `${PRODUCT}-next-1-browse.png`));
 
+        // the header: the brand opens the project on GitHub, the version its releases (both in a new tab), Classic UI
+        const header = await b.evaluate(`(() => {
+            const top = document.querySelector('.rab-n-topbar');
+            const attrs = sel => { const e = top.querySelector(sel); return e && { text: e.textContent.trim(), href: e.getAttribute('href'), target: e.target }; };
+            return { brand: attrs('[data-testid=brand]'), version: attrs('[data-testid=version]'), classic: attrs('[data-testid=classic-link]') };
+        })()`);
+        c.check('the header links the brand to GitHub, the version to its releases, and the classic UI',
+            !!header.brand && /^https:\/\/github\.com\/[^/]+\/[^/]+$/.test(header.brand.href) && header.brand.target === '_blank'
+            && !!header.version && /^v\d/.test(header.version.text) && /\/releases$/.test(header.version.href) && header.version.target === '_blank'
+            && !!header.classic && /\/plugins\/servlet\/restbrowser$/.test(header.classic.href), header);
+        const brand = await b.evaluate(`(() => { const r = document.querySelector('[data-testid=brand]').getBoundingClientRect();
+            return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+        await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: brand.x, y: brand.y });
+        const about = await b.waitFor(`(() => { const e = document.querySelector('[data-testid=about]'); const st = e && getComputedStyle(e);
+            return !!st && st.visibility === 'visible' && Number(st.opacity) > 0.95; })()`, 3000);
+        c.check('resting on the brand shows the tooltip about the project', about,
+            await b.evaluate(`(document.querySelector('[data-testid=about]') || {}).textContent || 'none'`));
+        await b.shot(path.join(SHOTS, `${PRODUCT}-next-6-about.png`));
+        await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: brand.x + 700, y: brand.y + 300 });
+
+        // the page is the app: no product footer, nothing to scroll
+        const page = await b.evaluate(`(() => { const f = document.querySelector('#footer');
+            return { footer: f ? getComputedStyle(f).display : 'absent', overflow: document.documentElement.scrollHeight - innerHeight }; })()`);
+        c.check(`the product's footer is hidden and the page does not scroll (${page.overflow} px more)`,
+            (page.footer === 'none' || page.footer === 'absent') && page.overflow <= 4, page);
+
         // search: a flat, ranked list
         const searchStart = Date.now();
         await type('[data-testid=search]', P.search);
@@ -68,9 +94,10 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         c.check(`searching "${P.search}" lists ${P.title}`, found, await b.evaluate(
             `[...document.querySelectorAll('[data-testid=op]')].slice(0, 5).map(e => e.dataset.path)`));
         const marked = await b.evaluate(`[...document.querySelectorAll('[data-testid=op][data-path=${q(P.title)}] .rab-n-pp-hit')].map(e => e.textContent)`);
-        c.check('the search words are marked in the path, the module part told apart',
+        c.check('the search words are marked in the path, the module part told apart, the first word bold',
             marked.length > 0 && marked.every(m => P.search.toLowerCase().split(' ').some(w => m.toLowerCase().includes(w) || w.includes(m.toLowerCase())))
-            && await b.evaluate(`!!document.querySelector('[data-testid=op][data-path=${q(P.title)}] .rab-n-pp-mod')`), marked);
+            && await b.evaluate(`!!document.querySelector('[data-testid=op][data-path=${q(P.title)}] .rab-n-pp-mod')`)
+            && await b.evaluate(`getComputedStyle(document.querySelector('[data-testid=op][data-path=${q(P.title)}] .rab-n-pp-lead')).fontWeight >= 600`), marked);
 
         // the hover card of a row: the pointer rests on the row, the card spells out the app and the access
         const rect = await b.evaluate(`(() => { const e = document.querySelector('[data-testid=op][data-path=${q(P.title)}]');
@@ -104,6 +131,8 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
             templatedKey = await b.evaluate(`new URLSearchParams(location.search).get('op')`);
             const mark = () => b.evaluate(`(() => { const i = document.querySelector('input[name=${P.param}]');
                 const m = i && i.parentElement.querySelector('[data-testid=check]'); return m ? m.dataset.state : 'none'; })()`);
+            const colorOf = sel => b.evaluate(`(() => { const e = document.querySelector(${q(sel)}); return e ? getComputedStyle(e).color : null; })()`);
+            const templateColor = await colorOf('[data-testid=live-url] .rab-n-pp-param');
             const empty = { mark: await mark(), tab: await b.evaluate(`!!document.querySelector('[data-testid=params-warn]')`),
                 send: await b.evaluate(`document.querySelector('[data-testid=send]').disabled`) };
             await b.shot(path.join(SHOTS, `${PRODUCT}-next-5-form.png`));
@@ -112,6 +141,17 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
             const filled = { mark: await mark(), tab: await b.evaluate(`!!document.querySelector('[data-testid=params-warn]')`) };
             c.check('an empty required value shows a warning sign, a filled one a check', empty.mark === 'warn' && empty.tab && empty.send
                 && filled.mark === 'ok' && !filled.tab, { empty, filled });
+            const value = { text: await text('[data-testid=live-url] .rab-n-pp-value'), color: await colorOf('[data-testid=live-url] .rab-n-pp-value') };
+            const colors = { templateColor, value };
+            if (await b.evaluate(`!!document.querySelector('input[name=expand]')`)) {
+                await type('input[name=expand]', 'names');
+                await sleep(100);
+                colors.query = { text: await text('[data-testid=live-url] .rab-n-pp-qvalue'), color: await colorOf('[data-testid=live-url] .rab-n-pp-qvalue'),
+                    pill: await colorOf('.rab-n-in-query') };
+            }
+            c.check('in the URL a path value keeps the color of its template, a query value the color of the query parameters',
+                !!templateColor && value.text === ODD_ENCODED && value.color === templateColor
+                && (!colors.query || (colors.query.text === 'names' && colors.query.color === colors.query.pill)), colors);
             const live = await text('[data-testid=live-url]');
             c.check('the live URL carries the path value URL-encoded', live.includes('/' + ODD_ENCODED), live);
             const method = await b.evaluate(`(document.querySelector('[data-testid=send]') || {}).textContent || ''`);
@@ -162,12 +202,12 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
 
         // the header's menu: Classic UI, rebuilding for system administrators; "Reset the layout" narrows the list again
         await click('[data-testid=menu-button]');
-        const menu = await b.waitFor(`!!document.querySelector('[data-testid=menu] [data-testid=classic-link][href*="restbrowser"]')`, 3000);
+        const menu = await b.waitFor(`!!document.querySelector('[data-testid=menu] [data-testid=report-issue][href*="github.com/"][href*="/issues/new"][target=_blank]')`, 3000);
         const items = await b.evaluate(`[...document.querySelectorAll('[data-testid=menu] [role=menuitem]')].map(e => e.querySelector('.rab-n-menu-label').textContent)`);
         await b.shot(path.join(SHOTS, `${PRODUCT}-next-4-menu.png`));
         await press('Escape');
         const closed = await b.waitFor(`!document.querySelector('[data-testid=menu]')`, 2000);
-        c.check('the menu opens with Classic UI and closes with Escape', menu && closed, { items, closed });
+        c.check('the menu opens with "Report an issue…" (GitHub, in a new tab) and closes with Escape', menu && closed, { items, closed });
         await click('[data-testid=menu-button]');
         await b.evaluate(`([...document.querySelectorAll('[data-testid=menu] [role=menuitem]')].find(e => /Reset the layout/.test(e.textContent)) || {}).click?.(), true`);
         const reset = await b.waitFor(`Math.round(document.querySelector('.rab-n-side').getBoundingClientRect().width) === 430`, 2000);

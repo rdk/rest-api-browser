@@ -287,17 +287,23 @@ section.aui-page-panel-content {
 /* FeCru specific hacks: end */
 
 /* the classic page's way to the new UI: the new UI's brand gradient */
-.rab-header .aui-page-header-actions { display: flex; align-items: center; gap: 12px; }
-.rab-header a.aui-button.rab-new-ui-link,
-.rab-header a.aui-button.rab-new-ui-link:visited {
-    color: var(--ds-text-inverse, #fff);
-    border: 0;
-    font-weight: 600;
-    background: linear-gradient(135deg, var(--ds-background-brand-bold, #0c66e4), var(--ds-background-discovery-bold, #6e5dc6));
+/* the header: the search on the left, the links on the right; the new UI's link is a plain, quiet link */
+.rab-header .aui-page-header-inner { display: flex; align-items: center; gap: 12px; }
+.rab-header .aui-page-header-actions { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+.rab-header a.rab-new-ui-link,
+.rab-header a.rab-new-ui-link:visited {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 13px;
+    color: var(--ds-link, #0c66e4);
+    text-decoration: none;
 }
-.rab-header a.aui-button.rab-new-ui-link:hover,
-.rab-header a.aui-button.rab-new-ui-link:focus {
-    color: var(--ds-text-inverse, #fff);
-    background: linear-gradient(135deg, var(--ds-background-brand-bold-hovered, #0055cc), var(--ds-background-discovery-bold-hovered, #5e4db2));
+.rab-header a.rab-new-ui-link:hover,
+.rab-header a.rab-new-ui-link:focus {
+    color: var(--ds-link-pressed, #0055cc);
+    background: var(--ds-background-neutral-subtle-hovered, rgba(9, 30, 66, 0.06));
     text-decoration: none;
 }

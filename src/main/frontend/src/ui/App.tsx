@@ -15,7 +15,12 @@ interface Props {
   baseUrl: string;
   classicUrl: string;
   product: string;
+  /** This app's version, empty when unknown. */
+  version: string;
 }
+
+/** The project's home, its releases and its issues. */
+const REPO = 'https://github.com/rdk/rest-api-browser';
 
 const MemoSidebar = memo(Sidebar);
 const MemoOperation = memo(OperationView);
@@ -26,7 +31,7 @@ const SPLIT = 0.45;
 /** The list may take up to this share of the width. */
 const MAX_SIDEBAR = 0.75;
 
-export function App({ baseUrl, classicUrl, product }: Props) {
+export function App({ baseUrl, classicUrl, product, version }: Props) {
   const store = useMemo(() => new CatalogStore(baseUrl), [baseUrl]);
   const runner = useMemo(() => new RequestRunner(), []);
   const userStore = useMemo(() => new UserStore(baseUrl || location.host), [baseUrl]);
@@ -170,6 +175,7 @@ export function App({ baseUrl, classicUrl, product }: Props) {
     }
   }, [baseUrl, store]);
 
+  const productLabel = summary ? `${summary.product.name} ${summary.product.version}` : product;
   const menu: MenuItem[] = [
     {
       id: 'layout',
@@ -192,20 +198,43 @@ export function App({ baseUrl, classicUrl, product }: Props) {
           group: true,
         }]
       : []),
-    { id: 'classic', label: 'Classic UI', hint: 'The original REST API Browser', href: classicUrl, testId: 'classic-link', group: true },
+    {
+      id: 'report',
+      label: 'Report an issue…',
+      hint: 'A new issue on GitHub, with the versions filled in',
+      href: `${REPO}/issues/new?body=${encodeURIComponent(issueBody(version, productLabel))}`,
+      newTab: true,
+      testId: 'report-issue',
+      group: true,
+    },
   ];
 
   return (
     <div class="rab-n" ref={root} style={{ height: height + 'px' }}>
       <div class="rab-n-topbar">
-        <span class="rab-n-brand-mark" aria-hidden="true">
-          <svg class="rab-n-svg" width="15" height="15" viewBox="0 0 16 16" fill="none">
-            <path d="M5.5 3.5L2.5 8l3 4.5M10.5 3.5L13.5 8l-3 4.5M9 2.5L7 13.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+        <span class="rab-n-brand-wrap">
+          <a class="rab-n-brand" href={REPO} target="_blank" rel="noopener noreferrer" aria-describedby="rab-n-about" data-testid="brand">
+            <span class="rab-n-brand-mark" aria-hidden="true">
+              <BrandIcon size={15} />
+            </span>
+            <strong class="rab-n-topbar-title">REST API Browser</strong>
+          </a>
+          <About version={version} product={productLabel} operations={rows.length} modules={summary?.modules.length} />
         </span>
-        <strong class="rab-n-topbar-title">REST API Browser</strong>
-        <span class="rab-n-product-badge">{summary ? `${summary.product.name} ${summary.product.version}` : product}</span>
+        {version && (
+          <a class="rab-n-version" href={`${REPO}/releases`} target="_blank" rel="noopener noreferrer"
+             title="Releases and their notes on GitHub" data-testid="version">
+            v{version}
+          </a>
+        )}
         <span class="rab-n-spacer" />
+        <a class="rab-n-top-link" href={classicUrl} title="The original REST API Browser" data-testid="classic-link">
+          <svg class="rab-n-svg" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <rect x="2.5" y="3" width="11" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
+            <path d="M6 3v10" stroke="currentColor" strokeWidth="1.4" />
+          </svg>
+          Classic UI
+        </a>
         <Menu label="More actions" items={menu} />
       </div>
       <div class="rab-n-body-row">
@@ -250,6 +279,61 @@ export function App({ baseUrl, classicUrl, product }: Props) {
       </div>
     </div>
   );
+}
+
+function BrandIcon({ size }: { size: number }) {
+  return (
+    <svg class="rab-n-svg" width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <path d="M5.5 3.5L2.5 8l3 4.5M10.5 3.5L13.5 8l-3 4.5M9 2.5L7 13.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** The header's tooltip about the project; the brand it describes opens the project on GitHub. */
+function About({ version, product, operations, modules }: { version: string; product: string; operations: number; modules?: number }) {
+  return (
+    <div id="rab-n-about" class="rab-n-about" role="tooltip" data-testid="about">
+      <div class="rab-n-about-head">
+        <span class="rab-n-about-mark" aria-hidden="true"><BrandIcon size={18} /></span>
+        <span>
+          <span class="rab-n-about-title">REST API Browser</span>
+          {version && <span class="rab-n-about-version">Version {version}</span>}
+        </span>
+      </div>
+      <p class="rab-n-about-text">
+        Browse and try the REST APIs of this product: its own, those of its bundled apps and those of the apps you
+        installed. Requests run in your browser, with your session.
+      </p>
+      <dl class="rab-n-card-facts">
+        <dt>Running on</dt>
+        <dd>{product}</dd>
+        {modules !== undefined && operations > 0 && (
+          <>
+            <dt>Catalog</dt>
+            <dd>{operations.toLocaleString()} operations in {modules} modules</dd>
+          </>
+        )}
+        <dt>Project</dt>
+        <dd>An unofficial fork of Atlassian's archived REST API Browser</dd>
+        <dt>License</dt>
+        <dd>Apache License 2.0</dd>
+      </dl>
+      <div class="rab-n-about-foot">
+        <svg class="rab-n-svg" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M9 3h4v4M13 3L7.5 8.5M11.5 9.5V13h-8.5V4.5H6.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        Click to open github.com/rdk/rest-api-browser
+      </div>
+    </div>
+  );
+}
+
+/** The body of a new GitHub issue: the questions, and the versions that help to reproduce it. */
+function issueBody(version: string, product: string): string {
+  return [
+    '**What happened?**', '', '', '**What did you expect?**', '', '', '**Steps to reproduce**', '', '', '---',
+    `REST API Browser ${version || '(version unknown)'}, new UI, on ${product}`,
+  ].join('\n');
 }
 
 function describeError(e: unknown): string {

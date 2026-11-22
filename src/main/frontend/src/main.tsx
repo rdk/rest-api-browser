@@ -12,6 +12,7 @@ function mount() {
         baseUrl={root.dataset.baseUrl ?? ''}
         classicUrl={root.dataset.classicUrl ?? ''}
         product={root.dataset.product ?? ''}
+        version={root.dataset.version ?? ''}
       />,
       root,
     );

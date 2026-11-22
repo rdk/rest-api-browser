@@ -2,6 +2,7 @@
 #* @vtlvariable name="textUtils" type="com.atlassian.labs.restbrowser.util.TextUtils" *#
 #* @vtlvariable name="baseUrl" type="java.lang.String" *#
 #* @vtlvariable name="productName" type="java.lang.String" *#
+#* @vtlvariable name="pluginVersion" type="java.lang.String" *#
 <html>
   <head>
     <title>REST API Browser</title>
@@ -10,6 +11,7 @@
   </head>
   <body class="page-type-admin rab-next-page">
     <div id="rab-next" data-base-url="$textUtils.htmlEncode($baseUrl)" data-product="$textUtils.htmlEncode($productName)"
-         data-classic-url="$textUtils.htmlEncode($baseUrl)/plugins/servlet/restbrowser"></div>
+         data-classic-url="$textUtils.htmlEncode($baseUrl)/plugins/servlet/restbrowser"
+         data-version="$textUtils.htmlEncode($pluginVersion)"></div>
   </body>
 </html>

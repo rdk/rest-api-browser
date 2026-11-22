@@ -51,6 +51,12 @@
   --rab-bg-magenta: var(--ds-background-accent-magenta-subtlest, #ffecf8);
   --rab-bg-discovery: var(--ds-background-discovery, #f3f0ff);
 
+  /* Paths and URLs: the second resource word, and one color per kind of parameter (the form's pills use them too) */
+  --rab-sub-color: var(--ds-text-accent-teal, #206a83);
+  --rab-path-color: var(--rab-discovery);
+  --rab-query-color: var(--rab-info);
+  --rab-matrix-color: var(--rab-warning);
+
   /* Theme-adaptive gradients */
   --rab-grad-accent: linear-gradient(
     90deg,
@@ -308,7 +314,20 @@
   letter-spacing: -0.015em;
   color: var(--rab-topbar-fg);
 }
-.rab-n-product-badge {
+.rab-n-brand-wrap { position: relative; display: flex; align-items: center; }
+.rab-n a.rab-n-brand, .rab-n a.rab-n-brand:link, .rab-n a.rab-n-brand:visited, .rab-n a.rab-n-brand:hover {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 6px 2px 2px;
+  margin-left: -2px;
+  border-radius: var(--rab-radius-sm);
+  color: var(--rab-topbar-fg);
+  text-decoration: none;
+  transition: background var(--rab-ease);
+}
+.rab-n a.rab-n-brand:hover { background: var(--rab-topbar-glass); }
+.rab-n a.rab-n-version, .rab-n a.rab-n-version:link, .rab-n a.rab-n-version:visited {
   display: inline-flex;
   align-items: center;
   padding: 0 8px;
@@ -316,9 +335,94 @@
   border-radius: var(--rab-radius-pill);
   font-size: 11.5px;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
   color: var(--rab-topbar-fg);
   background: var(--rab-topbar-glass);
   border: 1px solid var(--rab-topbar-glass-border);
+  text-decoration: none;
+  transition: background var(--rab-ease), border-color var(--rab-ease);
+}
+.rab-n a.rab-n-version:hover {
+  color: var(--rab-topbar-fg);
+  background: var(--rab-topbar-glass-hover);
+  border-color: color-mix(in srgb, var(--rab-topbar-fg) 48%, transparent);
+  text-decoration: none;
+}
+.rab-n a.rab-n-top-link, .rab-n a.rab-n-top-link:link, .rab-n a.rab-n-top-link:visited {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: var(--rab-radius-sm);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--rab-topbar-fg) 88%, transparent);
+  text-decoration: none;
+  transition: background var(--rab-ease), color var(--rab-ease);
+}
+.rab-n a.rab-n-top-link:hover { color: var(--rab-topbar-fg); background: var(--rab-topbar-glass); text-decoration: none; }
+
+/* The tooltip about the project, below the brand, after a short rest of the pointer (or keyboard focus) */
+.rab-n-about {
+  position: absolute;
+  top: calc(100% + 9px);
+  left: -4px;
+  z-index: 60;
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  padding: 12px 14px 10px;
+  border-radius: var(--rab-radius-md);
+  border: 1px solid var(--rab-border);
+  background: var(--ds-surface-overlay, var(--rab-raised));
+  color: var(--rab-text);
+  box-shadow: var(--ds-shadow-overlay, 0 8px 12px rgba(9, 30, 66, 0.15), 0 0 1px rgba(9, 30, 66, 0.31));
+  font-size: 12.5px;
+  line-height: 1.45;
+  pointer-events: none;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(-3px);
+  transition: opacity 110ms ease, transform 110ms ease, visibility 0s linear 110ms;
+}
+.rab-n-about::before {
+  content: '';
+  position: absolute;
+  inset: -1px -1px auto;
+  height: 3px;
+  border-radius: var(--rab-radius-md) var(--rab-radius-md) 0 0;
+  background: var(--rab-grad-accent);
+}
+.rab-n-brand-wrap:hover .rab-n-about, .rab-n-brand:focus-visible + .rab-n-about {
+  visibility: visible;
+  opacity: 1;
+  transform: none;
+  transition: opacity 140ms ease 350ms, transform 140ms ease 350ms, visibility 0s linear 350ms;
+}
+.rab-n-about-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.rab-n-about-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--rab-grad-brand);
+  color: var(--rab-on-brand);
+}
+.rab-n-about-title { display: block; font-size: 14px; font-weight: 700; }
+.rab-n-about-version { display: block; font-size: 11.5px; color: var(--rab-subtlest); font-variant-numeric: tabular-nums; }
+.rab-n-about-text { margin: 0 0 8px; color: var(--rab-subtle); }
+.rab-n-about-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid var(--rab-border-subtle);
+  color: var(--rab-link);
+  font-size: 12px;
 }
 .rab-n-menu-wrap { position: relative; display: flex; }
 .rab-n-menu-button {
@@ -770,12 +874,23 @@
 }
 .rab-n-mini:hover { background: var(--rab-hover); color: var(--rab-text); }
 
-/* Paths with their parts told apart: resource words in the text color, the rest fainter, templates in their own */
-.rab-n-pp-sep { color: color-mix(in srgb, var(--rab-subtlest) 70%, transparent); }
-.rab-n-pp-ver, .rab-n-pp-mod { color: var(--rab-subtlest); font-weight: 400; }
-.rab-n-pp-param { color: color-mix(in srgb, var(--rab-discovery) 78%, var(--rab-subtle)); }
+/* Paths and URLs with their parts told apart: the first resource word bold, the second bold in its own color, the
+   rest fainter; a {template} and the value that replaces it in the path parameters' color */
+.rab-n-pp-sep, .rab-n-pp-qsep { color: color-mix(in srgb, var(--rab-subtlest) 70%, transparent); }
+.rab-n-pp-ver, .rab-n-pp-mod, .rab-n-pp-base { color: var(--rab-subtlest); font-weight: 400; }
+.rab-n-pp-lead { color: var(--rab-text); font-weight: 700; }
+.rab-n-pp-sub { color: var(--rab-sub-color); font-weight: 700; }
+.rab-n-pp-param, .rab-n-pp-value { color: var(--rab-path-color); }
+.rab-n-pp-qname { color: color-mix(in srgb, var(--rab-query-color) 70%, var(--rab-subtle)); }
+.rab-n-pp-qvalue { color: var(--rab-query-color); }
+.rab-n-pp-mname { color: color-mix(in srgb, var(--rab-matrix-color) 70%, var(--rab-subtle)); }
+.rab-n-pp-mvalue { color: var(--rab-matrix-color); }
+.rab-n-url .rab-n-pp-param {
+  text-decoration: underline dotted var(--ds-icon-warning, #e56910);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+}
 .rab-n-pp-hit {
-  color: var(--rab-text);
   background: color-mix(in srgb, var(--rab-warning-bold) 24%, transparent);
   border-radius: 2px;
 }
@@ -791,14 +906,14 @@
   gap: 6px;
   width: 100%;
   height: 100%;
-  padding: 0 8px 0 10px;
+  padding: 0 8px 0 6px;
   border: 0;
   background: none;
   cursor: pointer;
   text-align: left;
   white-space: nowrap;
 }
-.rab-n-op.indented { padding-left: 22px; }
+.rab-n-op.indented { padding-left: 12px; }
 .rab-n-op:hover, .rab-n-module:hover { background: var(--rab-hover); }
 
 /* Keyboard-active row: light inner ring instead of a heavy solid outline */
@@ -1202,8 +1317,8 @@
   font-weight: 600;
   text-align: center;
 }
-.rab-n-in-path { background: var(--rab-bg-info); color: var(--rab-info); }
-.rab-n-in-query { background: var(--rab-bg-discovery); color: var(--rab-discovery); }
+.rab-n-in-path { background: var(--rab-bg-discovery); color: var(--rab-path-color); }
+.rab-n-in-query { background: var(--rab-bg-info); color: var(--rab-query-color); }
 .rab-n-in-header { background: var(--rab-bg-success); color: var(--rab-success); }
 .rab-n-in-matrix { background: var(--rab-bg-warning); color: var(--rab-warning); }
 .rab-n-required { color: var(--rab-danger); margin-left: 3px; font-weight: 700; }
@@ -1213,11 +1328,6 @@
 @keyframes rab-n-check-in { from { opacity: 0; transform: scale(0.6); } }
 .rab-n-input.is-warn { border-color: color-mix(in srgb, var(--ds-icon-warning, #e56910) 55%, var(--rab-border)); }
 .rab-n-tab-warn { display: inline-flex; margin-left: 5px; color: var(--ds-icon-warning, #e56910); vertical-align: -2px; }
-.rab-n-url-missing {
-  color: var(--rab-warning);
-  background: color-mix(in srgb, var(--rab-bg-warning) 75%, transparent);
-  border-radius: 3px;
-}
 .rab-n-disabled { opacity: 0.6; }
 
 /* Body tab */
@@ -1594,5 +1704,14 @@
   }
   .rab-n .rab-n-welcome-card:hover { transform: none; }
   .rab-n .rab-n-card, .rab-n .rab-n-check { animation: none; }
+  .rab-n .rab-n-about { transform: none; }
   .rab-n .rab-n-spinner { animation-duration: 1.8s; }
 }
+
+/* The page is the app: the product's footer below it only takes room (this stylesheet loads on this page only) */
+body:has(#rab-next) #footer,
+body.rab-next-page #footer {
+  display: none !important;
+}
+/* and the panel around the app ends with it (Confluence's has a bottom padding) */
+:has(> #rab-next) { padding-bottom: 0 !important; }

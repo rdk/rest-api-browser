@@ -12,13 +12,13 @@ export function MethodBadge({ method }: { method: string }) {
 }
 
 /**
- * A path with its parts told apart: the resource words in the text color, separators, versions and the module prefix
- * fainter, {templates} in their own color, the search's words marked.
+ * A path with its parts told apart: the first resource word bold, the second bold in its own color, separators,
+ * versions and the module prefix fainter, {templates} in the path parameters' color, the search's words marked.
  */
-export function PathText({ path, prefix, words }: { path: string; prefix?: number; words?: string[] }) {
+export function PathText({ path, prefix, words, rank }: { path: string; prefix?: number; words?: string[]; rank?: boolean }) {
   return (
     <>
-      {pathParts(path, { prefix, words }).map((p, i) =>
+      {pathParts(path, { prefix, words, rank }).map((p, i) =>
         p.kind === 'text' && !p.hit ? p.text : <span key={i} class={'rab-n-pp-' + p.kind + (p.hit ? ' rab-n-pp-hit' : '')}>{p.text}</span>,
       )}
     </>

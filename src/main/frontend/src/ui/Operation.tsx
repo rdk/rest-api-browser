@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import type { ComponentChildren } from 'preact';
 import type { Module, Operation, Param, Summary } from '../core/types';
-import { buildRequest, mediaChoices, setHeader, toCurl, type BuiltRequest, type RequestValues } from '../core/request';
+import { buildRequest, mediaChoices, setHeader, toCurl, urlParts, type BuiltRequest, type RequestValues, type UrlPart } from '../core/request';
 import { findTemplates } from '../core/template';
 import { checkValue, type Check } from '../core/validate';
 import type { RequestRunner, RunResult } from './runner';
@@ -158,7 +157,7 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
         </div>
         <div class={'rab-n-urlbar' + (write ? ' is-write' : '') + (isDelete ? ' is-delete' : '')}>
           <div class="rab-n-url-group">
-            <code class="rab-n-url" data-testid="live-url" title={built.url}>{built.error ? <MissingTemplates url={built.url} /> : built.url}</code>
+            <code class="rab-n-url" data-testid="live-url" title={built.url}><UrlText parts={built.parts} /></code>
             <CopyButton label="Copy URL" text={() => absolute(built.url)} />
           </div>
           {running ? (
@@ -263,28 +262,29 @@ function checkAt(p: Param, v: string, i: number, all: string[], regex?: string):
   return checkValue(p, v, regex);
 }
 
-/** The URL while a required path value is missing: its templates stand out. */
-function MissingTemplates({ url }: { url: string }) {
-  const out: ComponentChildren[] = [];
-  let last = 0;
-  for (const t of findTemplates(url)) {
-    out.push(url.slice(last, t.start), <span key={t.start} class="rab-n-url-missing">{url.slice(t.start, t.end)}</span>);
-    last = t.end;
-  }
-  out.push(url.slice(last));
-  return <>{out}</>;
+/**
+ * The live URL, rendered like the list's paths: the base and the module fainter, the first resource word bold, the
+ * second bold in its own color, each value in the color of its kind of parameter (path, query, matrix), so a value
+ * keeps the color its {template} had; a missing required value keeps its template, underlined.
+ */
+function UrlText({ parts }: { parts: UrlPart[] }) {
+  return (
+    <>
+      {parts.map((p, i) => (p.kind === 'text' ? p.text : <span key={i} class={'rab-n-pp-' + p.kind}>{p.text}</span>))}
+    </>
+  );
 }
 
-function tryBuild(summary: Summary, op: Operation, draft: Draft): { request?: BuiltRequest; url: string; error?: string } {
+function tryBuild(summary: Summary, op: Operation, draft: Draft): { request?: BuiltRequest; url: string; parts: UrlPart[]; error?: string } {
+  // the parts also while a required path value is missing: its template shows, so the URL bar stays useful
+  const { parts } = urlParts(summary, op, draft.values);
+  const url = parts.map((p) => p.text).join('');
   try {
     const req = buildRequest(summary, op, draft.values, { accept: draft.values.accept, noXsrfHeader: draft.noXsrfHeader });
     for (const h of draft.custom) if (h.name.trim()) setHeader(req.headers, h.name.trim(), h.value);
-    return { request: req, url: req.url };
+    return { request: req, url: req.url, parts };
   } catch (e) {
-    // a required path parameter is still empty: show the template so the URL bar stays useful
-    const module = summary.modules.find((m) => m.id === op.module);
-    const url = `${summary.baseUrl}/rest/${module ? module.path + '/' : ''}${op.path}`;
-    return { url, error: e instanceof Error ? e.message : String(e) };
+    return { url, parts, error: e instanceof Error ? e.message : String(e) };
   }
 }
 

@@ -7,6 +7,8 @@ export interface MenuItem {
   hint?: string;
   onSelect?: () => void;
   href?: string;
+  /** Opens href in a new tab. */
+  newTab?: boolean;
   disabled?: boolean;
   testId?: string;
   /** Starts a new group: a line above it. */
@@ -88,7 +90,9 @@ export function Menu({ label, items }: { label: string; items: MenuItem[] }) {
             <Fragment key={it.id}>
               {it.group && <div class="rab-n-menu-sep" role="separator" />}
               {it.href ? (
-                <a role="menuitem" class="rab-n-menu-item" href={it.href} tabIndex={-1} data-testid={it.testId}>
+                <a role="menuitem" class="rab-n-menu-item" href={it.href} tabIndex={-1} data-testid={it.testId}
+                   target={it.newTab ? '_blank' : undefined} rel={it.newTab ? 'noopener noreferrer' : undefined}
+                   onClick={() => setOpen(false)}>
                   <span class="rab-n-menu-label">{it.label}</span>
                   {it.hint && <span class="rab-n-menu-hint">{it.hint}</span>}
                 </a>

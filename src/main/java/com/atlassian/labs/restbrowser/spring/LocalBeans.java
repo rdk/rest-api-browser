@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicReference;
 @Configuration
 public class LocalBeans {
 
-    static final String PLUGIN_KEY = "com.atlassian.labs.rest-api-browser";
+    public static final String PLUGIN_KEY = "com.atlassian.labs.rest-api-browser";
 
     // Velocity templates require this instance, because they can't call static methods
     @Bean

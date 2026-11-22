@@ -1,4 +1,5 @@
 import { findTemplates } from './template';
+import { pathKinds, type PartKind } from './pathparts';
 import type { Operation, Summary } from './types';
 
 export interface RequestValues {
@@ -48,37 +49,72 @@ export function setHeader(headers: Record<string, string>, name: string, value: 
   headers[name] = value;
 }
 
-function fillPath(op: Operation, values: Record<string, string>): string {
-  const templates = findTemplates(op.path);
-  let out = '';
-  let last = 0;
-  for (const t of templates) {
-    const value = values[t.name] ?? '';
+/**
+ * A part of a request URL, for display: the path's kinds (pathKinds), base (the context path and "/rest/"), value (a
+ * path value filled in), param (a required path value still missing: the template as written), qsep ("?", "&", "=",
+ * ";"), qname and qvalue (a query parameter), mname and mvalue (a matrix parameter).
+ */
+export type UrlKind = PartKind | 'base' | 'value' | 'qsep' | 'qname' | 'qvalue' | 'mname' | 'mvalue';
+export interface UrlPart { text: string; kind: UrlKind; }
+
+/** The request URL in parts; joined, they are the URL buildRequest sends. `missing` names the empty required path values. */
+export function urlParts(summary: Summary, op: Operation, values: RequestValues): { parts: UrlPart[]; missing: string[] } {
+  const module = summary.modules.find((m) => m.id === op.module);
+  const modulePath = (module?.path ?? '').replace(/^\/+|\/+$/g, '');
+  const head = modulePath ? modulePath + '/' : '';
+  const path = head + op.path;
+  const kinds = pathKinds(path, { prefix: modulePath.length });
+  const parts: UrlPart[] = [];
+  const push = (text: string, kind: UrlKind) => {
+    if (!text) return;
+    const last = parts[parts.length - 1];
+    if (last && last.kind === kind) last.text += text;
+    else parts.push({ text, kind });
+  };
+  push(`${summary.baseUrl}/rest/`, 'base');
+  const missing: string[] = [];
+  let i = 0;
+  for (const t of findTemplates(op.path)) {
+    const start = head.length + t.start;
+    for (; i < start; i++) push(path[i], kinds[i]);
+    const value = values.path[t.name] ?? '';
     const param = op.params.find((p) => p.in === 'path' && p.name === t.name);
-    if (value === '' && (!param || param.required)) throw new Error(`Missing required path parameter: ${t.name}`);
-    out += op.path.slice(last, t.start) + encodePath(value, spansSegments(t.regex));
-    last = t.end;
+    if (value === '' && (!param || param.required)) {
+      missing.push(t.name);
+      push(op.path.slice(t.start, t.end), 'param');
+    } else {
+      push(encodePath(value, spansSegments(t.regex)), 'value');
+    }
+    i = head.length + t.end;
   }
-  return out + op.path.slice(last);
+  for (; i < path.length; i++) push(path[i], kinds[i]);
+
+  for (const [name, value] of Object.entries(values.matrix)) {
+    if (value === '') continue;
+    push(';', 'qsep');
+    push(encodeURIComponent(name), 'mname');
+    push('=', 'qsep');
+    push(encodeURIComponent(value), 'mvalue');
+  }
+  let first = true;
+  for (const [name, list] of Object.entries(values.query)) {
+    for (const value of list) {
+      if (value === '') continue;
+      push(first ? '?' : '&', 'qsep');
+      push(encodeURIComponent(name), 'qname');
+      push('=', 'qsep');
+      push(encodeURIComponent(value), 'qvalue');
+      first = false;
+    }
+  }
+  return { parts, missing };
 }
 
 export function buildRequest(summary: Summary, op: Operation, values: RequestValues, options: RequestOptions = {}): BuiltRequest {
-  const module = summary.modules.find((m) => m.id === op.module);
-  const modulePath = (module?.path ?? '').replace(/^\/+|\/+$/g, '');
   const method = op.method.toUpperCase();
-
-  let url = `${summary.baseUrl}/rest/${modulePath ? modulePath + '/' : ''}${fillPath(op, values.path)}`;
-  for (const [name, value] of Object.entries(values.matrix)) {
-    if (value !== '') url += `;${encodeURIComponent(name)}=${encodeURIComponent(value)}`;
-  }
-
-  const pairs: string[] = [];
-  for (const [name, list] of Object.entries(values.query)) {
-    for (const value of list) {
-      if (value !== '') pairs.push(`${encodeURIComponent(name)}=${encodeURIComponent(value)}`);
-    }
-  }
-  if (pairs.length) url += '?' + pairs.join('&');
+  const { parts, missing } = urlParts(summary, op, values);
+  if (missing.length) throw new Error(`Missing required path parameter: ${missing[0]}`);
+  const url = parts.map((p) => p.text).join('');
 
   const headers: Record<string, string> = {};
   for (const [name, value] of Object.entries(values.header)) {

@@ -317,7 +317,7 @@ function ModuleRow({ index, module, count, collapsed, active, onClick }: {
       data-id={'module:' + module.id}
     >
       <span class="rab-n-chevron">{collapsed ? '▸' : '▾'}</span>
-      <span class="rab-n-module-path"><PathText path={module.path} /></span>
+      <span class="rab-n-module-path"><PathText path={module.path} rank={false} /></span>
       <Ticks facts={kind ? [kind] : []} />
       <span class="rab-n-count">
         {module.state === 'ok' ? count : module.state === 'pending' ? '…' : 'failed: ' + (module.reason ?? 'error')}
