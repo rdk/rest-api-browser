@@ -21,7 +21,6 @@ export interface Prefs {
   split?: number;
   collapsed?: string[];
   supportedOnly?: boolean;
-  methods?: string[];
 }
 
 const PER_OP = 20;

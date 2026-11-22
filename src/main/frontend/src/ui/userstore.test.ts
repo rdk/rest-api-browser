@@ -98,9 +98,9 @@ describe('UserStore', () => {
   it('merges prefs and namespaces keys', async () => {
     const storage = new FakeStorage();
     const s = new UserStore('inst:bob', storage);
-    await s.setPrefs({ split: 0.5, methods: ['GET'] });
+    await s.setPrefs({ split: 0.5, supportedOnly: true });
     await s.setPrefs({ split: 0.6 });
-    expect(await s.prefs()).toEqual({ split: 0.6, methods: ['GET'] });
+    expect(await s.prefs()).toEqual({ split: 0.6, supportedOnly: true });
     expect([...storage.data.keys()].every((k) => k.startsWith('rab-next:inst:bob:'))).toBe(true);
     expect(await new UserStore('other', storage).prefs()).toEqual({});
   });

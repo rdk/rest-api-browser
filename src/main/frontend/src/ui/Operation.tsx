@@ -138,17 +138,17 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
         <div class="rab-n-op-title">
           <MethodBadge method={method} />
           <span class="rab-n-op-fullpath" data-testid="operation-path">{fullPath}</span>
+          {hasBadges && (
+            <span class="rab-n-op-badges">
+              {module?.stability === 'supported' && <span class="rab-n-tag rab-n-tag-supported">Supported</span>}
+              {module?.stability === 'app' && <span class="rab-n-tag rab-n-tag-app">App: {module.plugin.name}</span>}
+              {op.access && <span class={'rab-n-tag rab-n-tag-access rab-n-tag-access-' + op.access.toLowerCase()} title="Access annotation of the handler">{op.access}</span>}
+              {op.deprecated && <span class="rab-n-tag rab-n-tag-deprecated">Deprecated</span>}
+            </span>
+          )}
           <span class="rab-n-spacer" />
           <CopyButton label="Copy curl" testId="copy-curl" text={() => (built.request ? toCurl({ ...built.request, url: absolute(built.request.url) }) : '')} />
         </div>
-        {hasBadges && (
-          <div class="rab-n-op-badges">
-            {module?.stability === 'supported' && <span class="rab-n-tag rab-n-tag-supported">Supported</span>}
-            {module?.stability === 'app' && <span class="rab-n-tag rab-n-tag-app">App: {module.plugin.name}</span>}
-            {op.access && <span class={'rab-n-tag rab-n-tag-access rab-n-tag-access-' + op.access.toLowerCase()} title="Access annotation of the handler">{op.access}</span>}
-            {op.deprecated && <span class="rab-n-tag rab-n-tag-deprecated">Deprecated</span>}
-          </div>
-        )}
         <div class={'rab-n-urlbar' + (write ? ' is-write' : '') + (isDelete ? ' is-delete' : '')}>
           <div class="rab-n-url-group">
             <code class="rab-n-url" data-testid="live-url" title={built.url}>{built.url}</code>

@@ -76,7 +76,7 @@ export function ResponseView({ result, running, onCancel }: {
         <span class={'rab-n-status-code ' + statusClass} data-testid="response-status">{result.status} {result.statusText}</span>
         <span class="rab-n-metric">{Math.round(result.durationMs)} ms</span>
         <span class="rab-n-metric">{formatBytes(result.size)}{result.truncated ? ' (truncated)' : ''}</span>
-        <span class="rab-n-subtle rab-n-ellipsis rab-n-status-url" title={result.url}>{result.method} {result.url}</span>
+        <span class="rab-n-subtle rab-n-status-url">{result.method} {result.url}</span>
         <span class="rab-n-spacer" />
         {result.size > 0 && (
           <button

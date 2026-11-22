@@ -14,9 +14,9 @@ const { launch, checker, sleep } = require('./cdp');
 // which is sent with a value that needs URL encoding (a GET of something that cannot exist)
 const PRODUCTS = {
     jira: { url: 'http://localhost:2992/jira', search: 'serverInfo', title: 'api/2/serverInfo', answer: /"baseUrl"|"version"/,
-        templated: 'api/2/issue/{issueIdOrKey}', param: 'issueIdOrKey' },
+        templated: 'api/2/issue/{issueIdOrKey}', param: 'issueIdOrKey', wide: 'issue properties' },
     confluence: { url: 'http://localhost:1992/confluence', search: 'user current', title: 'api/user/current', answer: /"username"|"userKey"|"type"/,
-        templated: 'api/content/{id}', param: 'id' },
+        templated: 'api/content/{id}', param: 'id', wide: 'content property' },
 };
 const PRODUCT = process.env.RAB_PRODUCT || 'jira', P = PRODUCTS[PRODUCT];
 if (!P) { console.log(`ui_next.js: RAB_PRODUCT is ${Object.keys(PRODUCTS).join(' or ')}, not ${PRODUCT}`); process.exit(2); }
@@ -42,7 +42,7 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         e.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
     const click = sel => b.evaluate(`(() => { const e = document.querySelector(${q(sel)}); if (!e) return false; e.click(); return true; })()`);
     const openOp = async (search, title, method = 'GET') => {
-        const row = `[data-testid=op][data-method=${method}][title=${q(title)}]`;
+        const row = `[data-testid=op][data-method=${method}][data-path=${q(title)}]`;
         await type('[data-testid=search]', search);
         await b.waitFor(`!!document.querySelector(${q(row)})`, 10000);
         if (!await click(row)) return false;
@@ -63,9 +63,20 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         // search: a flat, ranked list
         const searchStart = Date.now();
         await type('[data-testid=search]', P.search);
-        const found = await b.waitFor(`!!document.querySelector('[data-testid=op][title=${q(P.title)}]')`, 5000);
+        const found = await b.waitFor(`!!document.querySelector('[data-testid=op][data-path=${q(P.title)}]')`, 5000);
         c.check(`searching "${P.search}" lists ${P.title}`, found, await b.evaluate(
-            `[...document.querySelectorAll('[data-testid=op]')].slice(0, 5).map(e => e.title)`));
+            `[...document.querySelectorAll('[data-testid=op]')].slice(0, 5).map(e => e.dataset.path)`));
+
+        // the hover card of a row: the pointer rests on the row, the card spells out the app and the access
+        const rect = await b.evaluate(`(() => { const e = document.querySelector('[data-testid=op][data-path=${q(P.title)}]');
+            const r = e.getBoundingClientRect(); return { x: r.left + 40, y: r.top + r.height / 2 }; })()`);
+        await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x, y: rect.y });
+        const carded = await b.waitFor(`/App/.test((document.querySelector('[data-testid=row-card]') || {}).textContent || '')
+            && /Access/.test(document.querySelector('[data-testid=row-card]').textContent)`, 3000);
+        c.check('resting on a row opens its card with the app and the access', carded,
+            await b.evaluate(`(document.querySelector('[data-testid=row-card]') || {}).textContent || 'no card'`));
+        await b.shot(path.join(SHOTS, `${PRODUCT}-next-3-card.png`));
+        await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x + 1200, y: rect.y });
         console.log(`Search answered in ${Date.now() - searchStart} ms (including the poll)`);
 
         // the operation: form, live URL, send, response
@@ -98,7 +109,7 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         }
 
         // the keyboard: / focuses the search, arrows move through the results, Enter opens one
-        const KEYS = { '/': [191, 'Slash'], ArrowDown: [40, 'ArrowDown'], Enter: [13, 'Enter'] };
+        const KEYS = { '/': [191, 'Slash'], ArrowDown: [40, 'ArrowDown'], ArrowRight: [39, 'ArrowRight'], Enter: [13, 'Enter'], Escape: [27, 'Escape'] };
         const press = async key => {
             const [code, name] = KEYS[key];
             const base = { key, code: name, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code };
@@ -115,6 +126,36 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         const opened = await b.waitFor(`!!document.querySelector('[data-testid=operation-path]')
             && document.querySelector('[data-testid=op].selected') !== null`, 5000);
         c.check('the keyboard: / focuses the search, ArrowDown and Enter open the first result', focused && opened, { focused, opened });
+
+        // a wide list shows whole paths (the divider moves with the arrow keys)
+        await type('[data-testid=search]', P.wide);
+        await sleep(400);
+        await b.evaluate(`document.querySelector('.rab-n-vsplit').focus(), true`);
+        for (let i = 0; i < 25; i++) await press('ArrowRight');
+        await sleep(200);
+        const wide = await b.evaluate(`(() => {
+            const side = document.querySelector('.rab-n-side').getBoundingClientRect().width;
+            const rows = [...document.querySelectorAll('.rab-n-op-path')];
+            const cut = rows.filter(e => e.scrollWidth > e.clientWidth + 1).map(e => e.textContent);
+            const longest = rows.map(e => e.textContent).sort((a, b) => b.length - a.length)[0] || '';
+            return { side: Math.round(side), rows: rows.length, cut, longest };
+        })()`);
+        c.check(`a wide list (${wide.side} px) shows whole paths, the longest ${wide.longest.length} characters`,
+            wide.rows > 0 && wide.side > 600 && wide.cut.length === 0, wide);
+
+        // the header's menu: Classic UI, rebuilding for system administrators; "Reset the layout" narrows the list again
+        await click('[data-testid=menu-button]');
+        const menu = await b.waitFor(`!!document.querySelector('[data-testid=menu] [data-testid=classic-link][href*="restbrowser"]')`, 3000);
+        const items = await b.evaluate(`[...document.querySelectorAll('[data-testid=menu] [role=menuitem]')].map(e => e.querySelector('.rab-n-menu-label').textContent)`);
+        await b.shot(path.join(SHOTS, `${PRODUCT}-next-4-menu.png`));
+        await press('Escape');
+        const closed = await b.waitFor(`!document.querySelector('[data-testid=menu]')`, 2000);
+        c.check('the menu opens with Classic UI and closes with Escape', menu && closed, { items, closed });
+        await click('[data-testid=menu-button]');
+        await b.evaluate(`([...document.querySelectorAll('[data-testid=menu] [role=menuitem]')].find(e => /Reset the layout/.test(e.textContent)) || {}).click?.(), true`);
+        const reset = await b.waitFor(`Math.round(document.querySelector('.rab-n-side').getBoundingClientRect().width) === 430`, 2000);
+        c.check('"Reset the layout" brings the list back to its default width', reset,
+            await b.evaluate(`document.querySelector('.rab-n-side').getBoundingClientRect().width`));
 
         // supported only narrows the list
         await type('[data-testid=search]', '');

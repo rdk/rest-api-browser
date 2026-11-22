@@ -9,6 +9,7 @@ import { RequestRunner } from './runner';
 import { UserStore, isCredentialHeader } from './userstore';
 import { Sidebar } from './Sidebar';
 import { OperationView, emptyDraft, type Draft } from './Operation';
+import { Menu, type MenuItem } from './Menu';
 
 interface Props {
   baseUrl: string;
@@ -20,6 +21,10 @@ const MemoSidebar = memo(Sidebar);
 const MemoOperation = memo(OperationView);
 const NONE = new Set<string>();
 const KEEP_RESPONSES = 5;
+const SIDEBAR_WIDTH = 430;
+const SPLIT = 0.45;
+/** The list may take up to this share of the width. */
+const MAX_SIDEBAR = 0.75;
 
 export function App({ baseUrl, classicUrl, product }: Props) {
   const store = useMemo(() => new CatalogStore(baseUrl), [baseUrl]);
@@ -50,15 +55,13 @@ export function App({ baseUrl, classicUrl, product }: Props) {
   // ---- preferences
   const [query, setQuery] = useState('');
   const [supportedOnly, setSupportedOnly] = useState(false);
-  const [methods, setMethods] = useState<string[]>([]);
   const [collapsed, setCollapsed] = useState<Set<string> | null>(null);
   const [prefsLoaded, setPrefsLoaded] = useState(false);
-  const [sidebarWidth, setSidebarWidth] = useState(430);
-  const [split, setSplit] = useState(0.45);
+  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_WIDTH);
+  const [split, setSplit] = useState(SPLIT);
   useEffect(() => {
     userStore.prefs().then((p) => {
       if (p.supportedOnly !== undefined) setSupportedOnly(p.supportedOnly);
-      if (p.methods) setMethods(p.methods);
       if (p.collapsed) setCollapsed(new Set(p.collapsed));
       if (p.sidebarWidth) setSidebarWidth(p.sidebarWidth);
       if (p.split) setSplit(p.split);
@@ -75,10 +78,6 @@ export function App({ baseUrl, classicUrl, product }: Props) {
   const onSupportedOnly = useCallback((v: boolean) => {
     setSupportedOnly(v);
     save({ supportedOnly: v });
-  }, [save]);
-  const onMethods = useCallback((m: string[]) => {
-    setMethods(m);
-    save({ methods: m });
   }, [save]);
   const onCollapsed = useCallback((c: Set<string>) => {
     setCollapsed(c);
@@ -171,6 +170,33 @@ export function App({ baseUrl, classicUrl, product }: Props) {
     }
   }, [baseUrl, store]);
 
+  const menu: MenuItem[] = [
+    { id: 'expand', label: 'Expand all modules', onSelect: () => onCollapsed(new Set()) },
+    { id: 'collapse', label: 'Collapse all modules', onSelect: () => onCollapsed(new Set(summary?.modules.map((m) => m.id))) },
+    {
+      id: 'layout',
+      label: 'Reset the layout',
+      hint: 'The width of the list and the request/response split',
+      onSelect: () => {
+        setSidebarWidth(SIDEBAR_WIDTH);
+        setSplit(SPLIT);
+        save({ sidebarWidth: SIDEBAR_WIDTH, split: SPLIT });
+      },
+    },
+    ...(summary?.sysadmin
+      ? [{
+          id: 'rebuild',
+          label: 'Rebuild the catalog',
+          hint: summary.complete ? 'Reads every REST module again (system administrators)' : 'The catalog is being built…',
+          disabled: !summary.complete,
+          onSelect: refresh,
+          testId: 'refresh',
+          group: true,
+        }]
+      : []),
+    { id: 'classic', label: 'Classic UI', hint: 'The original REST API Browser', href: classicUrl, testId: 'classic-link', group: true },
+  ];
+
   return (
     <div class="rab-n" ref={root} style={{ height: height + 'px' }}>
       <div class="rab-n-topbar">
@@ -182,12 +208,7 @@ export function App({ baseUrl, classicUrl, product }: Props) {
         <strong class="rab-n-topbar-title">REST API Browser</strong>
         <span class="rab-n-product-badge">{summary ? `${summary.product.name} ${summary.product.version}` : product}</span>
         <span class="rab-n-spacer" />
-        <a class="rab-n-classic-link" href={classicUrl} data-testid="classic-link">
-          Classic UI
-          <svg class="rab-n-svg" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path d="M6 3h7v7M13 3L6.5 9.5M11 9.5V13H3V5h3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </a>
+        <Menu label="More actions" items={menu} />
       </div>
       <div class="rab-n-body-row">
         <div class="rab-n-side" style={{ width: sidebarWidth + 'px' }}>
@@ -200,11 +221,8 @@ export function App({ baseUrl, classicUrl, product }: Props) {
             onQuery={setQuery}
             supportedOnly={supportedOnly}
             onSupportedOnly={onSupportedOnly}
-            methods={methods}
-            onMethods={onMethods}
             collapsed={collapsed ?? NONE}
             onCollapsed={onCollapsed}
-            onRefresh={summary?.sysadmin ? refresh : undefined}
             loadError={loadError ?? refreshError}
           />
         </div>
@@ -331,7 +349,9 @@ function SideHandle({ width, onWidth, onDone }: { width: number; onWidth: (w: nu
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
     e.preventDefault();
-    const next = Math.max(240, width + (e.key === 'ArrowRight' ? 20 : -20));
+    const row = ref.current?.parentElement;
+    const max = row ? row.clientWidth * MAX_SIDEBAR : Infinity;
+    const next = Math.round(Math.min(max, Math.max(240, width + (e.key === 'ArrowRight' ? 20 : -20))));
     onWidth(next);
     onDone(next);
   };
@@ -345,7 +365,7 @@ function SideHandle({ width, onWidth, onDone }: { width: number; onWidth: (w: nu
     let last = 0;
     // resize the element directly while dragging; the state (and a re-render) follows once, on release
     const move = (ev: PointerEvent) => {
-      last = Math.round(Math.min(row.clientWidth * 0.6, Math.max(240, ev.clientX - left)));
+      last = Math.round(Math.min(row.clientWidth * MAX_SIDEBAR, Math.max(240, ev.clientX - left)));
       side.style.width = last + 'px';
     };
     const up = () => {

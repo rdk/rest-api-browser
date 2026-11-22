@@ -3,9 +3,12 @@ import type { Module, Operation, Summary } from '../core/types';
 import { groupRows, search, type GroupRow, type SearchRow } from '../core/search';
 import { VirtualList } from './VirtualList';
 import { MethodBadge } from './bits';
+import { moduleFact, rowTicks, type Fact } from './facts';
+import { RowCard, type CardTarget } from './RowCard';
 
-const ROW = 28;
-const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OTHER'];
+const ROW = 24;
+/** How long the pointer rests on a row before its card opens; moving on to the next row while one shows is instant. */
+const CARD_DELAY = 450;
 
 export interface SidebarProps {
   summary: Summary | null;
@@ -16,11 +19,8 @@ export interface SidebarProps {
   onQuery: (q: string) => void;
   supportedOnly: boolean;
   onSupportedOnly: (v: boolean) => void;
-  methods: string[];
-  onMethods: (m: string[]) => void;
   collapsed: Set<string>;
   onCollapsed: (c: Set<string>) => void;
-  onRefresh?: () => void;
   loadError?: string;
 }
 
@@ -38,8 +38,7 @@ export function Sidebar(p: SidebarProps) {
   };
   const searching = p.query.trim().length > 0;
   const modulesById = useMemo(() => new Map((p.summary?.modules ?? []).map((m) => [m.id, m])), [p.summary]);
-  const filters = { supportedOnly: p.supportedOnly, methods: p.methods };
-  const hits = useMemo(() => search(p.rows, p.query, filters), [p.rows, p.query, p.supportedOnly, p.methods]);
+  const hits = useMemo(() => search(p.rows, p.query, { supportedOnly: p.supportedOnly }), [p.rows, p.query, p.supportedOnly]);
   const lines: Line[] = useMemo(() => {
     if (searching) return hits.map((h) => ({ kind: 'op', op: h.op, module: h.module }) as Line);
     if (!p.summary) return [];
@@ -48,8 +47,8 @@ export function Sidebar(p: SidebarProps) {
     );
   }, [hits, searching, p.summary, p.collapsed]);
   const hiddenBySupported = useMemo(
-    () => (p.supportedOnly && hits.length === 0 ? search(p.rows, p.query, { methods: p.methods }).length : 0),
-    [hits, p.rows, p.query, p.supportedOnly, p.methods],
+    () => (p.supportedOnly && hits.length === 0 ? search(p.rows, p.query).length : 0),
+    [hits, p.rows, p.query, p.supportedOnly],
   );
 
   // the keyboard's position in the list, by row identity, so a list that changes (a module expanded, a new search)
@@ -77,6 +76,48 @@ export function Sidebar(p: SidebarProps) {
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, []);
+
+  // the hover card of a row, one for the whole list: the rows only carry their index (data-i)
+  const [card, setCard] = useState<{ id: string; target: CardTarget; left: number; top: number } | null>(null);
+  const cardTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const cardFor = useRef<string | undefined>(undefined);
+  const hideCard = () => {
+    clearTimeout(cardTimer.current);
+    cardFor.current = undefined;
+    setCard(null);
+  };
+  useEffect(() => hideCard, []);
+  useEffect(() => hideCard(), [lines]);
+  const scheduleCard = (row: HTMLElement, delay: number) => {
+    const id = row.dataset.id;
+    if (!id || cardFor.current === id) return;
+    cardFor.current = id;
+    clearTimeout(cardTimer.current);
+    cardTimer.current = setTimeout(() => {
+      const l = lines[Number(row.dataset.i)];
+      const root = row.closest('.rab-n') as HTMLElement | null;
+      const side = row.closest('.rab-n-sidebar') as HTMLElement | null;
+      if (!l || !root || !side || !row.isConnected || idOf(l) !== id) return;
+      const rr = root.getBoundingClientRect();
+      const target: CardTarget = l.kind === 'op'
+        ? { kind: 'op', op: l.op, module: l.module ?? modulesById.get(l.op.module) }
+        : { kind: 'module', module: l.module, count: l.count };
+      setCard({ id, target, left: side.getBoundingClientRect().right - rr.left + 10, top: row.getBoundingClientRect().top - rr.top });
+    }, delay);
+  };
+  const onListOver = (e: MouseEvent) => {
+    const row = (e.target as Element).closest?.('[data-i]') as HTMLElement | null;
+    if (row) scheduleCard(row, card ? 0 : CARD_DELAY);
+  };
+  // a click closes the card, and it stays closed until the pointer moves on to another row
+  const onListDown = (e: MouseEvent) => {
+    hideCard();
+    cardFor.current = ((e.target as Element).closest?.('[data-i]') as HTMLElement | null)?.dataset.id;
+  };
+  const onListFocus = (e: FocusEvent) => {
+    const row = e.target as HTMLElement;
+    if (row.dataset?.i !== undefined && row.matches(':focus-visible')) scheduleCard(row, CARD_DELAY);
+  };
 
   const toggle = (id: string) => {
     const next = new Set(p.collapsed);
@@ -126,7 +167,7 @@ export function Sidebar(p: SidebarProps) {
             ref={input}
             class="rab-n-search"
             type="search"
-            placeholder="Search operations"
+            placeholder="Search: method, path or app"
             value={typed}
             onInput={(e) => onType((e.target as HTMLInputElement).value)}
             aria-label="Search operations"
@@ -134,31 +175,8 @@ export function Sidebar(p: SidebarProps) {
           />
           {!typed && <kbd class="rab-n-search-kbd" aria-hidden="true">/</kbd>}
         </div>
-        <div class="rab-n-filters">
-          <button
-            class={'rab-n-pill' + (p.supportedOnly ? ' on' : '')}
-            aria-pressed={p.supportedOnly}
-            onClick={() => p.onSupportedOnly(!p.supportedOnly)}
-            data-testid="supported-only"
-          >
-            Supported only
-          </button>
-          {METHODS.map((m) => {
-            const on = p.methods.includes(m);
-            return (
-              <button
-                key={m}
-                class={'rab-n-pill rab-n-pill-' + m.toLowerCase() + (on ? ' on' : '')}
-                aria-pressed={on}
-                onClick={() => p.onMethods(on ? p.methods.filter((x) => x !== m) : [...p.methods, m])}
-              >
-                {m === 'OTHER' ? 'Other' : m === 'DELETE' ? 'DEL' : m}
-              </button>
-            );
-          })}
-        </div>
-        <div class="rab-n-status" data-testid="status">
-          <span class="rab-n-status-text">
+        <div class="rab-n-status">
+          <span class="rab-n-status-text" data-testid="status">
             {p.loadError ? (
               <span class="rab-n-error">{p.loadError}</span>
             ) : !s ? (
@@ -169,17 +187,21 @@ export function Sidebar(p: SidebarProps) {
               <>
                 <span class="rab-n-spinner" aria-hidden="true" /> Indexing {s.progress.done} of {s.progress.total} modules… {total.toLocaleString()} operations so far
               </>
-            ) : searching || p.supportedOnly || p.methods.length ? (
+            ) : searching || p.supportedOnly ? (
               <>{hits.length.toLocaleString()} of {total.toLocaleString()} operations</>
             ) : (
               <>{total.toLocaleString()} operations in {s.modules.length} modules</>
             )}
           </span>
-          {p.onRefresh && (
-            <button class="rab-n-link" onClick={p.onRefresh} title="Rebuild the catalog (system administrators)">
-              Refresh
-            </button>
-          )}
+          <button
+            class={'rab-n-pill' + (p.supportedOnly ? ' on' : '')}
+            aria-pressed={p.supportedOnly}
+            onClick={() => p.onSupportedOnly(!p.supportedOnly)}
+            title="Only the product's supported public APIs"
+            data-testid="supported-only"
+          >
+            Supported only
+          </button>
         </div>
       </div>
       {lines.length === 0 && s ? (
@@ -198,6 +220,8 @@ export function Sidebar(p: SidebarProps) {
           )}
         </div>
       ) : (
+        <div class="rab-n-list" onMouseOver={onListOver} onMouseLeave={hideCard} onMouseDown={onListDown}
+             onScrollCapture={hideCard} onFocusIn={onListFocus} onFocusOut={hideCard}>
         <VirtualList
           count={lines.length}
           rowHeight={ROW}
@@ -208,6 +232,7 @@ export function Sidebar(p: SidebarProps) {
             if (l.kind === 'module') {
               return (
                 <ModuleRow
+                  index={i}
                   module={l.module}
                   count={l.count}
                   collapsed={p.collapsed.has(l.module.id)}
@@ -220,6 +245,7 @@ export function Sidebar(p: SidebarProps) {
               );
             }
             const m = l.module ?? modulesById.get(l.op.module);
+            const full = (m ? m.path + '/' : '') + l.op.path;
             return (
               <button
                 class={'rab-n-op' + (l.op.key === p.selectedKey ? ' selected' : '') + (i === active ? ' active' : '') + (searching ? '' : ' indented')}
@@ -227,29 +253,30 @@ export function Sidebar(p: SidebarProps) {
                   setActive(i);
                   p.onSelect(l.op);
                 }}
-                title={(m ? m.path + '/' : '') + l.op.path}
                 data-testid="op"
                 data-method={l.op.method}
+                data-path={full}
+                data-i={i}
+                data-id={l.op.key}
               >
                 <MethodBadge method={l.op.method} />
-                <span class="rab-n-op-path">{searching && m ? m.path + '/' + l.op.path : '/' + l.op.path}</span>
-                {searching && m && m.stability !== 'internal' && (
-                  <span class={'rab-n-tag rab-n-tag-' + m.stability}>{m.stability === 'supported' ? 'Supported' : 'App'}</span>
-                )}
-                {l.op.deprecated && <span class="rab-n-tag rab-n-tag-deprecated">Deprecated</span>}
+                <span class="rab-n-op-path">{searching ? full : '/' + l.op.path}</span>
+                <Ticks facts={rowTicks(l.op, m, searching)} />
               </button>
             );
           }}
         />
+        </div>
       )}
+      {card && <RowCard target={card.target} baseUrl={s?.baseUrl ?? ''} left={card.left} top={card.top} rowHeight={ROW} />}
     </div>
   );
 }
 
-function ModuleRow({ module, count, collapsed, active, onClick }: {
-  module: Module; count: number; collapsed: boolean; active: boolean; onClick: () => void;
+function ModuleRow({ index, module, count, collapsed, active, onClick }: {
+  index: number; module: Module; count: number; collapsed: boolean; active: boolean; onClick: () => void;
 }) {
-  const origin = module.origin === 'product' ? '' : module.origin === 'bundled' ? 'Bundled: ' : 'App: ';
+  const kind = moduleFact(module);
   return (
     <button
       class={
@@ -259,16 +286,28 @@ function ModuleRow({ module, count, collapsed, active, onClick }: {
         (module.state !== 'ok' ? ' ' + module.state : '')
       }
       onClick={onClick}
-      title={module.plugin.name + (module.error ? '\n' + module.error : '')}
       aria-expanded={!collapsed}
       data-testid="module"
+      data-i={index}
+      data-id={'module:' + module.id}
     >
       <span class="rab-n-chevron">{collapsed ? '▸' : '▾'}</span>
-      <span class="rab-n-module-path">{origin}{module.path}</span>
-      {module.stability === 'supported' && <span class="rab-n-tag rab-n-tag-supported">Supported</span>}
+      <span class="rab-n-module-path">{module.path}</span>
+      <Ticks facts={kind ? [kind] : []} />
       <span class="rab-n-count">
         {module.state === 'ok' ? count : module.state === 'pending' ? '…' : 'failed: ' + (module.reason ?? 'error')}
       </span>
     </button>
+  );
+}
+
+/** Small color ticks for what the row is (supported, app, deprecated, access); the hover card spells them out. */
+function Ticks({ facts }: { facts: Fact[] }) {
+  if (!facts.length) return null;
+  return (
+    <span class="rab-n-ticks">
+      {facts.map((f) => <span key={f.tone} class={'rab-n-tick rab-n-tone-' + f.tone} />)}
+      <span class="rab-n-sr">{facts.map((f) => f.label).join(', ')}</span>
+    </span>
   );
 }
