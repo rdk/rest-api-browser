@@ -34,6 +34,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
@@ -68,8 +69,11 @@ public class CatalogService implements InitializingBean, DisposableBean {
     private volatile boolean started;
     /** Results per module id; only touched by the build thread. */
     private final Map<String, Built> built = new LinkedHashMap<>();
-    /** A source call that timed out and may still run; the module is not described again until it ends. */
-    private final Map<String, Future<?>> stuck = new HashMap<>();
+    /**
+     * Source calls that timed out and may still run; the module is not described again until its call ends. A flag
+     * the task clears itself, because a cancelled Future reports done at once, even while its thread still runs.
+     */
+    private final Map<String, AtomicBoolean> stuck = new HashMap<>();
     private final Set<String> stalePlugins = new HashSet<>();
     private boolean rebuildAll;
 
@@ -264,9 +268,9 @@ public class CatalogService implements InitializingBean, DisposableBean {
     /** Asks the sources in order; the first that describes the module wins, failures fall through to the next. */
     private Built describe(RestModule module) {
         String origin = product.origin(module.plugin());
-        Future<?> previous = stuck.get(module.id());
+        AtomicBoolean previous = stuck.get(module.id());
         if (previous != null) {
-            if (!previous.isDone()) {
+            if (previous.get()) {
                 return failed(module, origin, "busy", "An earlier attempt is still running");
             }
             stuck.remove(module.id());
@@ -274,7 +278,14 @@ public class CatalogService implements InitializingBean, DisposableBean {
         String reason = module.restV2() ? "no-source" : "rest-v1";
         String error = "No source describes this module";
         for (SpecSource source : sources) {
-            Future<Optional<ModuleSpec>> future = describeThreads.submit(() -> source.describe(module));
+            AtomicBoolean running = new AtomicBoolean(true);
+            Future<Optional<ModuleSpec>> future = describeThreads.submit(() -> {
+                try {
+                    return source.describe(module);
+                } finally {
+                    running.set(false);
+                }
+            });
             try {
                 Optional<ModuleSpec> spec = future.get(MODULE_TIMEOUT_MS, TimeUnit.MILLISECONDS);
                 if (spec.isPresent()) {
@@ -284,7 +295,7 @@ public class CatalogService implements InitializingBean, DisposableBean {
                 }
             } catch (TimeoutException e) {
                 future.cancel(true);
-                stuck.put(module.id(), future);
+                stuck.put(module.id(), running);
                 return failed(module, origin, "timeout", source.id() + ": no answer within " + MODULE_TIMEOUT_MS + " ms");
             } catch (ExecutionException e) {
                 Throwable cause = e.getCause();

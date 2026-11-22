@@ -40,8 +40,7 @@ export class CatalogStore {
   }
 
   async load(): Promise<void> {
-    if (this.timer !== null) clearTimeout(this.timer);
-    this.timer = null;
+    this.cancelPending();
     this.attempt = 0;
     this.stopped = false;
     this.error = null;
@@ -51,7 +50,7 @@ export class CatalogStore {
       if (generation !== this.generation) return;
       await this.refresh(summary, generation);
     } catch (e) {
-      if (isSessionExpired(e)) this.expire(e as Error);
+      if (isSessionExpired(e) && generation === this.generation) this.expire(e as Error);
       throw e;
     }
     if (generation !== this.generation) return;
@@ -72,9 +71,14 @@ export class CatalogStore {
   stop(): void {
     this.stopped = true;
     this.generation++;
-    this.waitingForVisible = false;
+    this.cancelPending();
+  }
+
+  // Drops the poll timer and a pending visibilitychange listener.
+  private cancelPending(): void {
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
+    this.waitingForVisible = false;
     if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this.onVisible);
   }
 
@@ -100,6 +104,7 @@ export class CatalogStore {
     for (let retry = 0; ; retry++) {
       try {
         index = await this.getJson<Index>(`/rest/restbrowser/1/catalog/index/${current.hash}`);
+        if (generation !== this.generation) return;
         break;
       } catch (e) {
         if (!(e instanceof NotFound) || retry >= RETRY_DELAYS_MS.length) throw e;
@@ -107,6 +112,7 @@ export class CatalogStore {
       await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[retry]));
       if (generation !== this.generation) return;
       current = await this.fetchSummary();
+      if (generation !== this.generation) return;
     }
     if (generation !== this.generation) return;
     this.summary = current;
@@ -138,16 +144,19 @@ export class CatalogStore {
       }
       return;
     }
+    const generation = this.generation;
     try {
-      const generation = this.generation;
       const summary = await this.fetchSummary();
+      if (generation !== this.generation) return;
       if (summary.hash !== this.summary?.hash) {
         await this.refresh(summary, generation);
+        if (generation !== this.generation) return;
         this.attempt = 0;
       } else {
         this.summary = summary;
       }
     } catch (e) {
+      if (generation !== this.generation) return;
       if (isSessionExpired(e)) return this.expire(e as Error);
       // Transient failure: keep what we have and try again on the next tick.
     }

@@ -59,12 +59,6 @@ describe('UserStore', () => {
     expect(await s.history('a')).toHaveLength(0);
   });
 
-  it('truncates bodyPreview to 2000 characters', async () => {
-    const s = new UserStore('u', new FakeStorage());
-    const e = await s.addHistory(entry('a', { bodyPreview: 'x'.repeat(5000) }));
-    expect(e.bodyPreview).toHaveLength(2000);
-  });
-
   it('strips credential headers but keeps x-atlassian-token', async () => {
     const storage = new FakeStorage();
     const s = new UserStore('u', storage);
@@ -118,5 +112,57 @@ describe('UserStore', () => {
     await s.clearHistory('a');
     expect(await s.history('a')).toHaveLength(0);
     expect(await s.history('b')).toHaveLength(1);
+  });
+});
+
+describe('UserStore review fixes', () => {
+  it('reads from memory after a failed write instead of the stale stored value', async () => {
+    const st = new FakeStorage();
+    const s = new UserStore('u', st);
+    await s.setPrefs({ split: 1 });
+    st.failWrites = true;
+    await s.setPrefs({ split: 2 });
+    expect((await s.prefs()).split).toBe(2);
+  });
+
+  it('drops the oldest history and retries once when storage is full', async () => {
+    const st = new FakeStorage();
+    const s = new UserStore('u', st);
+    for (let i = 0; i < 4; i++) await s.addHistory(entry('a', { url: '/rest/' + i }));
+    let size = 0;
+    st.setItem = (k, v) => {
+      if (v.length > size && size) throw new DOMException('full', 'QuotaExceededError');
+      st.data.set(k, v);
+    };
+    size = (st.data.get('rab-next:u:history') ?? '').length;
+    await s.addHistory(entry('a', { url: '/rest/new' }));
+    const stored = JSON.parse(st.data.get('rab-next:u:history')!);
+    expect(stored.length).toBeLessThan(5);
+    expect(stored[0].url).toBe('/rest/new');
+  });
+
+  it('truncates long bodies, marks them and stores no preview', async () => {
+    const s = new UserStore('u', new FakeStorage());
+    const e = await s.addHistory(entry('a', { values: { ...values(), body: 'x'.repeat(10_500) }, bodyPreview: 'p' }));
+    expect(e.values.body!.length).toBe(10_000);
+    expect(e.bodyTruncated).toBe(true);
+    expect(e.bodyPreview).toBeUndefined();
+    const short = await s.addHistory(entry('a', { values: { ...values(), body: 'ok' } }));
+    expect(short.bodyTruncated).toBeUndefined();
+  });
+
+  it('scrubs credentials by name from headers, params and the url', async () => {
+    const s = new UserStore('u', new FakeStorage());
+    const e = await s.addHistory(entry('a', {
+      url: '/rest/x?apiKey=1&keep=2&auth_code=3#h',
+      values: {
+        path: {}, header: { ' X-Api-Key ': 'k', 'X-Atlassian-Token': 'no-check', AuthX: 'a' },
+        query: { api_key: ['1'], keep: ['2'] }, matrix: { Authorization: 'z', m: '1' },
+      },
+    }));
+    expect(e.values.header).toEqual({ 'X-Atlassian-Token': 'no-check' });
+    expect(e.values.query).toEqual({ keep: ['2'] });
+    expect(e.values.matrix).toEqual({ m: '1' });
+    expect(e.url).toBe('/rest/x?keep=2#h');
   });
 });

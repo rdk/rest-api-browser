@@ -54,7 +54,7 @@ public class ProductAdapter {
                     return "user";
                 }
                 return pmm.isSystemProvided(plugin) ? "product" : "bundled";
-            } catch (RuntimeException e) {
+            } catch (RuntimeException | LinkageError e) {
                 metadataUnavailable = true;
                 LOGGER.debug("PluginMetadataManager is not available; using the plugins' own flags", e);
             }
@@ -82,7 +82,8 @@ public class ProductAdapter {
         try {
             return metadata == null ? null : metadata.get();
         } catch (RuntimeException | LinkageError e) {
-            return null; // the product does not export it
+            metadataUnavailable = true; // the product does not export it
+            return null;
         }
     }
 

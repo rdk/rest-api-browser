@@ -92,11 +92,11 @@ public class CatalogResourceTest {
     }
 
     @Test
-    public void anonymousIsAllowedWithTheSystemProperty() {
+    public void anonymousIsRefusedEvenWithTheSystemProperty() {
+        // the property opens the classic page only; the catalog lists every endpoint and app
         System.setProperty(ANONYMOUS, "true");
         Response r = resource.summary(request);
-        assertEquals(200, r.getStatus());
-        assertEquals("\"" + snapshot.hash() + "-u\"", r.getHeaderString("ETag"));
+        assertEquals(401, r.getStatus());
     }
 
     @Test

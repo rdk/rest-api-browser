@@ -16,6 +16,19 @@ const ops = [
 ];
 const m = createMatcher(s, index(ops));
 
+describe('routes fallbacks', () => {
+  it('matches without throwing when a template regex does not compile in combination', () => {
+    // a group name that collides with the generated ones: valid alone, invalid combined
+    const mm = createMatcher(summary([module('m', 'api')]), index([op('m', 'GET', 'a/{x: [0-9]+}-{y: (?<p0>z)}')]));
+    expect(mm.match('/rest/api/a/1-z')?.values).toEqual({ x: '1', y: 'z' });
+  });
+
+  it('returns null instead of throwing for an unusable baseUrl', () => {
+    const mm = createMatcher(summary([module('m', 'api')], { baseUrl: 'http://[bad' }), index([op('m', 'GET', 'a')]));
+    expect(mm.match('/rest/api/a')).toBeNull();
+  });
+});
+
 describe('routes robustness', () => {
   it('works with a relative, an empty and an absolute baseUrl', () => {
     for (const baseUrl of ['/jira', '', 'http://host/jira']) {

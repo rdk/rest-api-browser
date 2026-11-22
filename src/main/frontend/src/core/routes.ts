@@ -56,20 +56,25 @@ function tryRegExp(source: string): RegExp | null {
 }
 
 function compileTemplate(src: string): TemplateSeg {
-  let source = '^';
-  let last = 0;
-  const names: string[] = [];
-  let restricted = false;
-  for (const t of findTemplates(src)) {
-    source += escapeRegExp(src.slice(last, t.start));
-    const valid = t.regex && tryRegExp(`^(?:${t.regex})$`) ? t.regex : null;
-    source += `(?<p${names.length}>${valid ?? '[^/]+'})`;
-    if (valid) restricted = true;
-    names.push(t.name);
-    last = t.end;
-  }
-  source += escapeRegExp(src.slice(last)) + '$';
-  return { re: tryRegExp(source) ?? /^[^/]+$/, names, restricted };
+  const templates = findTemplates(src);
+  const names = templates.map((t) => t.name);
+  const build = (withRegex: boolean) => {
+    let source = '^';
+    let last = 0;
+    let restricted = false;
+    templates.forEach((t, i) => {
+      source += escapeRegExp(src.slice(last, t.start));
+      const valid = withRegex && t.regex && tryRegExp(`^(?:${t.regex})$`) ? t.regex : null;
+      source += `(?<p${i}>${valid ?? '[^/]+'})`;
+      if (valid) restricted = true;
+      last = t.end;
+    });
+    return { re: tryRegExp(source + escapeRegExp(src.slice(last)) + '$'), restricted };
+  };
+  // If the combined regex does not compile, fall back to plain segments; it keeps the named groups match() reads.
+  const full = build(true);
+  if (full.re) return { re: full.re, names, restricted: full.restricted };
+  return { re: build(false).re ?? /^[^/]+$/, names, restricted: false };
 }
 
 function insert(root: Node, op: Operation): void {
@@ -120,7 +125,7 @@ function walk(node: Node, segs: string[], i: number, values: Record<string, stri
       const m = t.seg.re.exec(segs[i]);
       if (!m) continue;
       const v = { ...values };
-      t.seg.names.forEach((n, k) => (v[n] = m.groups![`p${k}`]));
+      t.seg.names.forEach((n, k) => (v[n] = m.groups?.[`p${k}`] ?? ''));
       const r = walk(t.node, segs, i + 1, v);
       if (r) return r;
     }
@@ -156,7 +161,12 @@ function parseQuery(qs: string): Record<string, string[]> {
 // baseUrl is the context path ("/jira", "" at the root); the page's origin is assumed.
 function restPath(baseUrl: string, path: string): string | null {
   const origin = typeof location !== 'undefined' ? location.origin : 'http://localhost';
-  const base = new URL(baseUrl, origin);
+  let base: URL;
+  try {
+    base = new URL(baseUrl, origin);
+  } catch {
+    return null;
+  }
   let p = path;
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(p)) {
     let u: URL;

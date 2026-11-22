@@ -68,6 +68,21 @@ describe('request details', () => {
     expect(buildRequest(s, plain, vals({ path: { x: 'p/q', y: 'r/s', z: 't/u' } })).url).toBe('/jira/rest/api/2/a/p%2Fq/r/s/t/u');
   });
 
+  it('keeps the slash only when the regex can span segments, not for [^/]', () => {
+    const o = op('jira:api2', 'GET', 'a/{id: [^/]+}/{path: .+}');
+    expect(buildRequest(s, o, vals({ path: { id: 'p/q', path: 'r/s' } })).url).toBe('/jira/rest/api/2/a/p%2Fq/r/s');
+  });
+
+  it('wildcard defaults match the first mediaChoices entry', () => {
+    const o = (extra = {}) => op('jira:api2', 'POST', 'a', extra);
+    const h = (list: string[]) => buildRequest(s, o({ produces: list, consumes: list }), vals({ body: '{}' })).headers;
+    for (const list of [['*/*', 'text/plain'], ['text/*', 'application/xml'], ['*/*'], []]) {
+      expect(h(list).Accept).toBe(mediaChoices(list)[0]);
+      expect(h(list)['Content-Type']).toBe(mediaChoices(list)[0]);
+    }
+    expect(h(['*/*', 'text/plain']).Accept).toBe('text/plain');
+  });
+
   it('defaults wildcard media types to JSON', () => {
     const o = (extra = {}) => op('jira:api2', 'POST', 'a', extra);
     expect(buildRequest(s, o({ produces: ['*/*'], consumes: ['*/*'] }), vals({ body: '{}' })).headers).toMatchObject({ Accept: 'application/json', 'Content-Type': 'application/json' });

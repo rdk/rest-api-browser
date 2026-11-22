@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 
 export const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -12,13 +12,25 @@ export function MethodBadge({ method }: { method: string }) {
 export function Tabs<T extends string>({ tabs, value, onChange }: {
   tabs: { id: T; label: ComponentChildren }[]; value: T; onChange: (id: T) => void;
 }) {
+  // arrow keys move between tabs; only the selected tab is in the Tab order
+  const onKeyDown = (e: KeyboardEvent) => {
+    const i = tabs.findIndex((t) => t.id === value);
+    const next = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : -2;
+    if (next === -2 || !tabs.length) return;
+    e.preventDefault();
+    const t = tabs[(next + tabs.length) % tabs.length];
+    onChange(t.id);
+    const list = e.currentTarget as HTMLElement;
+    requestAnimationFrame(() => (list.querySelector('[aria-selected="true"]') as HTMLElement | null)?.focus());
+  };
   return (
-    <div class="rab-n-tabs" role="tablist">
+    <div class="rab-n-tabs" role="tablist" onKeyDown={onKeyDown}>
       {tabs.map((t) => (
         <button
           key={t.id}
           role="tab"
           aria-selected={t.id === value}
+          tabIndex={t.id === value ? 0 : -1}
           class={'rab-n-tab' + (t.id === value ? ' on' : '')}
           onClick={() => onChange(t.id)}
         >
@@ -30,26 +42,34 @@ export function Tabs<T extends string>({ tabs, value, onChange }: {
 }
 
 export function CopyButton({ text, label, testId }: { text: () => string; label: string; testId?: string }) {
-  const [done, setDone] = useState(false);
+  const [state, setState] = useState<'idle' | 'done' | 'failed'>('idle');
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
   const copy = async () => {
     const value = text();
+    let ok = true;
     try {
       await navigator.clipboard.writeText(value);
     } catch {
-      // older browsers or a page without clipboard permission
+      // older browsers or a page without clipboard permission: an invisible textarea, focus given back afterwards
+      const focused = document.activeElement as HTMLElement | null;
       const area = document.createElement('textarea');
       area.value = value;
+      area.setAttribute('readonly', '');
+      area.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none';
       document.body.appendChild(area);
       area.select();
-      document.execCommand('copy');
+      ok = document.execCommand('copy');
       area.remove();
+      focused?.focus();
     }
-    setDone(true);
-    setTimeout(() => setDone(false), 1200);
+    setState(ok ? 'done' : 'failed');
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setState('idle'), 1500);
   };
   return (
     <button class="rab-n-button" onClick={copy} data-testid={testId}>
-      {done ? 'Copied' : label}
+      {state === 'done' ? 'Copied' : state === 'failed' ? 'Copy failed' : label}
     </button>
   );
 }

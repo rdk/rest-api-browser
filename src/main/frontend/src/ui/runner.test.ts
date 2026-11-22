@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RequestRunner } from './runner';
+import { RequestRunner, downloadBlob } from './runner';
 
 const req = { method: 'GET', url: '/rest/api/2/x', headers: { Accept: 'application/json' } };
 const fakeFetch = (make: (init?: RequestInit) => Response | Promise<Response>) =>
@@ -27,7 +27,7 @@ describe('RequestRunner', () => {
     expect(r.text).toBe('{"a":1}');
     expect(r.size).toBe(7);
     expect(r.truncated).toBe(false);
-    expect(r.blob?.size).toBe(7);
+    expect(r.blob).toBeUndefined();
     expect(r.headers.some(([n]) => n === 'content-type')).toBe(true);
     expect(r.sessionExpired).toBe(false);
   });
@@ -65,6 +65,7 @@ describe('RequestRunner', () => {
     const p = runner.run(req);
     expect(runner.running).toBe(true);
     runner.abort();
+    expect(runner.running).toBe(false);
     const r = await p;
     expect(r.status).toBe(0);
     expect(r.error).toBe('aborted');
@@ -112,5 +113,19 @@ describe('RequestRunner', () => {
     const r = await new RequestRunner(fakeFetch(() => res)).run(req);
     expect(r.kind).toBe('html');
     expect(r.sessionExpired).toBe(true);
+  });
+
+  it('downloadBlob uses the binary blob or builds one from the text', async () => {
+    const bin = await new RequestRunner(fakeFetch(() =>
+      new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'application/octet-stream' } })),
+    ).run(req);
+    expect(downloadBlob(bin)).toBe(bin.blob);
+    const txt = await new RequestRunner(fakeFetch(() =>
+      new Response('{"a":1}', { headers: { 'content-type': 'application/json' } })),
+    ).run(req);
+    const blob = downloadBlob(txt)!;
+    expect(blob.size).toBe(7);
+    expect(blob.type).toBe('application/json');
+    expect(downloadBlob({ ...txt, text: undefined })).toBeNull();
   });
 });

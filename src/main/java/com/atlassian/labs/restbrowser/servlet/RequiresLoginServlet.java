@@ -79,18 +79,40 @@ public abstract class RequiresLoginServlet extends HttpServlet {
         return URI.create(encodeIllegal(builder.toString()));
     }
 
-    /** Percent-encodes characters a URI may not contain, which browsers send unencoded in deep links ({ and }). */
+    /** Characters URI.create rejects in a path or query, which browsers may send unencoded. */
+    private static final String ILLEGAL = "{}|\\^`\"<> []#";
+
+    /**
+     * Percent-encodes what a URI may not contain in its path and query (braces of deep links, brackets, a stray
+     * percent sign or #, spaces, non-ASCII), leaving the scheme and authority as they are (an IPv6 host has brackets).
+     */
     static String encodeIllegal(String uri) {
-        final StringBuilder out = new StringBuilder(uri.length());
-        uri.codePoints().forEach(c -> {
-            if ("{}|\\^`\"<> ".indexOf(c) >= 0 || c < 0x20 || c > 0x7e) {
+        final int schemeEnd = uri.indexOf("://");
+        final int pathStart = schemeEnd < 0 ? 0 : indexOrEnd(uri, '/', schemeEnd + 3);
+        final StringBuilder out = new StringBuilder(uri.length()).append(uri, 0, pathStart);
+        final String rest = uri.substring(pathStart);
+        for (int i = 0; i < rest.length(); ) {
+            final int c = rest.codePointAt(i);
+            final int len = Character.charCount(c);
+            final boolean strayPercent = c == '%' && !(isHex(rest, i + 1) && isHex(rest, i + 2));
+            if (strayPercent || ILLEGAL.indexOf(c) >= 0 || c < 0x20 || c > 0x7e) {
                 for (byte b : new String(Character.toChars(c)).getBytes(java.nio.charset.StandardCharsets.UTF_8)) {
                     out.append('%').append(String.format("%02X", b & 0xff));
                 }
             } else {
                 out.appendCodePoint(c);
             }
-        });
+            i += len;
+        }
         return out.toString();
+    }
+
+    private static int indexOrEnd(String s, char c, int from) {
+        final int i = s.indexOf(c, from);
+        return i < 0 ? s.length() : i;
+    }
+
+    private static boolean isHex(String s, int i) {
+        return i < s.length() && Character.digit(s.charAt(i), 16) >= 0;
     }
 }

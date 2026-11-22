@@ -23,7 +23,9 @@ export interface BuiltRequest {
   body?: string;
 }
 
-// Slashes stay only for a parameter whose regex lets it span segments.
+// Slashes stay only for a parameter whose regex lets it span segments: ".*", ".+" or a "/" outside a [^...] class.
+const spansSegments = (regex: string | undefined) => /\.\*|\.\+|\//.test((regex ?? '').replace(/\[\^[^\]]*\]/g, ''));
+
 const encodePath = (value: string, spans: boolean) =>
   spans ? value.split('/').map(encodeURIComponent).join('/') : encodeURIComponent(value);
 
@@ -36,7 +38,8 @@ export function mediaChoices(list: string[], fallback: string[] = WILDCARD_FALLB
   return [...new Set(all)];
 }
 
-const defaultType = (list: string[]) => (list[0] && !list[0].includes('*') ? list[0] : 'application/json');
+// The same first choice the UI offers (mediaChoices), so the default is never a wildcard.
+const defaultType = (list: string[]) => mediaChoices(list)[0];
 
 // Header names are case-insensitive: replace an existing one whatever its case.
 export function setHeader(headers: Record<string, string>, name: string, value: string): void {
@@ -53,7 +56,7 @@ function fillPath(op: Operation, values: Record<string, string>): string {
     const value = values[t.name] ?? '';
     const param = op.params.find((p) => p.in === 'path' && p.name === t.name);
     if (value === '' && (!param || param.required)) throw new Error(`Missing required path parameter: ${t.name}`);
-    out += op.path.slice(last, t.start) + encodePath(value, /\.\*|\.\+|\//.test(t.regex ?? ''));
+    out += op.path.slice(last, t.start) + encodePath(value, spansSegments(t.regex));
     last = t.end;
   }
   return out + op.path.slice(last);

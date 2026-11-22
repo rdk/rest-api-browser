@@ -172,29 +172,50 @@ public class JerseyModelSource implements SpecSource {
             }
             Object locator = call(resource, "getResourceLocator");
             if (locator != null && depth < MAX_LOCATOR_DEPTH) {
-                Object invocable = call(locator, "getInvocable");
-                Class<?> type = (Class<?>) call(invocable, "getRawResponseType");
-                if (type != null && type != Object.class && !type.isInterface() && locatorClasses.put(type, true) == null) {
-                    Object sub = call(resource.getClass(), null, "from", new Class<?>[]{Class.class}, type);
-                    // the locator's own parameters (its path parameters, typically) apply to everything below it
-                    List<Param> params = new ArrayList<>(inherited.params());
-                    String[] ignoredBody = new String[1];
-                    for (Object p : (List<?>) call(invocable, "getParameters")) {
-                        param(p, params, ignoredBody);
-                    }
-                    Method handling = (Method) call(invocable, "getHandlingMethod");
-                    String access = handling == null ? inherited.access() : firstNonNull(access(handling), inherited.access());
-                    boolean deprecated = inherited.deprecated()
-                            || (handling != null && handling.isAnnotationPresent(Deprecated.class));
-                    visit(sub, path, depth + 1, out, locatorClasses, new Inherited(List.copyOf(params), access, deprecated));
-                    locatorClasses.remove(type);
-                }
+                visitLocator(resource, locator, path, depth, out, locatorClasses, inherited);
             }
             for (Object child : (List<?>) call(resource, "getChildResources")) {
                 visit(child, path, depth, out, locatorClasses, inherited);
             }
         } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
             LOGGER.debug("Skipped part of the resource model below {}", prefix, e);
+        }
+    }
+
+    /**
+     * Follows a sub-resource locator into the resource class it returns. The locator's own parameters (its path
+     * parameters, typically), access and deprecation apply to everything below it. A class already on the way down
+     * is not entered again (recursive locators).
+     */
+    private void visitLocator(Object resource, Object locator, String path, int depth, List<OperationSpec> out,
+                              Map<Class<?>, Boolean> locatorClasses, Inherited inherited)
+            throws ReflectiveOperationException {
+        Object invocable = call(locator, "getInvocable");
+        Class<?> type = (Class<?>) call(invocable, "getRawResponseType");
+        if (type == null || type == Object.class || type.isInterface() || locatorClasses.put(type, true) != null) {
+            return;
+        }
+        try {
+            Object sub = call(resource.getClass(), null, "from", new Class<?>[]{Class.class}, type);
+            if (sub == null) {
+                return;
+            }
+            List<Param> params = new ArrayList<>(inherited.params());
+            String[] ignoredBody = new String[1];
+            for (Object p : (List<?>) call(invocable, "getParameters")) {
+                param(p, params, ignoredBody);
+            }
+            Method handling = (Method) call(invocable, "getHandlingMethod");
+            String access = inherited.access();
+            boolean deprecated = inherited.deprecated();
+            if (handling != null) {
+                access = firstNonNull(access(handling), access);
+                deprecated |= handling.isAnnotationPresent(Deprecated.class)
+                        || handling.getDeclaringClass().isAnnotationPresent(Deprecated.class);
+            }
+            visit(sub, path, depth + 1, out, locatorClasses, new Inherited(List.copyOf(params), access, deprecated));
+        } finally {
+            locatorClasses.remove(type);
         }
     }
 

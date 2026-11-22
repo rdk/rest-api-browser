@@ -26,10 +26,11 @@
   color: var(--rab-text);
   background: var(--rab-surface);
   font-size: 14px;
-  min-width: 1024px;
 }
 .rab-n *, .rab-n *::before, .rab-n *::after { box-sizing: border-box; }
-.rab-n button { font: inherit; color: inherit; }
+/* :where keeps this at zero specificity, so link, icon and row colors win */
+.rab-n :where(button) { font: inherit; color: inherit; }
+.rab-n :where(button, a, [role="separator"], input, select, textarea):focus-visible { outline: 2px solid var(--rab-focus); outline-offset: 1px; }
 .rab-n-topbar { display: flex; align-items: center; gap: 12px; padding: 8px 16px; border-bottom: 1px solid var(--rab-border); }
 .rab-n-body-row { display: flex; flex: 1; min-height: 0; }
 .rab-n-side { flex: none; display: flex; min-width: 240px; background: var(--rab-sunken); }
@@ -46,11 +47,12 @@
 .rab-n-link { background: none; border: 0; padding: 0 4px; color: var(--rab-link); cursor: pointer; text-decoration: none; }
 .rab-n-link:hover { text-decoration: underline; }
 .rab-n-button { border: 1px solid var(--rab-border); background: var(--rab-raised); border-radius: 3px; padding: 4px 10px; cursor: pointer; white-space: nowrap; }
-.rab-n-button:hover { background: var(--rab-hover); }
+.rab-n-button:hover:not(:disabled) { background: var(--rab-hover); }
 .rab-n-button:disabled { opacity: 0.5; cursor: default; }
 .rab-n-send { background: var(--rab-brand); color: var(--rab-on-brand) !important; border-color: transparent; font-weight: 600; }
-.rab-n-send:hover { background: var(--ds-background-brand-bold-hovered, #0055cc); }
+.rab-n-send:hover:not(:disabled) { background: var(--ds-background-brand-bold-hovered, #0055cc); }
 .rab-n-send.write { background: var(--ds-background-warning-bold, #f5cd47); color: var(--ds-text-warning-inverse, #172b4d) !important; }
+.rab-n-send.write:hover:not(:disabled) { background: var(--ds-background-warning-bold-hovered, #e2b203); }
 .rab-n-icon { border: 0; background: none; cursor: pointer; padding: 0 6px; color: var(--rab-subtle); }
 .rab-n-input { border: 1px solid var(--rab-border); border-radius: 3px; padding: 4px 6px; background: var(--ds-background-input, #fff); color: var(--rab-text); font: inherit; min-width: 0; }
 .rab-n-input:focus, .rab-n-search:focus, .rab-n-textarea:focus { outline: 2px solid var(--rab-focus); outline-offset: -1px; }
@@ -58,7 +60,7 @@
 .rab-n-hint { color: var(--rab-subtlest); font-size: 12px; margin-top: 4px; }
 .rab-n-spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--rab-border); border-top-color: var(--rab-brand); border-radius: 50%; animation: rab-n-spin 0.8s linear infinite; vertical-align: -2px; }
 @keyframes rab-n-spin { to { transform: rotate(360deg); } }
-kbd { font-family: var(--rab-mono); font-size: 12px; border: 1px solid var(--rab-border); border-radius: 3px; padding: 0 4px; }
+.rab-n kbd { font-family: var(--rab-mono); font-size: 12px; border: 1px solid var(--rab-border); border-radius: 3px; padding: 0 4px; }
 
 /* sidebar */
 .rab-n-sidebar { display: flex; flex-direction: column; width: 100%; min-width: 0; }

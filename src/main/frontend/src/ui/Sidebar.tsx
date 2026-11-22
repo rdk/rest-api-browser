@@ -27,6 +27,15 @@ export interface SidebarProps {
 type Line = { kind: 'module'; module: Module; count: number } | { kind: 'op'; op: Operation; module?: Module };
 
 export function Sidebar(p: SidebarProps) {
+  // the input shows every key at once; the search runs 120 ms after the last one
+  const [typed, setTyped] = useState(p.query);
+  const typing = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(typing.current), []);
+  const onType = (v: string) => {
+    setTyped(v);
+    clearTimeout(typing.current);
+    typing.current = setTimeout(() => p.onQuery(v), 120);
+  };
   const searching = p.query.trim().length > 0;
   const modulesById = useMemo(() => new Map((p.summary?.modules ?? []).map((m) => [m.id, m])), [p.summary]);
   const filters = { supportedOnly: p.supportedOnly, methods: p.methods };
@@ -43,11 +52,16 @@ export function Sidebar(p: SidebarProps) {
     [hits, p.rows, p.query, p.supportedOnly, p.methods],
   );
 
-  const [active, setActive] = useState(-1);
-  useEffect(() => {
-    const i = lines.findIndex((l) => l.kind === 'op' && l.op.key === p.selectedKey);
-    setActive(i);
-  }, [lines, p.selectedKey]);
+  // the keyboard's position in the list, by row identity, so a list that changes (a module expanded, a new search)
+  // does not move it; it follows the selection only when the selection changes
+  const [activeId, setActiveId] = useState<string | undefined>(p.selectedKey);
+  useEffect(() => setActiveId(p.selectedKey), [p.selectedKey]);
+  const idOf = (l: Line) => (l.kind === 'op' ? l.op.key : 'module:' + l.module.id);
+  const active = useMemo(() => (activeId ? lines.findIndex((l) => idOf(l) === activeId) : -1), [lines, activeId]);
+  const setActive = (i: number) => {
+    const l = lines[i];
+    if (l) setActiveId(idOf(l));
+  };
 
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -71,18 +85,23 @@ export function Sidebar(p: SidebarProps) {
     p.onCollapsed(next);
   };
 
+  // keys for the list, from the search box or the list itself; the filter buttons keep their own Enter
   const onListKey = (e: KeyboardEvent) => {
-    if (!lines.length) return;
+    const target = e.target as HTMLElement;
+    const inSearch = target === input.current;
+    const inList = !!target.closest?.('.rab-n-vlist');
+    if (!lines.length || (!inSearch && !inList)) return;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       const step = e.key === 'ArrowDown' ? 1 : -1;
-      setActive((a) => Math.min(lines.length - 1, Math.max(0, (a < 0 ? (step > 0 ? -1 : lines.length) : a) + step)));
-    } else if (e.key === 'Enter' && active >= 0) {
+      const from = active < 0 ? (step > 0 ? -1 : lines.length) : active;
+      setActive(Math.min(lines.length - 1, Math.max(0, from + step)));
+    } else if (e.key === 'Enter' && inSearch && active >= 0 && active < lines.length) {
       e.preventDefault();
       const l = lines[active];
       if (l.kind === 'op') p.onSelect(l.op);
       else toggle(l.module.id);
-    } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && active >= 0) {
+    } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && inList && active >= 0 && active < lines.length) {
       const l = lines[active];
       if (l.kind === 'module' && p.collapsed.has(l.module.id) === (e.key === 'ArrowRight')) toggle(l.module.id);
     }
@@ -98,8 +117,8 @@ export function Sidebar(p: SidebarProps) {
           class="rab-n-search"
           type="search"
           placeholder="Search operations   /"
-          value={p.query}
-          onInput={(e) => p.onQuery((e.target as HTMLInputElement).value)}
+          value={typed}
+          onInput={(e) => onType((e.target as HTMLInputElement).value)}
           aria-label="Search operations"
           data-testid="search"
         />
@@ -138,7 +157,7 @@ export function Sidebar(p: SidebarProps) {
           ) : (
             <>{total.toLocaleString()} operations in {s.modules.length} modules</>
           )}
-          {s?.admin && p.onRefresh && (
+          {p.onRefresh && (
             <button class="rab-n-link" onClick={p.onRefresh} title="Rebuild the catalog (system administrators)">
               Refresh
             </button>

@@ -25,8 +25,14 @@ public class RequiresLoginServletTest {
 
     @Test
     public void aValidUrlIsUnchanged() {
-        String url = "http://localhost:2990/jira/plugins/servlet/restbrowser?a=b&c=d%20e#/api/2";
+        String url = "http://localhost:2990/jira/plugins/servlet/restbrowser?a=b&c=d%20e";
         assertEquals(url, RequiresLoginServlet.encodeIllegal(url));
+    }
+
+    @Test
+    public void bracketsAStrayPercentAndHashAreEncodedButNotInTheAuthority() {
+        assertEquals("http://[::1]:2990/jira?q.a%5B0%5D=1&p=100%25&x=%23y",
+                RequiresLoginServlet.encodeIllegal("http://[::1]:2990/jira?q.a[0]=1&p=100%&x=#y"));
     }
 
     @Test

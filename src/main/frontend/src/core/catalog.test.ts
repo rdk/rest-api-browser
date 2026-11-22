@@ -174,4 +174,61 @@ describe('CatalogStore', () => {
       vi.unstubAllGlobals();
     }
   });
+
+  it('two quick refreshSoon() calls leave exactly one timer and no duplicate poll loop', async () => {
+    const srv = server({ summary: () => summary(mods, { complete: false }), index: (h) => index([], h) });
+    const store = new CatalogStore('http://host/jira', srv.fetchFn);
+    await store.load();
+    await Promise.all([store.refreshSoon(), store.refreshSoon()]);
+    expect(vi.getTimerCount()).toBe(1);
+    const before = srv.calls.filter((c) => !c.includes('/index/')).length;
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(srv.calls.filter((c) => !c.includes('/index/')).length).toBe(before + 1);
+    store.stop();
+  });
+
+  it('a poll in flight when load() starts does not schedule a second loop', async () => {
+    let n = 0;
+    let release: (() => void) | null = null;
+    const base = server({ summary: () => summary(mods, { complete: false }), index: (h) => index([], h) });
+    const fetchFn: FetchFn = (url, init) => {
+      if (!url.includes('/index/') && ++n === 2) return new Promise((r) => (release = () => r(base.fetchFn(url, init))));
+      return base.fetchFn(url, init);
+    };
+    const store = new CatalogStore('http://host/jira', fetchFn);
+    await store.load();
+    await vi.advanceTimersByTimeAsync(1000);   // poll starts and hangs on its summary
+    await store.load();
+    release!();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(vi.getTimerCount()).toBe(1);
+    store.stop();
+  });
+
+  it('stop() and load() remove a pending visibilitychange listener', async () => {
+    const listeners = new Set<() => void>();
+    const doc = {
+      visibilityState: 'hidden',
+      addEventListener: (_t: string, f: () => void) => listeners.add(f),
+      removeEventListener: (_t: string, f: () => void) => listeners.delete(f),
+    };
+    vi.stubGlobal('document', doc);
+    try {
+      const srv = server({ summary: () => summary(mods, { complete: false }), index: (h) => index([], h) });
+      const store = new CatalogStore('http://host/jira', srv.fetchFn);
+      await store.load();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(listeners.size).toBe(1);
+      doc.visibilityState = 'visible';
+      await store.load();
+      expect(listeners.size).toBe(0);
+      doc.visibilityState = 'hidden';
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(listeners.size).toBe(1);
+      store.stop();
+      expect(listeners.size).toBe(0);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });

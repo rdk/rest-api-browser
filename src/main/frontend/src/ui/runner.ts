@@ -41,10 +41,12 @@ function isSessionExpired(res: Response, contentType: string): boolean {
   return !!res.redirected && /login/i.test(res.url) && /text\/html/i.test(contentType);
 }
 
-async function readCapped(res: Response, cap: number): Promise<{ bytes: Uint8Array; truncated: boolean }> {
+// The chunks are never joined: a Blob takes them as parts and the text decoder streams over them.
+async function readCapped(res: Response, cap: number): Promise<{ chunks: Uint8Array[]; size: number; truncated: boolean }> {
   if (!res.body) {
     const all = new Uint8Array(await res.arrayBuffer());
-    return all.length > cap ? { bytes: all.slice(0, cap), truncated: true } : { bytes: all, truncated: false };
+    const truncated = all.length > cap;
+    return { chunks: [truncated ? all.slice(0, cap) : all], size: Math.min(all.length, cap), truncated };
   }
   const reader = res.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -63,13 +65,21 @@ async function readCapped(res: Response, cap: number): Promise<{ bytes: Uint8Arr
     chunks.push(value);
     size += value.length;
   }
-  const bytes = new Uint8Array(size);
-  let offset = 0;
-  for (const c of chunks) {
-    bytes.set(c, offset);
-    offset += c.length;
-  }
-  return { bytes, truncated };
+  return { chunks, size, truncated };
+}
+
+function decode(chunks: Uint8Array[]): string {
+  const decoder = new TextDecoder('utf-8');
+  let out = '';
+  for (const c of chunks) out += decoder.decode(c, { stream: true });
+  return out + decoder.decode();
+}
+
+// What a download should save: the binary blob, or the text as a Blob made on demand.
+export function downloadBlob(result: RunResult): Blob | null {
+  if (result.blob) return result.blob;
+  if (result.text !== undefined) return new Blob([result.text], { type: result.contentType });
+  return null;
 }
 
 export class RequestRunner {
@@ -85,7 +95,9 @@ export class RequestRunner {
   }
 
   abort(): void {
-    this.controller?.abort();
+    const c = this.controller;
+    this.controller = null;
+    c?.abort();
   }
 
   async run(req: BuiltRequest): Promise<RunResult> {
@@ -102,10 +114,10 @@ export class RequestRunner {
         credentials: 'same-origin',
         signal: controller.signal,
       });
-      const { bytes, truncated } = await readCapped(res, this.capBytes);
+      const { chunks, size, truncated } = await readCapped(res, this.capBytes);
       const durationMs = now() - start;
       const contentType = res.headers.get('content-type') ?? '';
-      const kind = kindOf(contentType, bytes.length);
+      const kind = kindOf(contentType, size);
       const headers: [string, string][] = [];
       res.headers.forEach((value, name) => headers.push([name.toLowerCase(), value]));
       return {
@@ -116,11 +128,11 @@ export class RequestRunner {
         headers,
         contentType,
         durationMs,
-        size: bytes.length,
+        size,
         truncated,
         kind,
-        text: kind === 'binary' ? undefined : new TextDecoder('utf-8').decode(bytes),
-        blob: bytes.length > 0 ? new Blob([bytes as BlobPart], { type: contentType }) : undefined,
+        text: kind === 'binary' ? undefined : decode(chunks),
+        blob: kind === 'binary' ? new Blob(chunks as BlobPart[], { type: contentType }) : undefined,
         sessionExpired: isSessionExpired(res, contentType),
       };
     } catch (e) {

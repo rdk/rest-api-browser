@@ -4,7 +4,6 @@ import com.atlassian.annotations.security.LicensedOnly;
 import com.atlassian.annotations.security.SystemAdminOnly;
 import com.atlassian.labs.restbrowser.catalog.CatalogService;
 import com.atlassian.labs.restbrowser.catalog.CatalogSnapshot;
-import com.atlassian.labs.restbrowser.servlet.RequiresLoginServlet;
 import com.atlassian.sal.api.ApplicationProperties;
 import com.atlassian.sal.api.UrlMode;
 import com.atlassian.sal.api.user.UserKey;
@@ -110,8 +109,9 @@ public class CatalogResource {
         return Response.noContent().build();
     }
 
+    /** A second line behind @LicensedOnly: never anonymous, whatever the classic page allows. */
     private boolean allowed(HttpServletRequest request) {
-        return Boolean.getBoolean(RequiresLoginServlet.RAB_ANONYMOUS) || userManager.getRemoteUserKey(request) != null;
+        return userManager.getRemoteUserKey(request) != null;
     }
 
     /**

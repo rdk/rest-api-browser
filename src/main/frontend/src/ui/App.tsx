@@ -19,6 +19,7 @@ interface Props {
 const MemoSidebar = memo(Sidebar);
 const MemoOperation = memo(OperationView);
 const NONE = new Set<string>();
+const KEEP_RESPONSES = 5;
 
 export function App({ baseUrl, classicUrl, product }: Props) {
   const store = useMemo(() => new CatalogStore(baseUrl), [baseUrl]);
@@ -32,7 +33,7 @@ export function App({ baseUrl, classicUrl, product }: Props) {
     const sync = () => {
       setSummary(store.summary);
       setIndex(store.index);
-      if (store.error) setLoadError(describeError(store.error));
+      setLoadError(store.error ? describeError(store.error) : undefined);
     };
     const off = store.onChange(sync);
     store.load().then(sync, (e) => setLoadError(describeError(e)));
@@ -111,8 +112,17 @@ export function App({ baseUrl, classicUrl, product }: Props) {
     const url = location.pathname + formatState(routeState.current);
     if (location.pathname + location.search !== url) history.pushState(null, '', url);
   }, [runner]);
+  // drafts are kept for every operation opened, responses (up to 20 MB each) only for the last few
+  const withResult = useRef<string[]>([]);
   const onDraft = useCallback((key: string, d: Draft) => {
     drafts.current.set(key, d);
+    if (d.result) {
+      withResult.current = [key, ...withResult.current.filter((k) => k !== key)];
+      for (const old of withResult.current.splice(KEEP_RESPONSES)) {
+        const draft = drafts.current.get(old);
+        if (draft) drafts.current.set(old, { ...draft, result: null });
+      }
+    }
   }, []);
 
   // while the catalog is being (re)built, an open operation stays open even if its module is briefly missing
@@ -231,13 +241,19 @@ function prefill(op: Operation, draft: Draft, state: RouteState): Draft {
   const declared = (where: string) => new Set(op.params.filter((p) => p.in === where).map((p) => p.name));
   const pathNames = new Set([...declared('path'), ...findTemplates(op.path).map((t) => t.name)]);
   const queryNames = declared('query');
-  const headerNames = declared('header');
+  // header names compare case-insensitively; a declared header keeps the operation's spelling
+  const headerNames = new Map(op.params.filter((p) => p.in === 'header').map((p) => [p.name.toLowerCase(), p.name]));
   const path = Object.fromEntries(Object.entries(state.path).filter(([k]) => pathNames.has(k)));
   const query = Object.fromEntries(Object.entries(state.q).filter(([k]) => queryNames.has(k)));
-  const header = Object.fromEntries(Object.entries(state.h).filter(([k]) => headerNames.has(k)));
-  const custom = Object.entries(state.h)
-    .filter(([k]) => !headerNames.has(k) && !isCredentialHeader(k))
-    .map(([name, value]) => ({ name, value }));
+  const header: Record<string, string> = {};
+  const custom: { name: string; value: string }[] = [];
+  for (const [raw, value] of Object.entries(state.h)) {
+    const name = raw.trim();
+    if (!name || isCredentialHeader(name)) continue; // never from a link, declared or not
+    const declaredName = headerNames.get(name.toLowerCase());
+    if (declaredName) header[declaredName] = value;
+    else custom.push({ name, value });
+  }
   return {
     ...draft,
     values: { ...draft.values, path, query: { ...draft.values.query, ...query }, header },
@@ -288,6 +304,7 @@ function SideHandle({ onWidth, onDone }: { onWidth: (w: number) => void; onDone:
     const up = () => {
       document.removeEventListener('pointermove', move);
       document.removeEventListener('pointerup', up);
+      document.removeEventListener('pointercancel', up);
       if (last) {
         onWidth(last);
         onDone(last);
@@ -295,6 +312,7 @@ function SideHandle({ onWidth, onDone }: { onWidth: (w: number) => void; onDone:
     };
     document.addEventListener('pointermove', move);
     document.addEventListener('pointerup', up);
+    document.addEventListener('pointercancel', up);
   };
   return <div ref={ref} class="rab-n-vsplit" onPointerDown={onDown} role="separator" aria-orientation="vertical" />;
 }

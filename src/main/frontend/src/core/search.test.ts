@@ -45,6 +45,15 @@ describe('search', () => {
     expect(search(rows, '  ')).toHaveLength(ops.length);
   });
 
+  it('an empty query keeps input order within each rank (stable partition)', () => {
+    const out = search(rows, '');
+    const ranks = out.map((r) => r.rank);
+    expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
+    for (const rank of [0, 1, 2]) {
+      expect(out.filter((r) => r.rank === rank)).toEqual(rows.filter((r) => r.rank === rank));
+    }
+  });
+
   it('ranks supported before internal before app', () => {
     const r = search(rows, 'issue');
     expect(r.map((x) => x.stability)).toEqual(['supported', 'supported', 'supported', 'supported', 'internal', 'app']);

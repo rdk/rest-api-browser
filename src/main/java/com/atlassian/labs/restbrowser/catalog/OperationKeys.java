@@ -28,7 +28,8 @@ final class OperationKeys {
             .thenComparing(OperationSpec::path)
             .thenComparing(o -> String.valueOf(o.params()))
             .thenComparing(o -> String.valueOf(o.bodyType()))
-            .thenComparing(o -> String.valueOf(o.access()));
+            .thenComparing(o -> String.valueOf(o.access()))
+            .thenComparing(OperationSpec::deprecated);
 
     private OperationKeys() {
     }

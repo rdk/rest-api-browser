@@ -1,17 +1,32 @@
-import { useEffect, useMemo, useState } from 'preact/hooks';
-import type { RunResult } from './runner';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { downloadBlob, type RunResult } from './runner';
 import { buildLines, find, visibleLines, type LineModel } from '../core/jsonlines';
 import { VirtualList } from './VirtualList';
 import { Tabs, download, formatBytes } from './bits';
 
 const LINE = 20;
+/** Longer lines are split into rows (raw text) or cut (JSON): one DOM text node of megabytes freezes the tab. */
+const MAX_LINE = 2000;
 
 type View = 'pretty' | 'raw' | 'headers';
+
+let resultSeq = 0;
+const resultIds = new WeakMap<RunResult, number>();
+const idOf = (r: RunResult) => {
+  let id = resultIds.get(r);
+  if (id === undefined) resultIds.set(r, (id = ++resultSeq));
+  return id;
+};
 
 export function ResponseView({ result, running, onCancel }: {
   result: RunResult | null; running: boolean; onCancel: () => void;
 }) {
   const [view, setView] = useState<View>('pretty');
+  // parsed once per response, kept across tab switches
+  const model = useMemo(
+    () => (result && result.kind === 'json' && !result.truncated && result.text ? buildLines(result.text) : null),
+    [result],
+  );
   if (running) {
     return (
       <div class="rab-n-response rab-n-response-state" data-testid="response-running">
@@ -31,6 +46,7 @@ export function ResponseView({ result, running, onCancel }: {
   }
   const statusClass = result.status >= 500 ? 'err' : result.status >= 400 ? 'warn' : result.status >= 300 ? 'info' : 'ok';
   const fileName = 'response' + (result.kind === 'json' ? '.json' : result.kind === 'xml' ? '.xml' : result.kind === 'html' ? '.html' : '');
+  const id = idOf(result);
   return (
     <div class="rab-n-response" data-testid="response">
       {result.sessionExpired && (
@@ -45,7 +61,17 @@ export function ResponseView({ result, running, onCancel }: {
         <span class="rab-n-subtle">{formatBytes(result.size)}{result.truncated ? ' (truncated)' : ''}</span>
         <span class="rab-n-subtle rab-n-ellipsis" title={result.url}>{result.method} {result.url}</span>
         <span class="rab-n-spacer" />
-        {result.blob && <button class="rab-n-button" onClick={() => download(result.blob!, fileName)}>Download</button>}
+        {result.size > 0 && (
+          <button
+            class="rab-n-button"
+            onClick={() => {
+              const blob = downloadBlob(result);
+              if (blob) download(blob, fileName);
+            }}
+          >
+            Download
+          </button>
+        )}
       </div>
       <Tabs<View>
         value={view}
@@ -61,30 +87,35 @@ export function ResponseView({ result, running, onCancel }: {
       )}
       {view === 'headers' ? (
         <div class="rab-n-headers" data-testid="response-headers">
-          {result.headers.map(([k, v]) => (
-            <div key={k + v}><span class="rab-n-header-name">{k}:</span> {v}</div>
+          {result.headers.map(([k, v], i) => (
+            <div key={i}><span class="rab-n-header-name">{k}:</span> {v}</div>
           ))}
         </div>
       ) : result.kind === 'binary' ? (
         <div class="rab-n-response-state rab-n-subtle">Binary content ({result.contentType || 'no content type'}). Use Download.</div>
       ) : result.kind === 'empty' ? (
         <div class="rab-n-response-state rab-n-subtle">No content.</div>
-      ) : view === 'pretty' && result.kind === 'json' ? (
-        <JsonView text={result.text ?? ''} />
+      ) : view === 'pretty' && model ? (
+        <JsonView key={'json' + id} model={model} />
       ) : (
         <>
           {result.kind === 'html' && view === 'pretty' && (
             <div class="rab-n-banner">The server answered with an HTML page; its source is shown.</div>
           )}
-          <TextView text={result.text ?? ''} />
+          <TextView key={'text' + id} text={result.text ?? ''} />
         </>
       )}
     </div>
   );
 }
 
-function FindBox({ onFind, count, index }: { onFind: (needle: string, step: number) => void; count: number; index: number }) {
+/** Find as you type, 150 ms after the last key; Enter and Shift+Enter step through the matches. */
+function FindBox({ onFind, onStep, count, index }: {
+  onFind: (needle: string) => void; onStep: (step: number) => void; count: number; index: number;
+}) {
   const [needle, setNeedle] = useState('');
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
   return (
     <div class="rab-n-find">
       <input
@@ -94,10 +125,14 @@ function FindBox({ onFind, count, index }: { onFind: (needle: string, step: numb
         onInput={(e) => {
           const v = (e.target as HTMLInputElement).value;
           setNeedle(v);
-          onFind(v, 0);
+          clearTimeout(timer.current);
+          timer.current = setTimeout(() => onFind(v), 150);
         }}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') onFind(needle, e.shiftKey ? -1 : 1);
+          if (e.key === 'Enter') {
+            clearTimeout(timer.current);
+            onStep(e.shiftKey ? -1 : 1);
+          }
         }}
         aria-label="Find in response"
       />
@@ -106,29 +141,34 @@ function FindBox({ onFind, count, index }: { onFind: (needle: string, step: numb
   );
 }
 
+/** Index of value in a sorted array, or -1. */
+function indexIn(sorted: number[], value: number): number {
+  let lo = 0, hi = sorted.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (sorted[mid] === value) return mid;
+    if (sorted[mid] < value) lo = mid + 1;
+    else hi = mid - 1;
+  }
+  return -1;
+}
+
 /** A folding JSON view over the flat line model: only visible lines are rendered. */
-function JsonView({ text }: { text: string }) {
-  const model: LineModel | null = useMemo(() => buildLines(text), [text]);
+function JsonView({ model }: { model: LineModel }) {
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
   const [matches, setMatches] = useState<number[]>([]);
   const [current, setCurrent] = useState(0);
-  useEffect(() => {
-    setCollapsed(new Set());
-    setMatches([]);
-  }, [text]);
-  const visible = useMemo(() => (model ? visibleLines(model, collapsed) : []), [model, collapsed]);
+  const visible = useMemo(() => visibleLines(model, collapsed), [model, collapsed]);
   const matchSet = useMemo(() => new Set(matches), [matches]);
-  if (!model) return <TextView text={text} />;
   const activeLine = matches.length ? matches[current] : -1;
-  const onFind = (needle: string, step: number) => {
-    if (!needle) {
-      setMatches([]);
-      return;
-    }
-    const found = find(model, needle);
+  const onFind = (needle: string) => {
+    const found = needle ? find(model, needle) : [];
     if (found.length && collapsed.size) setCollapsed(new Set()); // a match may sit inside a folded block
     setMatches(found);
-    setCurrent((c) => (found.length ? (step === 0 ? 0 : (c + step + found.length) % found.length) : 0));
+    setCurrent(0);
+  };
+  const onStep = (step: number) => {
+    if (matches.length) setCurrent((c) => (c + step + matches.length) % matches.length);
   };
   const toggle = (i: number) => {
     const next = new Set(collapsed);
@@ -136,20 +176,22 @@ function JsonView({ text }: { text: string }) {
     else next.add(i);
     setCollapsed(next);
   };
+  const activeRow = activeLine >= 0 ? indexIn(visible, activeLine) : -1;
   return (
     <div class="rab-n-code-wrap">
-      <FindBox onFind={onFind} count={matches.length} index={current} />
+      <FindBox onFind={onFind} onStep={onStep} count={matches.length} index={current} />
       <VirtualList
         className="rab-n-code"
         count={visible.length}
         rowHeight={LINE}
-        activeIndex={activeLine >= 0 ? visible.indexOf(activeLine) : undefined}
+        activeIndex={activeRow >= 0 ? activeRow : undefined}
         renderRow={(row) => {
           const i = visible[row];
           const line = model.lines[i];
           const foldable = line.foldEnd !== undefined;
           const folded = foldable && collapsed.has(i);
           const closing = folded ? model.lines[line.foldEnd!].text.trim() : '';
+          const text = line.text.trimStart();
           return (
             <div class={'rab-n-line' + (matchSet.has(i) ? ' match' : '') + (i === activeLine ? ' current' : '')}>
               <span class="rab-n-gutter">{i + 1}</span>
@@ -161,7 +203,8 @@ function JsonView({ text }: { text: string }) {
                 )}
               </span>
               <span class="rab-n-code-text" style={{ paddingLeft: line.depth * 2 + 'ch' }}>
-                {line.text.trimStart()}
+                {text.length > MAX_LINE ? text.slice(0, MAX_LINE) : text}
+                {text.length > MAX_LINE && <span class="rab-n-folded"> … {(text.length - MAX_LINE).toLocaleString()} more characters (see Raw or Download)</span>}
                 {folded && <span class="rab-n-folded"> … {line.foldEnd! - i - 1} lines {closing}</span>}
               </span>
             </div>
@@ -172,30 +215,54 @@ function JsonView({ text }: { text: string }) {
   );
 }
 
+/** Raw text, split into rows of at most MAX_LINE characters (minified JSON is one line of megabytes). */
 function TextView({ text }: { text: string }) {
-  const lines = useMemo(() => text.split('\n'), [text]);
+  const rows = useMemo(() => {
+    const out: { line: number; text: string; cont: boolean }[] = [];
+    let line = 0, start = 0;
+    while (start <= text.length) {
+      let end = text.indexOf('\n', start);
+      if (end < 0) end = text.length;
+      for (let s = start; s < end || s === start; s += MAX_LINE) {
+        out.push({ line, text: text.slice(s, Math.min(end, s + MAX_LINE)), cont: s > start });
+        if (end - s <= MAX_LINE) break;
+      }
+      line++;
+      start = end + 1;
+    }
+    return out;
+  }, [text]);
+  const lower = useRef<string[] | null>(null);
   const [matches, setMatches] = useState<number[]>([]);
   const [current, setCurrent] = useState(0);
   const matchSet = useMemo(() => new Set(matches), [matches]);
-  const onFind = (needle: string, step: number) => {
+  const onFind = (needle: string) => {
     const n = needle.toLowerCase();
-    const found = n ? lines.flatMap((l, i) => (l.toLowerCase().includes(n) ? [i] : [])) : [];
+    const found: number[] = [];
+    if (n) {
+      if (!lower.current) lower.current = rows.map((r) => r.text.toLowerCase());
+      const l = lower.current;
+      for (let i = 0; i < l.length; i++) if (l[i].includes(n)) found.push(i);
+    }
     setMatches(found);
-    setCurrent((c) => (found.length ? (step === 0 ? 0 : (c + step + found.length) % found.length) : 0));
+    setCurrent(0);
   };
-  const activeLine = matches.length ? matches[current] : -1;
+  const onStep = (step: number) => {
+    if (matches.length) setCurrent((c) => (c + step + matches.length) % matches.length);
+  };
+  const activeRow = matches.length ? matches[current] : -1;
   return (
     <div class="rab-n-code-wrap">
-      <FindBox onFind={onFind} count={matches.length} index={current} />
+      <FindBox onFind={onFind} onStep={onStep} count={matches.length} index={current} />
       <VirtualList
         className="rab-n-code"
-        count={lines.length}
+        count={rows.length}
         rowHeight={LINE}
-        activeIndex={activeLine >= 0 ? activeLine : undefined}
+        activeIndex={activeRow >= 0 ? activeRow : undefined}
         renderRow={(i) => (
-          <div class={'rab-n-line' + (matchSet.has(i) ? ' match' : '') + (i === activeLine ? ' current' : '')}>
-            <span class="rab-n-gutter">{i + 1}</span>
-            <span class="rab-n-code-text rab-n-nowrap">{lines[i]}</span>
+          <div class={'rab-n-line' + (matchSet.has(i) ? ' match' : '') + (i === activeRow ? ' current' : '')}>
+            <span class="rab-n-gutter">{rows[i].cont ? '' : rows[i].line + 1}</span>
+            <span class="rab-n-code-text rab-n-nowrap">{rows[i].text}</span>
           </div>
         )}
       />

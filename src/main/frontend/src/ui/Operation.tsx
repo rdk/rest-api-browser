@@ -86,8 +86,8 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
     const run = ++runSeq.current;
     setRunning(true);
     const result = await runner.run(request);
-    if (run !== runSeq.current) return; // a newer run took over
-    if (mounted.current) setRunning(false);
+    if (run !== runSeq.current || !mounted.current) return; // a newer run took over, or the view closed
+    setRunning(false);
     // keep what was typed while the request ran; only the result is new
     setDraft({ ...latest.current, result });
     if (!result.error) {
@@ -201,9 +201,9 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
 /** The operation's parameters, plus a required path parameter for any template no parameter declares. */
 function withTemplateParams(op: Operation): Param[] {
   const declared = new Set(op.params.filter((p) => p.in === 'path').map((p) => p.name));
-  const missing = findTemplates(op.path)
-    .filter((t) => !declared.has(t.name))
-    .map((t): Param => ({ name: t.name, in: 'path', type: 'string', required: true }));
+  const missing = [...new Set(findTemplates(op.path).map((t) => t.name))]
+    .filter((name) => !declared.has(name))
+    .map((name): Param => ({ name, in: 'path', type: 'string', required: true }));
   return missing.length ? [...op.params, ...missing] : op.params;
 }
 
@@ -401,13 +401,22 @@ function SplitHandle({ onSplit }: { onSplit: (ratio: number) => void }) {
     if (!parent) return;
     e.preventDefault();
     const rect = parent.getBoundingClientRect();
-    const move = (ev: PointerEvent) => onSplit(Math.min(0.8, Math.max(0.15, (ev.clientY - rect.top) / rect.height)));
+    const request = parent.firstElementChild as HTMLElement | null;
+    let ratio = 0;
+    // resize the element directly while dragging; the state (and a saved preference) follows once, on release
+    const move = (ev: PointerEvent) => {
+      ratio = Math.min(0.8, Math.max(0.15, (ev.clientY - rect.top) / rect.height));
+      if (request) request.style.flexBasis = Math.round(ratio * 100) + '%';
+    };
     const up = () => {
       document.removeEventListener('pointermove', move);
       document.removeEventListener('pointerup', up);
+      document.removeEventListener('pointercancel', up);
+      if (ratio) onSplit(ratio);
     };
     document.addEventListener('pointermove', move);
     document.addEventListener('pointerup', up);
+    document.addEventListener('pointercancel', up);
   };
   return <div ref={ref} class="rab-n-hsplit" onPointerDown={onDown} role="separator" aria-orientation="horizontal" />;
 }

@@ -68,6 +68,10 @@ export function search(rows: SearchRow[], query: string, filters: Filters = {}):
     for (const t of tokens) if (!row.hay.includes(t)) continue outer;
     hits.push({ row, seg: tokens.length ? segmentHits(row.path, tokens) : 0 });
   }
+  if (!tokens.length) {
+    // browse mode: groupRows re-sorts per module, so a stable partition by rank is enough
+    return hits.map((h) => h.row).sort((a, b) => a.rank - b.rank);
+  }
   hits.sort(
     (a, b) =>
       a.row.rank - b.row.rank ||
