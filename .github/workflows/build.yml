@@ -20,7 +20,8 @@ jobs:
           java-version: '21'
           cache: maven
       # the integration test (mvn verify) needs a browser and a refapp: run it locally, see README.md
-      - run: mvn -B -ntp package -DskipTests
+      # unit tests: the Java ones and the new UI's (npm test through frontend-maven-plugin)
+      - run: mvn -B -ntp package
       - uses: actions/upload-artifact@v7
         with:
           name: rest-api-browser-jar
