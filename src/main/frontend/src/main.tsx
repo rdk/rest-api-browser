@@ -1,6 +1,7 @@
 import { render } from 'preact';
 import { App } from './ui/App';
 import './ui/styles.css';
+import './ui/lozenges.css';
 
 // the product puts web-resource scripts into the head, before the page's root element exists
 function mount() {

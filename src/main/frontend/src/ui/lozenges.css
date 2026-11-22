@@ -1,0 +1,51 @@
+/*
+ * Lozenges (the small tags: Supported, App, Deprecated, access levels). One family: a soft tint of the kind's color,
+ * text in that color, a hairline border of it. The color is one token per kind, so light and dark both follow the
+ * product's theme. Loaded after styles.css, so these rules win over its .rab-n-tag rules.
+ */
+.rab-n .rab-n-tag {
+  --tag: var(--ds-text-subtle, #44546f);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 9px;
+  border: 1px solid color-mix(in srgb, var(--tag) 26%, transparent);
+  background: color-mix(in srgb, var(--tag) 11%, transparent);
+  color: var(--tag);
+  font-size: 10.5px;
+  font-weight: 650;
+  line-height: 16px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  text-transform: none;
+  box-shadow: none;
+  background-image: none;
+}
+
+/* stability */
+.rab-n .rab-n-tag-supported { --tag: var(--ds-text-success, #216e4e); }
+.rab-n .rab-n-tag-supported::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.rab-n .rab-n-tag-app { --tag: var(--ds-text-discovery, #5e4db2); }
+.rab-n .rab-n-tag-deprecated { --tag: var(--ds-text-danger, #ae2e24); }
+
+/* access levels, from open to most restricted */
+.rab-n .rab-n-tag-access { --tag: var(--ds-text-subtle, #44546f); }
+.rab-n .rab-n-tag-access-anonymoussiteaccess,
+.rab-n .rab-n-tag-access-unrestrictedaccess,
+.rab-n .rab-n-tag-access-anonymousallowed { --tag: var(--ds-text-accent-teal, #206a83); }
+.rab-n .rab-n-tag-access-unlicensedsiteaccess { --tag: var(--ds-text-accent-blue, #0055cc); }
+.rab-n .rab-n-tag-access-licensedonly { --tag: var(--ds-text-information, #0055cc); }
+.rab-n .rab-n-tag-access-adminonly { --tag: var(--ds-text-warning, #a54800); }
+.rab-n .rab-n-tag-access-systemadminonly { --tag: var(--ds-text-accent-magenta, #943d73); }
+
+/* the selected list row has a tinted background: keep its lozenges as readable as elsewhere */
+.rab-n .rab-n-op.selected .rab-n-tag { background: color-mix(in srgb, var(--tag) 16%, var(--ds-surface, #fff)); }

@@ -455,6 +455,8 @@ def main():
           s == 200 and 'text/html' in h.get('content-type', ''), (s, h.get('content-type'), h.get('location')))
     check('the page has the search field and the "public only" checkbox',
           'id="searchField"' in page and 'id="publicOnlyFilter"' in page, page[:300])
+    check('the page links to the new UI (button "Try the new UI")',
+          'id="rab-new-ui-link"' in page and '/plugins/servlet/restbrowser/next' in page, page[:300])
     check('the page is decorated by %s (header and the plugin\'s web resources)' % P['name'],
           'rest-api-browser' in page and re.search(r'download/(batch|resources|contextbatch)', page), page[:300])
     m = re.search(r'RAB\.product = "([^"]*)"', page)

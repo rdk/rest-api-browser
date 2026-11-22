@@ -40,6 +40,9 @@ RAB.rest.services = [
                     </form>
                     <div class="aui-page-header-actions">
                         <a ng-href="#/search/{{searchQuery | encodeQuery}}" ng-show="searchQuery">Link to filtered results</a>
+                        <a class="aui-button rab-new-ui-link" id="rab-new-ui-link"
+                           href="$textUtils.htmlEncode($applicationProperties.baseUrl)/plugins/servlet/restbrowser/next"
+                           title="The new REST API Browser: faster, searchable, works on Confluence 10">Try the new UI</a>
                     </div>
                 </div>
             </div>

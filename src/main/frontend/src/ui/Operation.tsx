@@ -145,7 +145,7 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
           <div class="rab-n-op-badges">
             {module?.stability === 'supported' && <span class="rab-n-tag rab-n-tag-supported">Supported</span>}
             {module?.stability === 'app' && <span class="rab-n-tag rab-n-tag-app">App: {module.plugin.name}</span>}
-            {op.access && <span class="rab-n-tag" title="Access annotation of the handler">{op.access}</span>}
+            {op.access && <span class={'rab-n-tag rab-n-tag-access rab-n-tag-access-' + op.access.toLowerCase()} title="Access annotation of the handler">{op.access}</span>}
             {op.deprecated && <span class="rab-n-tag rab-n-tag-deprecated">Deprecated</span>}
           </div>
         )}

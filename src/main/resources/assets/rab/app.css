@@ -285,3 +285,19 @@ section.aui-page-panel-content {
     height: 100%;
 }
 /* FeCru specific hacks: end */
+
+/* the classic page's way to the new UI: the new UI's brand gradient */
+.rab-header .aui-page-header-actions { display: flex; align-items: center; gap: 12px; }
+.rab-header a.aui-button.rab-new-ui-link,
+.rab-header a.aui-button.rab-new-ui-link:visited {
+    color: var(--ds-text-inverse, #fff);
+    border: 0;
+    font-weight: 600;
+    background: linear-gradient(135deg, var(--ds-background-brand-bold, #0c66e4), var(--ds-background-discovery-bold, #6e5dc6));
+}
+.rab-header a.aui-button.rab-new-ui-link:hover,
+.rab-header a.aui-button.rab-new-ui-link:focus {
+    color: var(--ds-text-inverse, #fff);
+    background: linear-gradient(135deg, var(--ds-background-brand-bold-hovered, #0055cc), var(--ds-background-discovery-bold-hovered, #5e4db2));
+    text-decoration: none;
+}
