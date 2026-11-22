@@ -22,13 +22,21 @@
   --rab-on-brand: var(--ds-text-inverse, #fff);
   --rab-discovery-bold: var(--ds-background-discovery-bold, #6e5dc6);
   --rab-success-bold: var(--ds-background-success-bold, #1f845a);
+  --rab-teal-bold: var(--ds-background-accent-teal-bolder, #206a83);
   --rab-warning-bold: var(--ds-background-warning-bold, #f5cd47);
   --rab-warning-bold-hover: var(--ds-background-warning-bold-hovered, #e2b203);
+  --rab-orange-bold: color-mix(
+    in srgb,
+    var(--ds-background-accent-orange-subtle, #fea362) 78%,
+    var(--ds-background-accent-orange-bolder, #c25100)
+  );
+  --rab-orange-glow: var(--ds-background-accent-orange-bolder, #c25100);
   --rab-on-warning: var(--ds-text-warning-inverse, #172b4d);
   --rab-danger-bold: var(--ds-background-danger-bold, #c9372c);
   --rab-danger-bold-hover: var(--ds-background-danger-bold-hovered, #ae2e24);
+  --rab-magenta-bold: var(--ds-background-accent-magenta-bolder, #ae4787);
 
-  /* Semantic foregrounds & subtle backgrounds */
+  /* Semantic foregrounds and subtle backgrounds */
   --rab-danger: var(--ds-text-danger, #ae2e24);
   --rab-warning: var(--ds-text-warning, #a54800);
   --rab-success: var(--ds-text-success, #216e4e);
@@ -36,32 +44,101 @@
   --rab-discovery: var(--ds-text-discovery, #5e4db2);
   --rab-bg-info: var(--ds-background-information, #e9f2ff);
   --rab-bg-success: var(--ds-background-success, #dcfff1);
+  --rab-bg-teal: var(--ds-background-accent-teal-subtlest, #e7f9ff);
   --rab-bg-warning: var(--ds-background-warning, #fff7d6);
+  --rab-bg-orange: var(--ds-background-accent-orange-subtlest, #fff3eb);
   --rab-bg-danger: var(--ds-background-danger, #ffeceb);
+  --rab-bg-magenta: var(--ds-background-accent-magenta-subtlest, #ffecf8);
   --rab-bg-discovery: var(--ds-background-discovery, #f3f0ff);
 
   /* Theme-adaptive gradients */
-  --rab-grad-accent: linear-gradient(90deg, var(--rab-brand), var(--rab-discovery-bold) 55%, var(--rab-success-bold));
-  --rab-grad-topbar: linear-gradient(
+  --rab-grad-accent: linear-gradient(
     90deg,
-    color-mix(in srgb, var(--rab-bg-info) 55%, var(--rab-surface)),
-    var(--rab-surface) 42%,
-    color-mix(in srgb, var(--rab-bg-discovery) 45%, var(--rab-surface))
+    var(--rab-focus) 0%,
+    var(--rab-discovery-bold) 52%,
+    var(--ds-background-accent-teal-subtle, #6cc3e0) 100%
   );
-  --rab-grad-brand: linear-gradient(135deg, var(--rab-brand), color-mix(in srgb, var(--rab-brand) 66%, var(--rab-discovery-bold)));
-  --rab-grad-brand-hover: linear-gradient(135deg, var(--rab-brand-hover), color-mix(in srgb, var(--rab-brand-hover) 62%, var(--rab-discovery-bold)));
-  --rab-grad-success: linear-gradient(135deg, var(--rab-success-bold), color-mix(in srgb, var(--rab-success-bold) 80%, var(--rab-brand)));
-  --rab-grad-warn: linear-gradient(135deg, var(--rab-warning-bold), color-mix(in srgb, var(--rab-warning-bold) 45%, var(--rab-warning-bold-hover)));
-  --rab-grad-warn-hover: linear-gradient(135deg, var(--rab-warning-bold-hover), color-mix(in srgb, var(--rab-warning-bold-hover) 72%, var(--rab-warning-bold)));
-  --rab-grad-danger: linear-gradient(135deg, var(--rab-danger-bold), color-mix(in srgb, var(--rab-danger-bold) 78%, var(--rab-discovery-bold)));
-  --rab-grad-danger-hover: linear-gradient(135deg, var(--rab-danger-bold-hover), color-mix(in srgb, var(--rab-danger-bold-hover) 75%, var(--rab-discovery-bold)));
-  --rab-grad-discovery: linear-gradient(135deg, var(--rab-discovery-bold), color-mix(in srgb, var(--rab-discovery-bold) 72%, var(--rab-brand)));
-  --rab-grad-selected: linear-gradient(90deg, var(--rab-selected), color-mix(in srgb, var(--rab-selected) 52%, var(--rab-bg-discovery)));
+  --rab-topbar-bg: linear-gradient(
+    115deg,
+    var(--rab-brand) 0%,
+    var(--rab-discovery-bold) 62%,
+    color-mix(in srgb, var(--rab-teal-bold) 84%, var(--rab-discovery-bold)) 100%
+  );
+  --rab-topbar-fg: var(--rab-on-brand);
+  --rab-topbar-glass: color-mix(in srgb, var(--rab-topbar-fg) 15%, transparent);
+  --rab-topbar-glass-hover: color-mix(in srgb, var(--rab-topbar-fg) 26%, transparent);
+  --rab-topbar-glass-border: color-mix(in srgb, var(--rab-topbar-fg) 28%, transparent);
+
+  --rab-grad-side: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--rab-bg-info) 44%, var(--rab-sunken)) 0%,
+    var(--rab-sunken) 38%,
+    color-mix(in srgb, var(--rab-bg-discovery) 38%, var(--rab-sunken)) 100%
+  );
+  --rab-grad-brand: linear-gradient(135deg, var(--rab-brand), var(--rab-discovery-bold));
+  --rab-grad-brand-hover: linear-gradient(
+    135deg,
+    var(--rab-brand-hover),
+    color-mix(in srgb, var(--rab-discovery-bold) 84%, var(--rab-brand-hover))
+  );
+  --rab-grad-success: linear-gradient(135deg, var(--rab-success-bold), var(--rab-teal-bold));
+  --rab-grad-warn: linear-gradient(135deg, var(--rab-warning-bold), var(--rab-orange-bold));
+  --rab-grad-warn-hover: linear-gradient(
+    135deg,
+    var(--rab-warning-bold-hover),
+    color-mix(in srgb, var(--rab-orange-bold) 85%, var(--rab-orange-glow))
+  );
+  --rab-grad-danger: linear-gradient(135deg, var(--rab-danger-bold), var(--rab-magenta-bold));
+  --rab-grad-danger-hover: linear-gradient(
+    135deg,
+    var(--rab-danger-bold-hover),
+    color-mix(in srgb, var(--rab-magenta-bold) 80%, var(--rab-danger-bold-hover))
+  );
+  --rab-grad-discovery: linear-gradient(135deg, var(--rab-discovery-bold), var(--rab-brand));
+  --rab-grad-tab: linear-gradient(90deg, var(--rab-brand), var(--rab-discovery-bold) 72%, var(--rab-teal-bold));
+  --rab-grad-bar-v: linear-gradient(180deg, var(--rab-brand), var(--rab-discovery-bold));
+  --rab-grad-selected: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--rab-brand) 15%, transparent) 0%,
+    color-mix(in srgb, var(--rab-discovery-bold) 12%, transparent) 100%
+  );
+
+  --rab-grad-card-border: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--rab-brand) 36%, var(--rab-border)),
+    color-mix(in srgb, var(--rab-discovery-bold) 36%, var(--rab-border)) 58%,
+    color-mix(in srgb, var(--rab-teal-bold) 30%, var(--rab-border))
+  );
+  --rab-grad-card-border-hover: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--rab-brand) 65%, var(--rab-border)),
+    color-mix(in srgb, var(--rab-discovery-bold) 65%, var(--rab-border)) 58%,
+    color-mix(in srgb, var(--rab-teal-bold) 55%, var(--rab-border))
+  );
+  --rab-grad-ophead-bg: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--rab-bg-info) 52%, var(--rab-raised)) 0%,
+    var(--rab-raised) 52%,
+    color-mix(in srgb, var(--rab-bg-discovery) 48%, var(--rab-raised)) 100%
+  );
+  --rab-code-bg: color-mix(in srgb, var(--rab-bg-info) 24%, var(--rab-sunken));
+
   --rab-grad-welcome:
-    radial-gradient(ellipse 68% 52% at 14% 0%, color-mix(in srgb, var(--rab-bg-info) 72%, transparent), transparent 72%),
-    radial-gradient(ellipse 58% 48% at 88% 8%, color-mix(in srgb, var(--rab-bg-discovery) 62%, transparent), transparent 70%);
+    radial-gradient(ellipse 64% 48% at 14% 4%, color-mix(in srgb, var(--rab-brand) 16%, transparent), transparent 70%),
+    radial-gradient(ellipse 58% 46% at 86% 10%, color-mix(in srgb, var(--rab-discovery-bold) 16%, transparent), transparent 68%),
+    radial-gradient(ellipse 50% 42% at 52% 88%, color-mix(in srgb, var(--rab-teal-bold) 10%, transparent), transparent 70%),
+    var(--rab-surface);
+  --rab-grad-hero-panel:
+    radial-gradient(ellipse 72% 95% at 0% 0%, color-mix(in srgb, var(--rab-brand) 15%, transparent), transparent 68%),
+    radial-gradient(ellipse 68% 95% at 100% 15%, color-mix(in srgb, var(--rab-discovery-bold) 15%, transparent), transparent 68%),
+    radial-gradient(ellipse 55% 80% at 55% 110%, color-mix(in srgb, var(--rab-teal-bold) 10%, transparent), transparent 65%),
+    linear-gradient(135deg, var(--rab-raised), color-mix(in srgb, var(--rab-bg-info) 26%, var(--rab-raised)));
+  --rab-grad-headline: linear-gradient(100deg, var(--rab-brand-hover) 0%, var(--rab-discovery) 55%, var(--rab-teal-bold) 100%);
 
   --rab-shadow-sm: var(--ds-shadow-raised, 0 1px 2px rgba(9, 30, 66, 0.08), 0 0 1px rgba(9, 30, 66, 0.14));
+  --rab-shadow-card: 0 2px 10px color-mix(in srgb, var(--rab-brand) 8%, transparent), 0 1px 2px rgba(9, 30, 66, 0.06);
+  --rab-shadow-card-hover: 0 8px 20px color-mix(in srgb, var(--rab-brand) 14%, transparent), 0 2px 6px rgba(9, 30, 66, 0.08);
+  --rab-shadow-hero: 0 6px 24px color-mix(in srgb, var(--rab-brand) 10%, transparent), 0 1px 2px rgba(9, 30, 66, 0.06);
   --rab-radius-sm: 5px;
   --rab-radius-md: 8px;
   --rab-radius-lg: 12px;
@@ -78,6 +155,111 @@
   font-size: 14px;
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Deep, rich gradients tuned for Atlassian dark mode while maintaining AA+ contrast */
+[data-color-mode="dark"] .rab-n {
+  --rab-on-brand: color-mix(in srgb, var(--rab-text) 8%, #fff);
+  --rab-topbar-bg: linear-gradient(
+    115deg,
+    color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 76%, var(--rab-surface)) 0%,
+    color-mix(in srgb, var(--ds-background-accent-purple-subtle, #5e4db2) 78%, var(--rab-surface)) 58%,
+    color-mix(in srgb, var(--ds-background-accent-teal-subtle, #206a83) 76%, var(--rab-surface)) 100%
+  );
+  --rab-topbar-fg: var(--rab-on-brand);
+  --rab-topbar-glass: color-mix(in srgb, var(--rab-topbar-fg) 13%, transparent);
+  --rab-topbar-glass-hover: color-mix(in srgb, var(--rab-topbar-fg) 22%, transparent);
+  --rab-topbar-glass-border: color-mix(in srgb, var(--rab-topbar-fg) 24%, transparent);
+
+  --rab-grad-side: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--rab-bg-info) 55%, var(--rab-sunken)) 0%,
+    var(--rab-sunken) 42%,
+    color-mix(in srgb, var(--rab-bg-discovery) 55%, var(--rab-sunken)) 100%
+  );
+  --rab-grad-brand: linear-gradient(
+    135deg,
+    var(--ds-background-accent-blue-subtle, #0055cc),
+    var(--ds-background-accent-purple-subtle, #5e4db2)
+  );
+  --rab-grad-brand-hover: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 80%, var(--rab-brand)),
+    color-mix(in srgb, var(--ds-background-accent-purple-subtle, #5e4db2) 80%, var(--rab-discovery-bold))
+  );
+  --rab-grad-success: linear-gradient(
+    135deg,
+    var(--ds-background-accent-green-subtle, #216e4e),
+    var(--ds-background-accent-teal-subtle, #206a83)
+  );
+  --rab-grad-warn: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--rab-warning-bold) 88%, var(--rab-surface)),
+    color-mix(in srgb, var(--ds-background-accent-orange-bolder, #fea362) 84%, var(--rab-surface))
+  );
+  --rab-grad-warn-hover: linear-gradient(
+    135deg,
+    var(--rab-warning-bold),
+    var(--ds-background-accent-orange-bolder, #fea362)
+  );
+  --rab-grad-danger: linear-gradient(
+    135deg,
+    var(--ds-background-accent-red-subtle, #ae2e24),
+    var(--ds-background-accent-magenta-subtle, #943d73)
+  );
+  --rab-grad-danger-hover: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--ds-background-accent-red-subtle, #ae2e24) 80%, var(--rab-danger-bold)),
+    color-mix(in srgb, var(--ds-background-accent-magenta-subtle, #943d73) 80%, var(--rab-magenta-bold))
+  );
+  --rab-grad-discovery: linear-gradient(
+    135deg,
+    var(--ds-background-accent-purple-subtle, #5e4db2),
+    var(--ds-background-accent-blue-subtle, #0055cc)
+  );
+  --rab-grad-selected: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--rab-brand) 22%, transparent) 0%,
+    color-mix(in srgb, var(--rab-discovery-bold) 20%, transparent) 100%
+  );
+  --rab-grad-card-border: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--rab-brand) 48%, var(--rab-border)),
+    color-mix(in srgb, var(--rab-discovery-bold) 48%, var(--rab-border)) 58%,
+    color-mix(in srgb, var(--rab-teal-bold) 38%, var(--rab-border))
+  );
+  --rab-grad-card-border-hover: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--rab-brand) 78%, var(--rab-border)),
+    color-mix(in srgb, var(--rab-discovery-bold) 78%, var(--rab-border)) 58%,
+    color-mix(in srgb, var(--rab-teal-bold) 66%, var(--rab-border))
+  );
+  --rab-grad-ophead-bg: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--rab-bg-info) 68%, var(--rab-raised)) 0%,
+    var(--rab-raised) 52%,
+    color-mix(in srgb, var(--rab-bg-discovery) 68%, var(--rab-raised)) 100%
+  );
+  --rab-code-bg: color-mix(in srgb, var(--rab-bg-info) 28%, var(--rab-sunken));
+  --rab-grad-welcome:
+    radial-gradient(ellipse 66% 52% at 14% 4%, color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 36%, transparent), transparent 70%),
+    radial-gradient(ellipse 60% 48% at 86% 10%, color-mix(in srgb, var(--ds-background-accent-purple-subtle, #5e4db2) 34%, transparent), transparent 68%),
+    radial-gradient(ellipse 52% 44% at 52% 88%, color-mix(in srgb, var(--ds-background-accent-teal-subtle, #206a83) 24%, transparent), transparent 70%),
+    var(--rab-surface);
+  --rab-grad-hero-panel:
+    radial-gradient(ellipse 72% 95% at 0% 0%, color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 48%, transparent), transparent 68%),
+    radial-gradient(ellipse 68% 95% at 100% 15%, color-mix(in srgb, var(--ds-background-accent-purple-subtle, #5e4db2) 46%, transparent), transparent 68%),
+    radial-gradient(ellipse 55% 80% at 55% 110%, color-mix(in srgb, var(--ds-background-accent-teal-subtle, #206a83) 34%, transparent), transparent 65%),
+    linear-gradient(135deg, color-mix(in srgb, var(--rab-bg-info) 45%, var(--rab-raised)), color-mix(in srgb, var(--rab-bg-discovery) 45%, var(--rab-raised)));
+  --rab-grad-headline: linear-gradient(
+    100deg,
+    var(--ds-text-information, #85b8ff) 0%,
+    var(--ds-text-discovery, #b8acf6) 55%,
+    var(--ds-background-accent-teal-bolder, #6cc3e0) 100%
+  );
+  --rab-shadow-card: 0 4px 14px rgba(0, 0, 0, 0.28);
+  --rab-shadow-card-hover: 0 10px 26px rgba(0, 0, 0, 0.42), 0 0 18px color-mix(in srgb, var(--rab-brand) 18%, transparent);
+  --rab-shadow-hero: 0 10px 28px rgba(0, 0, 0, 0.36);
 }
 
 .rab-n *, .rab-n *::before, .rab-n *::after { box-sizing: border-box; }
@@ -97,69 +279,76 @@
   background: var(--rab-grad-accent);
 }
 
-/* Top bar */
+/* Gradient app header */
 .rab-n-topbar {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 9px 18px;
-  background: var(--rab-grad-topbar);
-  border-bottom: 1px solid var(--rab-border);
+  min-height: 48px;
+  padding: 8px 18px;
+  background: var(--rab-topbar-bg);
+  color: var(--rab-topbar-fg);
+  border-bottom: 1px solid color-mix(in srgb, var(--rab-brand) 30%, var(--rab-border));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 16%, transparent);
   flex: none;
+}
+.rab-n-topbar :where(button, a):focus-visible {
+  outline: 2px solid var(--rab-topbar-fg);
+  outline-offset: 2px;
 }
 .rab-n-brand-mark {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
-  background: var(--rab-grad-brand);
-  color: var(--rab-on-brand);
-  box-shadow: var(--rab-shadow-sm);
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--rab-topbar-glass);
+  border: 1px solid var(--rab-topbar-glass-border);
+  color: var(--rab-topbar-fg);
   flex: none;
 }
 .rab-n-topbar-title {
-  font-size: 15px;
+  font-size: 15.5px;
   font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--rab-text);
+  letter-spacing: -0.015em;
+  color: var(--rab-topbar-fg);
 }
 .rab-n-product-badge {
   display: inline-flex;
   align-items: center;
-  padding: 2px 9px;
+  padding: 3px 10px;
   border-radius: var(--rab-radius-pill);
   font-size: 12px;
-  font-weight: 500;
-  color: var(--rab-subtle);
-  background: color-mix(in srgb, var(--rab-surface) 72%, var(--rab-neutral));
-  border: 1px solid var(--rab-border-subtle);
+  font-weight: 600;
+  color: var(--rab-topbar-fg);
+  background: var(--rab-topbar-glass);
+  border: 1px solid var(--rab-topbar-glass-border);
 }
 .rab-n-classic-link {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 11px;
+  padding: 4px 12px;
   border-radius: var(--rab-radius-pill);
   font-size: 12.5px;
-  font-weight: 500;
-  color: var(--rab-subtle);
-  background: color-mix(in srgb, var(--rab-surface) 75%, transparent);
-  border: 1px solid var(--rab-border);
+  font-weight: 600;
+  color: var(--rab-topbar-fg);
+  background: var(--rab-topbar-glass);
+  border: 1px solid var(--rab-topbar-glass-border);
   text-decoration: none;
-  transition: background var(--rab-ease), color var(--rab-ease), border-color var(--rab-ease);
+  transition: background var(--rab-ease), border-color var(--rab-ease), transform var(--rab-ease);
 }
 .rab-n-classic-link:hover {
-  background: var(--rab-raised);
-  color: var(--rab-link);
-  border-color: color-mix(in srgb, var(--rab-link) 45%, var(--rab-border));
+  background: var(--rab-topbar-glass-hover);
+  border-color: color-mix(in srgb, var(--rab-topbar-fg) 48%, transparent);
+  color: var(--rab-topbar-fg);
   text-decoration: none;
 }
 
 /* Main split layout */
 .rab-n-body-row { display: flex; flex: 1; min-height: 0; }
-.rab-n-side { flex: none; display: flex; min-width: 240px; background: var(--rab-sunken); }
+.rab-n-side { flex: none; display: flex; min-width: 240px; background: var(--rab-grad-side); }
 .rab-n-main { flex: 1; min-width: 0; display: flex; background: var(--rab-surface); }
 
 /* Sleek draggable splitters */
@@ -188,7 +377,7 @@
 .rab-n-vsplit:hover::before, .rab-n-vsplit:focus-visible::before {
   left: 2px;
   width: 3px;
-  background: var(--rab-brand);
+  background: var(--rab-grad-bar-v);
 }
 .rab-n-hsplit {
   height: 7px;
@@ -221,11 +410,11 @@
 .rab-n-hsplit:hover::before, .rab-n-hsplit:focus-visible::before {
   top: 2px;
   height: 3px;
-  background: var(--rab-brand);
+  background: var(--rab-grad-tab);
 }
 .rab-n-hsplit:hover::after, .rab-n-hsplit:focus-visible::after {
   width: 52px;
-  background: var(--rab-brand);
+  background: var(--rab-grad-tab);
 }
 
 /* Shared utilities */
@@ -286,9 +475,9 @@
   color: var(--rab-success);
 }
 
-/* Primary & write-method gradient Send button */
+/* Primary and write-method gradient Send button with colored hover glow */
 .rab-n-send {
-  padding: 6px 15px;
+  padding: 6px 16px;
   height: 36px;
   border-radius: var(--rab-radius-md);
   background: var(--rab-grad-brand);
@@ -296,32 +485,47 @@
   border-color: transparent;
   font-weight: 600;
   letter-spacing: 0.01em;
-  box-shadow: 0 2px 6px color-mix(in srgb, var(--rab-brand) 32%, transparent), inset 0 1px 0 color-mix(in srgb, #fff 18%, transparent);
+  box-shadow:
+    0 2px 8px color-mix(in srgb, var(--rab-brand) 34%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 20%, transparent);
 }
 .rab-n-send:hover:not(:disabled) {
   background: var(--rab-grad-brand-hover);
   border-color: transparent;
-  box-shadow: 0 4px 10px color-mix(in srgb, var(--rab-brand) 38%, transparent), inset 0 1px 0 color-mix(in srgb, #fff 20%, transparent);
+  box-shadow:
+    0 4px 16px color-mix(in srgb, var(--rab-brand) 44%, transparent),
+    0 0 12px color-mix(in srgb, var(--rab-discovery-bold) 34%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 24%, transparent);
 }
 .rab-n-send.write {
   background: var(--rab-grad-warn);
   color: var(--rab-on-warning) !important;
-  box-shadow: 0 2px 6px color-mix(in srgb, var(--rab-warning-bold) 35%, transparent), inset 0 1px 0 color-mix(in srgb, #fff 28%, transparent);
+  box-shadow:
+    0 2px 8px color-mix(in srgb, var(--rab-warning-bold) 36%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 30%, transparent);
 }
 .rab-n-send.write:hover:not(:disabled) {
   background: var(--rab-grad-warn-hover);
   border-color: transparent;
-  box-shadow: 0 4px 10px color-mix(in srgb, var(--rab-warning-bold) 42%, transparent);
+  box-shadow:
+    0 4px 16px color-mix(in srgb, var(--rab-warning-bold) 46%, transparent),
+    0 0 12px color-mix(in srgb, var(--rab-orange-glow) 34%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 34%, transparent);
 }
 .rab-n-send.write.danger {
   background: var(--rab-grad-danger);
   color: var(--rab-on-brand) !important;
-  box-shadow: 0 2px 6px color-mix(in srgb, var(--rab-danger-bold) 34%, transparent), inset 0 1px 0 color-mix(in srgb, #fff 18%, transparent);
+  box-shadow:
+    0 2px 8px color-mix(in srgb, var(--rab-danger-bold) 36%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 20%, transparent);
 }
 .rab-n-send.write.danger:hover:not(:disabled) {
   background: var(--rab-grad-danger-hover);
   border-color: transparent;
-  box-shadow: 0 4px 10px color-mix(in srgb, var(--rab-danger-bold) 42%, transparent);
+  box-shadow:
+    0 4px 16px color-mix(in srgb, var(--rab-danger-bold) 48%, transparent),
+    0 0 12px color-mix(in srgb, var(--rab-magenta-bold) 36%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 24%, transparent);
 }
 .rab-n-cancel-btn {
   height: 36px;
@@ -365,7 +569,7 @@
   transition: border-color var(--rab-ease), box-shadow var(--rab-ease), background var(--rab-ease);
 }
 .rab-n-input:hover:not(:focus) { border-color: color-mix(in srgb, var(--rab-subtle) 45%, var(--rab-border)); }
-.rab-n-input:focus, .rab-n-search:focus, .rab-n-textarea:focus, .rab-n-find input:focus {
+.rab-n-input:focus, .rab-n-textarea:focus {
   outline: 2px solid var(--rab-focus);
   outline-offset: -1px;
   border-color: var(--rab-focus);
@@ -389,7 +593,7 @@
   gap: 6px;
   color: var(--rab-warning);
   font-size: 12px;
-  margin-top: 7px;
+  margin-top: 8px;
   padding: 4px 9px;
   border-radius: var(--rab-radius-sm);
   background: var(--rab-bg-warning);
@@ -435,7 +639,11 @@
 .rab-n-sidebar-head {
   padding: 12px 12px 9px;
   border-bottom: 1px solid var(--rab-border);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--rab-surface) 70%, var(--rab-sunken)), var(--rab-sunken));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--rab-bg-info) 34%, var(--rab-surface)),
+    color-mix(in srgb, var(--rab-bg-discovery) 16%, transparent)
+  );
 }
 
 .rab-n-search-wrap { position: relative; display: flex; align-items: center; }
@@ -448,7 +656,7 @@
 .rab-n-search {
   width: 100%;
   padding: 7px 30px 7px 32px;
-  border: 1px solid var(--rab-border);
+  border: 1.5px solid var(--rab-border);
   border-radius: var(--rab-radius-md);
   background: var(--rab-input);
   color: var(--rab-text);
@@ -458,7 +666,16 @@
   transition: border-color var(--rab-ease), box-shadow var(--rab-ease);
 }
 .rab-n-search::placeholder { color: var(--rab-subtlest); }
-.rab-n-search:hover:not(:focus) { border-color: color-mix(in srgb, var(--rab-subtle) 42%, var(--rab-border)); }
+.rab-n-search:hover:not(:focus) { border-color: color-mix(in srgb, var(--rab-subtle) 45%, var(--rab-border)); }
+.rab-n-search:focus {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  border-color: transparent;
+  background:
+    linear-gradient(var(--rab-input), var(--rab-input)) padding-box,
+    var(--rab-grad-brand) border-box;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rab-brand) 22%, transparent);
+}
 .rab-n-search-kbd {
   position: absolute;
   right: 8px;
@@ -479,16 +696,16 @@
   cursor: pointer;
   transition: background var(--rab-ease), border-color var(--rab-ease), color var(--rab-ease), box-shadow var(--rab-ease);
 }
-.rab-n-pill:hover {
+.rab-n-pill:not(.on):hover {
   background: var(--rab-raised);
   color: var(--rab-text);
   border-color: color-mix(in srgb, var(--rab-subtle) 45%, var(--rab-border));
 }
 .rab-n-pill.on {
-  background: linear-gradient(135deg, var(--rab-bg-success), color-mix(in srgb, var(--rab-bg-success) 62%, var(--rab-bg-info)));
-  border-color: color-mix(in srgb, var(--rab-success) 55%, var(--rab-border));
-  color: var(--rab-success);
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--rab-success) 15%, transparent);
+  background: var(--rab-grad-success);
+  border-color: transparent;
+  color: var(--rab-on-brand);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--rab-success-bold) 32%, transparent);
 }
 .rab-n-pill-get, .rab-n-pill-post, .rab-n-pill-put, .rab-n-pill-patch, .rab-n-pill-delete, .rab-n-pill-other {
   font-family: var(--rab-mono);
@@ -496,29 +713,32 @@
   padding: 2px 8px;
 }
 .rab-n-pill-get.on {
-  background: linear-gradient(135deg, var(--rab-bg-info), color-mix(in srgb, var(--rab-bg-info) 68%, var(--rab-bg-discovery)));
-  border-color: color-mix(in srgb, var(--rab-info) 55%, var(--rab-border));
-  color: var(--rab-info);
+  background: var(--rab-grad-brand);
+  color: var(--rab-on-brand);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--rab-brand) 34%, transparent);
 }
 .rab-n-pill-post.on {
-  background: linear-gradient(135deg, var(--rab-bg-success), color-mix(in srgb, var(--rab-bg-success) 75%, var(--rab-bg-info)));
-  border-color: color-mix(in srgb, var(--rab-success) 55%, var(--rab-border));
-  color: var(--rab-success);
+  background: var(--rab-grad-success);
+  color: var(--rab-on-brand);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--rab-success-bold) 34%, transparent);
 }
 .rab-n-pill-put.on, .rab-n-pill-patch.on {
-  background: linear-gradient(135deg, var(--rab-bg-warning), color-mix(in srgb, var(--rab-bg-warning) 70%, var(--rab-surface)));
-  border-color: color-mix(in srgb, var(--rab-warning) 55%, var(--rab-border));
-  color: var(--rab-warning);
+  background: var(--rab-grad-warn);
+  color: var(--rab-on-warning);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--rab-warning-bold) 34%, transparent);
 }
 .rab-n-pill-delete.on {
-  background: linear-gradient(135deg, var(--rab-bg-danger), color-mix(in srgb, var(--rab-bg-danger) 72%, var(--rab-bg-discovery)));
-  border-color: color-mix(in srgb, var(--rab-danger) 55%, var(--rab-border));
-  color: var(--rab-danger);
+  background: var(--rab-grad-danger);
+  color: var(--rab-on-brand);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--rab-danger-bold) 34%, transparent);
 }
 .rab-n-pill-other.on {
-  background: linear-gradient(135deg, var(--rab-bg-discovery), color-mix(in srgb, var(--rab-bg-discovery) 72%, var(--rab-bg-info)));
-  border-color: color-mix(in srgb, var(--rab-discovery) 55%, var(--rab-border));
-  color: var(--rab-discovery);
+  background: var(--rab-grad-discovery);
+  color: var(--rab-on-brand);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--rab-discovery-bold) 34%, transparent);
+}
+.rab-n-pill.on:hover {
+  box-shadow: 0 2px 7px color-mix(in srgb, var(--rab-brand) 36%, transparent);
 }
 
 .rab-n-status {
@@ -534,7 +754,7 @@
 }
 .rab-n-status-text { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 
-/* Virtualized operations list: strict fixed 28px rows, zero shadows/filters/gradients on unselected rows */
+/* Virtualized operations list: strict fixed 28px rows, no shadows/filters/gradients on unselected rows */
 .rab-n-vlist { flex: 1; overflow: auto; position: relative; min-height: 0; }
 .rab-n-vrow { position: absolute; left: 0; right: 0; }
 
@@ -553,20 +773,34 @@
 }
 .rab-n-op.indented { padding-left: 26px; }
 .rab-n-op:hover, .rab-n-module:hover { background: var(--rab-hover); }
+
+/* Keyboard-active row: light inner ring instead of a heavy solid outline */
 .rab-n-op.active, .rab-n-module.active {
-  outline: 2px solid var(--rab-focus);
-  outline-offset: -2px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rab-focus) 45%, transparent);
 }
 .rab-n-op:focus-visible, .rab-n-module:focus-visible {
   outline: 2px solid var(--rab-focus);
   outline-offset: -2px;
 }
-/* Selected row gets subtle gradient + inset accent bar (allowed on selected row, zero layout shift) */
+
+/* Selected operation row: low-alpha brand-to-discovery gradient fill + 3px gradient left bar */
 .rab-n-op.selected {
+  position: relative;
   background: var(--rab-grad-selected);
-  box-shadow: inset 3px 0 0 var(--rab-brand);
 }
-.rab-n-op.selected .rab-n-op-path { color: var(--rab-text); font-weight: 600; }
+.rab-n-op.selected::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--rab-grad-bar-v);
+}
+.rab-n-op.selected.active {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rab-brand) 26%, transparent);
+}
+.rab-n-op.selected .rab-n-op-path { color: var(--rab-text); font-weight: 700; }
 
 .rab-n-op-path {
   overflow: hidden;
@@ -578,11 +812,25 @@
 }
 .rab-n-op:hover .rab-n-op-path { color: var(--rab-text); }
 
+/* Module header rows */
 .rab-n-module {
-  font-weight: 600;
-  font-size: 12.5px;
+  position: relative;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.005em;
   color: var(--rab-text);
-  background: color-mix(in srgb, var(--rab-neutral) 45%, transparent);
+  background: color-mix(in srgb, var(--rab-surface) 58%, var(--rab-neutral));
+  border-bottom: 1px solid var(--rab-border-subtle);
+}
+.rab-n-module.supported::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 5px;
+  bottom: 5px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--rab-grad-success);
 }
 .rab-n-module.failed .rab-n-count { color: var(--rab-danger); font-weight: 500; }
 .rab-n-module.pending { opacity: 0.65; }
@@ -590,14 +838,14 @@
 .rab-n-chevron { width: 12px; flex: none; color: var(--rab-subtlest); font-size: 11px; text-align: center; }
 .rab-n-count {
   margin-left: auto;
-  font-weight: 500;
-  color: var(--rab-subtlest);
+  font-weight: 600;
+  color: var(--rab-subtle);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   padding: 0 6px;
   line-height: 17px;
   border-radius: var(--rab-radius-pill);
-  background: var(--rab-neutral);
+  background: color-mix(in srgb, var(--rab-neutral) 85%, var(--rab-surface));
 }
 
 .rab-n-empty {
@@ -622,16 +870,17 @@
   margin-bottom: 2px;
 }
 
-/* Method badges: flat semantic tints in virtualized list for fast scrolling */
+/* Method chips in virtualized rows: soft tinted flat backgrounds (no gradient per row) */
 .rab-n-method {
   flex: none;
   display: inline-block;
   min-width: 44px;
   text-align: center;
-  font: 700 10.5px/18px var(--rab-mono);
+  font: 700 10.5px/16px var(--rab-mono);
   letter-spacing: 0.03em;
   border-radius: 4px;
   padding: 0 5px;
+  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
   background: var(--rab-neutral);
 }
 .rab-n-method-get { background: var(--rab-bg-info); color: var(--rab-info); }
@@ -661,13 +910,19 @@
 /* ---------------- Operation Pane ---------------- */
 .rab-n-operation { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 .rab-n-op-head {
-  padding: 14px 20px 14px;
-  border-bottom: 1px solid var(--rab-border);
-  background: linear-gradient(180deg, var(--rab-surface), color-mix(in srgb, var(--rab-sunken) 48%, var(--rab-surface)));
+  flex: none;
+  margin: 12px 16px 10px;
+  padding: 14px 18px;
+  border-radius: var(--rab-radius-lg);
+  border: 1px solid transparent;
+  background:
+    var(--rab-grad-ophead-bg) padding-box,
+    var(--rab-grad-card-border) border-box;
+  box-shadow: var(--rab-shadow-card);
 }
 .rab-n-op-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .rab-n-op-fullpath {
-  font: 600 15.5px/1.35 var(--rab-mono);
+  font: 700 15.5px/1.35 var(--rab-mono);
   letter-spacing: -0.01em;
   color: var(--rab-text);
   overflow-wrap: anywhere;
@@ -687,6 +942,7 @@
   font-size: 11.5px;
   line-height: 20px;
   border-radius: 6px;
+  border-color: transparent;
   box-shadow: var(--rab-shadow-sm);
 }
 .rab-n-op-head .rab-n-method-get { background: var(--rab-grad-brand); color: var(--rab-on-brand); }
@@ -696,7 +952,7 @@
 .rab-n-op-head .rab-n-method-delete { background: var(--rab-grad-danger); color: var(--rab-on-brand); }
 .rab-n-op-head .rab-n-method-other { background: var(--rab-grad-discovery); color: var(--rab-on-brand); }
 
-/* Legible unified URL bar */
+/* Legible unified URL bar with gradient focus ring */
 .rab-n-urlbar {
   display: flex;
   align-items: center;
@@ -711,11 +967,11 @@
   height: 36px;
   padding: 2px 3px 2px 12px;
   gap: 6px;
-  border: 1px solid var(--rab-border);
+  border: 1.5px solid var(--rab-border);
   border-radius: var(--rab-radius-md);
   background: var(--rab-input);
   box-shadow: inset 0 1px 2px color-mix(in srgb, var(--rab-text) 4%, transparent);
-  transition: border-color var(--rab-ease), box-shadow var(--rab-ease);
+  transition: border-color var(--rab-ease), box-shadow var(--rab-ease), background var(--rab-ease);
 }
 .rab-n-urlbar.is-write .rab-n-url-group {
   border-color: color-mix(in srgb, var(--rab-warning) 35%, var(--rab-border));
@@ -723,7 +979,18 @@
 .rab-n-urlbar.is-delete .rab-n-url-group {
   border-color: color-mix(in srgb, var(--rab-danger) 38%, var(--rab-border));
 }
-.rab-n-url-group:hover { border-color: color-mix(in srgb, var(--rab-subtle) 45%, var(--rab-border)); }
+.rab-n-url-group:hover {
+  border-color: color-mix(in srgb, var(--rab-brand) 42%, var(--rab-border));
+}
+.rab-n-url-group:focus-within {
+  border-color: transparent;
+  background:
+    linear-gradient(var(--rab-input), var(--rab-input)) padding-box,
+    var(--rab-grad-brand) border-box;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--rab-brand) 22%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--rab-discovery-bold) 18%, transparent);
+}
 .rab-n-url {
   flex: 1;
   min-width: 0;
@@ -749,25 +1016,26 @@
   border-color: var(--rab-border);
 }
 
-/* Request & response vertical split */
+/* Request and response vertical split */
 .rab-n-op-split { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .rab-n-request { display: flex; flex-direction: column; min-height: 120px; flex-shrink: 0; overflow: hidden; }
 
-/* Tabs with gradient active indicator */
+/* Tabs with bold 3px gradient active underline and tinted active surface */
 .rab-n-tabs {
   display: flex;
   align-items: center;
   gap: 4px;
   padding: 0 16px;
+  border-top: 1px solid var(--rab-border-subtle);
   border-bottom: 1px solid var(--rab-border);
-  background: var(--rab-surface);
+  background: color-mix(in srgb, var(--rab-sunken) 48%, var(--rab-surface));
   flex: none;
 }
 .rab-n-tab {
   position: relative;
   border: 0;
   background: none;
-  padding: 9px 12px;
+  padding: 10px 14px;
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -778,18 +1046,23 @@
 .rab-n-tab:hover { color: var(--rab-text); background: var(--rab-hover); }
 .rab-n-tab:focus-visible { outline-offset: -2px; }
 .rab-n-tab.on, .rab-n-tab[aria-selected="true"] {
-  color: var(--rab-link);
-  font-weight: 600;
+  color: var(--rab-info);
+  font-weight: 700;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--rab-brand) 10%, transparent),
+    color-mix(in srgb, var(--rab-discovery-bold) 8%, transparent)
+  );
 }
 .rab-n-tab.on::after, .rab-n-tab[aria-selected="true"]::after {
   content: '';
   position: absolute;
-  left: 6px;
-  right: 6px;
-  bottom: 0;
-  height: 2.5px;
-  border-radius: 2px 2px 0 0;
-  background: var(--rab-grad-brand);
+  left: 2px;
+  right: 2px;
+  bottom: -1px;
+  height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: var(--rab-grad-tab);
 }
 
 .rab-n-tabpane { flex: 1; overflow: auto; min-height: 0; }
@@ -901,7 +1174,7 @@
   gap: 10px;
   flex: 1;
   font-size: 13.5px;
-  background: radial-gradient(ellipse 60% 70% at 50% 40%, color-mix(in srgb, var(--rab-sunken) 75%, transparent), transparent);
+  background: radial-gradient(ellipse 60% 70% at 50% 40%, color-mix(in srgb, var(--rab-bg-info) 38%, transparent), transparent);
 }
 .rab-n-response-state-inner {
   display: inline-flex;
@@ -918,21 +1191,59 @@
   border-color: color-mix(in srgb, var(--rab-danger) 30%, var(--rab-border));
 }
 
+/* Status line as a soft semantic gradient band */
 .rab-n-statusline {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 9px 18px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--rab-sunken) 65%, var(--rab-surface)), var(--rab-surface));
+  padding: 10px 18px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--rab-bg-info) 74%, var(--rab-surface)) 0%,
+    color-mix(in srgb, var(--rab-bg-discovery) 56%, var(--rab-surface)) 58%,
+    var(--rab-surface) 100%
+  );
   border-bottom: 1px solid var(--rab-border-subtle);
   flex: none;
 }
+.rab-n-statusline.is-ok {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--rab-bg-success) 82%, var(--rab-surface)) 0%,
+    color-mix(in srgb, var(--rab-bg-teal) 62%, var(--rab-surface)) 54%,
+    var(--rab-surface) 100%
+  );
+}
+.rab-n-statusline.is-info {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--rab-bg-info) 82%, var(--rab-surface)) 0%,
+    color-mix(in srgb, var(--rab-bg-discovery) 62%, var(--rab-surface)) 54%,
+    var(--rab-surface) 100%
+  );
+}
+.rab-n-statusline.is-warn {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--rab-bg-warning) 84%, var(--rab-surface)) 0%,
+    color-mix(in srgb, var(--rab-bg-orange) 58%, var(--rab-surface)) 54%,
+    var(--rab-surface) 100%
+  );
+}
+.rab-n-statusline.is-err {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--rab-bg-danger) 84%, var(--rab-surface)) 0%,
+    color-mix(in srgb, var(--rab-bg-magenta) 58%, var(--rab-surface)) 54%,
+    var(--rab-surface) 100%
+  );
+}
 
-/* Gradient status-code chips */
+/* Gradient status-code chips by class */
 .rab-n-status-code {
   display: inline-flex;
   align-items: center;
-  padding: 2px 10px;
+  padding: 2px 11px;
   border-radius: var(--rab-radius-pill);
   font-weight: 700;
   font-size: 12px;
@@ -950,12 +1261,13 @@
 .rab-n-metric {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
+  padding: 2px 9px;
   border-radius: var(--rab-radius-pill);
-  background: var(--rab-neutral);
+  background: color-mix(in srgb, var(--rab-surface) 74%, var(--rab-neutral));
+  border: 1px solid var(--rab-border-subtle);
   color: var(--rab-subtle);
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -975,14 +1287,14 @@
 .rab-n-header-row:last-child { border-bottom: 0; }
 .rab-n-header-name { color: var(--rab-info); font-weight: 600; margin-right: 4px; }
 
-/* Code viewer & Find bar */
+/* Code viewer and Find bar */
 .rab-n-code-wrap { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .rab-n-find {
   display: flex;
   gap: 8px;
   align-items: center;
-  padding: 6px 16px;
-  background: color-mix(in srgb, var(--rab-sunken) 65%, var(--rab-surface));
+  padding: 7px 16px;
+  background: color-mix(in srgb, var(--rab-bg-info) 24%, var(--rab-sunken));
   border-bottom: 1px solid var(--rab-border-subtle);
   flex: none;
 }
@@ -990,14 +1302,26 @@
 .rab-n-find-icon { position: absolute; left: 9px; color: var(--rab-subtlest); pointer-events: none; }
 .rab-n-find input {
   width: 260px;
-  border: 1px solid var(--rab-border);
-  border-radius: var(--rab-radius-sm);
-  padding: 4px 8px 4px 28px;
+  border: 1.5px solid var(--rab-border);
+  border-radius: var(--rab-radius-md);
+  padding: 4px 9px 4px 28px;
   background: var(--rab-input);
   color: var(--rab-text);
   font: inherit;
   font-size: 12.5px;
-  transition: border-color var(--rab-ease);
+  transition: border-color var(--rab-ease), box-shadow var(--rab-ease);
+}
+.rab-n-find input:hover:not(:focus) {
+  border-color: color-mix(in srgb, var(--rab-brand) 40%, var(--rab-border));
+}
+.rab-n-find input:focus {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  border-color: transparent;
+  background:
+    linear-gradient(var(--rab-input), var(--rab-input)) padding-box,
+    var(--rab-grad-brand) border-box;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rab-brand) 22%, transparent);
 }
 .rab-n-find-count {
   padding: 1px 8px;
@@ -1008,7 +1332,7 @@
 }
 
 /* Virtualized code lines: strict fixed 20px height, no shadows/filters/gradients per line */
-.rab-n-code { font: 12.5px/20px var(--rab-mono); background: var(--rab-sunken); }
+.rab-n-code { font: 12.5px/20px var(--rab-mono); background: var(--rab-code-bg); }
 .rab-n-line { display: flex; white-space: pre; height: 20px; line-height: 20px; }
 .rab-n-line.match { background: var(--ds-background-accent-yellow-subtlest, #fff7d6); }
 .rab-n-line.current { background: var(--ds-background-accent-yellow-subtler, #f8e6a0); }
@@ -1054,63 +1378,86 @@
   color: var(--rab-subtle);
   line-height: 1.6;
 }
-.rab-n-welcome-inner { max-width: 720px; margin: 0 auto; }
+.rab-n-welcome-inner { max-width: 740px; margin: 0 auto; }
 .rab-n-welcome-hero {
   display: flex;
-  align-items: flex-start;
-  gap: 16px;
-  margin-bottom: 24px;
+  align-items: center;
+  gap: 18px;
+  padding: 24px 26px;
+  margin-bottom: 22px;
+  border-radius: 16px;
+  border: 1px solid transparent;
+  background:
+    var(--rab-grad-hero-panel) padding-box,
+    var(--rab-grad-card-border) border-box;
+  box-shadow: var(--rab-shadow-hero);
 }
 .rab-n-welcome-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 46px;
-  height: 46px;
-  border-radius: var(--rab-radius-lg);
+  width: 50px;
+  height: 50px;
+  border-radius: 14px;
   background: var(--rab-grad-brand);
   color: var(--rab-on-brand);
-  box-shadow: 0 6px 18px color-mix(in srgb, var(--rab-brand) 28%, transparent);
+  box-shadow:
+    0 6px 20px color-mix(in srgb, var(--rab-brand) 34%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 24%, transparent);
   flex: none;
 }
 .rab-n-welcome h2 {
-  color: var(--rab-text);
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
   margin: 0 0 6px;
-  line-height: 1.25;
+  line-height: 1.2;
+  color: var(--rab-text);
+  background: var(--rab-grad-headline);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 .rab-n-welcome-lead { margin: 0; font-size: 14.5px; color: var(--rab-subtle); }
 .rab-n-welcome-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(205px, 1fr));
+  gap: 14px;
   list-style: none;
   padding: 0;
   margin: 0 0 20px;
 }
 .rab-n-welcome-card {
-  padding: 14px 16px;
-  border-radius: var(--rab-radius-md);
-  background: color-mix(in srgb, var(--rab-raised) 88%, var(--rab-surface));
-  border: 1px solid var(--rab-border-subtle);
+  padding: 16px 18px;
+  border-radius: var(--rab-radius-lg);
+  border: 1px solid transparent;
+  background:
+    linear-gradient(155deg, var(--rab-raised), color-mix(in srgb, var(--rab-sunken) 45%, var(--rab-raised))) padding-box,
+    var(--rab-grad-card-border) border-box;
   box-shadow: var(--rab-shadow-sm);
   font-size: 13px;
   color: var(--rab-subtle);
+  transition: transform var(--rab-ease), box-shadow var(--rab-ease), background var(--rab-ease);
+}
+.rab-n-welcome-card:hover {
+  transform: translateY(-2px);
+  background:
+    linear-gradient(155deg, var(--rab-raised), color-mix(in srgb, var(--rab-bg-info) 28%, var(--rab-raised))) padding-box,
+    var(--rab-grad-card-border-hover) border-box;
+  box-shadow: var(--rab-shadow-card-hover);
 }
 .rab-n-welcome-card-title {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--rab-text);
   margin-bottom: 6px;
 }
 .rab-n-welcome-card-dot {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   flex: none;
 }
@@ -1133,5 +1480,6 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+  .rab-n .rab-n-welcome-card:hover { transform: none; }
   .rab-n .rab-n-spinner { animation-duration: 1.8s; }
 }

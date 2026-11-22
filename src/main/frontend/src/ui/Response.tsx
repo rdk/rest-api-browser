@@ -72,7 +72,7 @@ export function ResponseView({ result, running, onCancel }: {
           <button class="rab-n-link" onClick={() => location.reload()}>Reload to log in again</button>
         </div>
       )}
-      <div class="rab-n-statusline">
+      <div class={'rab-n-statusline is-' + statusClass}>
         <span class={'rab-n-status-code ' + statusClass} data-testid="response-status">{result.status} {result.statusText}</span>
         <span class="rab-n-metric">{Math.round(result.durationMs)} ms</span>
         <span class="rab-n-metric">{formatBytes(result.size)}{result.truncated ? ' (truncated)' : ''}</span>

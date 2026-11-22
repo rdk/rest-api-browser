@@ -252,7 +252,12 @@ function ModuleRow({ module, count, collapsed, active, onClick }: {
   const origin = module.origin === 'product' ? '' : module.origin === 'bundled' ? 'Bundled: ' : 'App: ';
   return (
     <button
-      class={'rab-n-module' + (active ? ' active' : '') + (module.state !== 'ok' ? ' ' + module.state : '')}
+      class={
+        'rab-n-module' +
+        (module.stability === 'supported' ? ' supported' : '') +
+        (active ? ' active' : '') +
+        (module.state !== 'ok' ? ' ' + module.state : '')
+      }
       onClick={onClick}
       title={module.plugin.name + (module.error ? '\n' + module.error : '')}
       aria-expanded={!collapsed}
