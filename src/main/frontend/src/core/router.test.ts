@@ -1,0 +1,29 @@
+import { describe, expect, it } from 'vitest';
+import { formatState, parseState } from './router';
+
+describe('router', () => {
+  it('parses op, path, q (repeated, ordered) and h', () => {
+    const s = parseState('?op=jira%3AGET%3Aissue%2F%7B%7D&path.issueIdOrKey=A-1&q.expand=a&q.expand=b&q.fields=x%20y&h.X-A=1');
+    expect(s).toEqual({
+      op: 'jira:GET:issue/{}',
+      path: { issueIdOrKey: 'A-1' },
+      q: { expand: ['a', 'b'], fields: ['x y'] },
+      h: { 'X-A': '1' },
+    });
+  });
+
+  it('round-trips awkward characters', () => {
+    const state = { op: 'm:POST:a/{}#json', path: { 'a.b': 'x&y=z/ü' }, q: { e: ['1', '', '2'] }, h: { 'X-A': '%' } };
+    expect(parseState(formatState(state))).toEqual(state);
+  });
+
+  it('formats empty state as an empty string and keeps repeated order', () => {
+    expect(formatState({ path: {}, q: {}, h: {} })).toBe('');
+    expect(formatState({ op: 'k', path: {}, q: { e: ['b', 'a'] }, h: {} })).toBe('?op=k&q.e=b&q.e=a');
+  });
+
+  it('ignores unknown keys and tolerates no leading ?', () => {
+    expect(parseState('foo=1&op=k')).toEqual({ op: 'k', path: {}, q: {}, h: {} });
+    expect(parseState('')).toEqual({ path: {}, q: {}, h: {} });
+  });
+});
