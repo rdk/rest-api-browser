@@ -117,16 +117,23 @@ export function Sidebar(p: SidebarProps) {
   return (
     <div class="rab-n-sidebar" onKeyDown={onListKey}>
       <div class="rab-n-sidebar-head">
-        <input
-          ref={input}
-          class="rab-n-search"
-          type="search"
-          placeholder="Search operations   /"
-          value={typed}
-          onInput={(e) => onType((e.target as HTMLInputElement).value)}
-          aria-label="Search operations"
-          data-testid="search"
-        />
+        <div class="rab-n-search-wrap">
+          <svg class="rab-n-svg rab-n-search-icon" width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <circle cx="7" cy="7" r="4.75" stroke="currentColor" strokeWidth="1.5" />
+            <path d="M10.6 10.6L14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+          <input
+            ref={input}
+            class="rab-n-search"
+            type="search"
+            placeholder="Search operations"
+            value={typed}
+            onInput={(e) => onType((e.target as HTMLInputElement).value)}
+            aria-label="Search operations"
+            data-testid="search"
+          />
+          {!typed && <kbd class="rab-n-search-kbd" aria-hidden="true">/</kbd>}
+        </div>
         <div class="rab-n-filters">
           <button
             class={'rab-n-pill' + (p.supportedOnly ? ' on' : '')}
@@ -151,17 +158,23 @@ export function Sidebar(p: SidebarProps) {
           })}
         </div>
         <div class="rab-n-status" data-testid="status">
-          {p.loadError ? (
-            <span class="rab-n-error">{p.loadError}</span>
-          ) : !s ? (
-            'Loading the catalog…'
-          ) : !s.complete ? (
-            <>Indexing {s.progress.done} of {s.progress.total} modules… {total.toLocaleString()} operations so far</>
-          ) : searching || p.supportedOnly || p.methods.length ? (
-            <>{hits.length.toLocaleString()} of {total.toLocaleString()} operations</>
-          ) : (
-            <>{total.toLocaleString()} operations in {s.modules.length} modules</>
-          )}
+          <span class="rab-n-status-text">
+            {p.loadError ? (
+              <span class="rab-n-error">{p.loadError}</span>
+            ) : !s ? (
+              <>
+                <span class="rab-n-spinner" aria-hidden="true" /> Loading the catalog…
+              </>
+            ) : !s.complete ? (
+              <>
+                <span class="rab-n-spinner" aria-hidden="true" /> Indexing {s.progress.done} of {s.progress.total} modules… {total.toLocaleString()} operations so far
+              </>
+            ) : searching || p.supportedOnly || p.methods.length ? (
+              <>{hits.length.toLocaleString()} of {total.toLocaleString()} operations</>
+            ) : (
+              <>{total.toLocaleString()} operations in {s.modules.length} modules</>
+            )}
+          </span>
           {p.onRefresh && (
             <button class="rab-n-link" onClick={p.onRefresh} title="Rebuild the catalog (system administrators)">
               Refresh
@@ -171,7 +184,13 @@ export function Sidebar(p: SidebarProps) {
       </div>
       {lines.length === 0 && s ? (
         <div class="rab-n-empty" data-testid="no-results">
-          No operation matches.
+          <span class="rab-n-empty-icon" aria-hidden="true">
+            <svg class="rab-n-svg" width="18" height="18" viewBox="0 0 16 16" fill="none">
+              <circle cx="7" cy="7" r="4.75" stroke="currentColor" strokeWidth="1.5" />
+              <path d="M10.6 10.6L14 14M5.2 7h3.6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </span>
+          <span>No operation matches.</span>
           {hiddenBySupported > 0 && (
             <button class="rab-n-link" onClick={() => p.onSupportedOnly(false)}>
               Include internal and app endpoints ({hiddenBySupported})

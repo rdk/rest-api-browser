@@ -68,6 +68,7 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
   }, []);
   const method = op.method.toUpperCase();
   const write = WRITE_METHODS.has(method);
+  const isDelete = method === 'DELETE';
   const hasBody = method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE';
   const fullPath = (module ? module.path + '/' : '') + op.path;
 
@@ -129,6 +130,7 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
   const setValues = (values: RequestValues) => setDraft({ ...latest.current, values });
   const visibleParams = withTemplateParams(op).filter((p) => p.in !== 'form');
   const formParams = op.params.filter((p) => p.in === 'form');
+  const hasBadges = module?.stability === 'supported' || module?.stability === 'app' || !!op.access || !!op.deprecated;
 
   return (
     <div class="rab-n-operation" data-testid="operation">
@@ -136,26 +138,42 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
         <div class="rab-n-op-title">
           <MethodBadge method={method} />
           <span class="rab-n-op-fullpath" data-testid="operation-path">{fullPath}</span>
-          {module?.stability === 'supported' && <span class="rab-n-tag rab-n-tag-supported">Supported</span>}
-          {module?.stability === 'app' && <span class="rab-n-tag rab-n-tag-app">App: {module.plugin.name}</span>}
-          {op.access && <span class="rab-n-tag" title="Access annotation of the handler">{op.access}</span>}
-          {op.deprecated && <span class="rab-n-tag rab-n-tag-deprecated">Deprecated</span>}
           <span class="rab-n-spacer" />
           <CopyButton label="Copy curl" testId="copy-curl" text={() => (built.request ? toCurl({ ...built.request, url: absolute(built.request.url) }) : '')} />
         </div>
-        <div class="rab-n-urlbar">
-          <code class="rab-n-url" data-testid="live-url" title={built.url}>{built.url}</code>
-          <CopyButton label="Copy URL" text={() => absolute(built.url)} />
+        {hasBadges && (
+          <div class="rab-n-op-badges">
+            {module?.stability === 'supported' && <span class="rab-n-tag rab-n-tag-supported">Supported</span>}
+            {module?.stability === 'app' && <span class="rab-n-tag rab-n-tag-app">App: {module.plugin.name}</span>}
+            {op.access && <span class="rab-n-tag" title="Access annotation of the handler">{op.access}</span>}
+            {op.deprecated && <span class="rab-n-tag rab-n-tag-deprecated">Deprecated</span>}
+          </div>
+        )}
+        <div class={'rab-n-urlbar' + (write ? ' is-write' : '') + (isDelete ? ' is-delete' : '')}>
+          <div class="rab-n-url-group">
+            <code class="rab-n-url" data-testid="live-url" title={built.url}>{built.url}</code>
+            <CopyButton label="Copy URL" text={() => absolute(built.url)} />
+          </div>
           {running ? (
-            <button class="rab-n-button" onClick={cancel}>Cancel</button>
+            <button class="rab-n-button rab-n-cancel-btn" onClick={cancel}>Cancel</button>
           ) : (
             <button
-              class={'rab-n-button rab-n-send' + (write ? ' write' : '')}
+              class={'rab-n-button rab-n-send' + (write ? ' write' : '') + (isDelete ? ' danger' : '')}
               onClick={send}
               disabled={!built.request}
-              title={built.error ?? 'Ctrl+Enter'}
+              title={built.error ?? (write ? `Changes data (${method}). Ctrl+Enter` : 'Ctrl+Enter')}
               data-testid="send"
             >
+              {write ? (
+                <svg class="rab-n-svg" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M8 2.2L14.2 13H1.8L8 2.2z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+                  <path d="M8 6.2v3.2M8 11.2v.4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                </svg>
+              ) : (
+                <svg class="rab-n-svg" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M2.5 8h10.5M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              )}
               Send {method}
             </button>
           )}
@@ -260,7 +278,7 @@ function ParamsTab({ params, formParams, values, onValues }: {
                 )}
               </td>
               <td class="rab-n-param-meta">
-                <span class="rab-n-in">{p.in}</span> {p.type}
+                <span class={'rab-n-in rab-n-in-' + p.in}>{p.in}</span> {p.type}
               </td>
             </tr>
           );
@@ -366,9 +384,9 @@ function HeadersTab({ op, draft, onDraft, write }: { op: Operation; draft: Draft
           X-Atlassian-Token: no-check <span class="rab-n-subtle">(sent automatically)</span>
         </label>
       )}
-      <div class="rab-n-subtle rab-n-row">The browser sends your session cookie; Authorization headers are not needed.</div>
+      <div class="rab-n-subtle rab-n-row rab-n-cookie-note">The browser sends your session cookie; Authorization headers are not needed.</div>
       {custom.map((h, i) => (
-        <div class="rab-n-row" key={i}>
+        <div class="rab-n-headers-custom-row" key={i}>
           <input class="rab-n-input" placeholder="Header" value={h.name} onInput={(e) => setCustom(custom.map((x, j) => (j === i ? { ...x, name: (e.target as HTMLInputElement).value } : x)))} />
           <input class="rab-n-input" placeholder="Value" value={h.value} onInput={(e) => setCustom(custom.map((x, j) => (j === i ? { ...x, value: (e.target as HTMLInputElement).value } : x)))} />
           <button class="rab-n-icon" aria-label="Remove header" onClick={() => setCustom(custom.filter((_, j) => j !== i))}>×</button>
@@ -383,13 +401,14 @@ function HistoryTab({ entries, onRestore, onClear }: { entries: HistoryEntry[]; 
   if (!entries.length) {
     return <div class="rab-n-subtle rab-n-pad">No requests yet. With no documentation in the WADLs, the request that worked last time is the best example; it will be listed here.</div>;
   }
+  const statusClass = (s?: number) => (!s ? 'info' : s >= 500 ? 'err' : s >= 400 ? 'warn' : s >= 300 ? 'info' : 'ok');
   return (
     <div class="rab-n-history" data-testid="history">
       {entries.map((e) => (
         <button key={e.id} class="rab-n-history-row" onClick={() => onRestore(e)} title="Restore these values">
-          <span class={'rab-n-status-code ' + ((e.status ?? 0) >= 400 ? 'warn' : 'ok')}>{e.status ?? '?'}</span>
-          <span class="rab-n-subtle">{new Date(e.at).toLocaleString()}</span>
-          <span class="rab-n-ellipsis">{e.url}</span>
+          <span class={'rab-n-status-code ' + statusClass(e.status)}>{e.status ?? '?'}</span>
+          <span class="rab-n-subtle rab-n-history-time">{new Date(e.at).toLocaleString()}</span>
+          <span class="rab-n-ellipsis rab-n-history-url">{e.url}</span>
         </button>
       ))}
       <button class="rab-n-link" onClick={onClear}>Clear history</button>

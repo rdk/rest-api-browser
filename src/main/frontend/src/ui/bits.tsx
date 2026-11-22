@@ -68,7 +68,17 @@ export function CopyButton({ text, label, testId }: { text: () => string; label:
     timer.current = setTimeout(() => setState('idle'), 1500);
   };
   return (
-    <button class="rab-n-button" onClick={copy} data-testid={testId}>
+    <button class={'rab-n-button rab-n-copy' + (state === 'done' ? ' copied' : '')} onClick={copy} data-testid={testId}>
+      {state === 'done' ? (
+        <svg class="rab-n-svg" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M3.2 8.4l3 3 6.6-6.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      ) : (
+        <svg class="rab-n-svg" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <rect x="5.5" y="5.5" width="7.5" height="7.5" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
+          <path d="M10.5 5.5V4a1.5 1.5 0 00-1.5-1.5H4A1.5 1.5 0 002.5 4v5A1.5 1.5 0 004 10.5h1.5" stroke="currentColor" strokeWidth="1.4" />
+        </svg>
+      )}
       {state === 'done' ? 'Copied' : state === 'failed' ? 'Copy failed' : label}
     </button>
   );

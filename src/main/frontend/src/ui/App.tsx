@@ -174,10 +174,20 @@ export function App({ baseUrl, classicUrl, product }: Props) {
   return (
     <div class="rab-n" ref={root} style={{ height: height + 'px' }}>
       <div class="rab-n-topbar">
-        <strong>REST API Browser</strong>
-        <span class="rab-n-subtle">{summary ? `${summary.product.name} ${summary.product.version}` : product}</span>
+        <span class="rab-n-brand-mark" aria-hidden="true">
+          <svg class="rab-n-svg" width="15" height="15" viewBox="0 0 16 16" fill="none">
+            <path d="M5.5 3.5L2.5 8l3 4.5M10.5 3.5L13.5 8l-3 4.5M9 2.5L7 13.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
+        <strong class="rab-n-topbar-title">REST API Browser</strong>
+        <span class="rab-n-product-badge">{summary ? `${summary.product.name} ${summary.product.version}` : product}</span>
         <span class="rab-n-spacer" />
-        <a class="rab-n-link" href={classicUrl} data-testid="classic-link">Classic UI</a>
+        <a class="rab-n-classic-link" href={classicUrl} data-testid="classic-link">
+          Classic UI
+          <svg class="rab-n-svg" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M6 3h7v7M13 3L6.5 9.5M11 9.5V13H3V5h3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </a>
       </div>
       <div class="rab-n-body-row">
         <div class="rab-n-side" style={{ width: sidebarWidth + 'px' }}>
@@ -265,24 +275,53 @@ function Welcome({ summary, missing, indexing }: { summary: Summary | null; miss
   const ops = summary ? summary.modules.reduce((n, m) => n + m.opCount, 0) : 0;
   return (
     <div class="rab-n-welcome" data-testid="welcome">
-      {missing && <div class="rab-n-banner">The operation in the link no longer exists on this instance.</div>}
-      {indexing && <div class="rab-n-banner">The catalog is still being built; the operation in the link opens when its module is ready.</div>}
-      <h2>Find an operation</h2>
-      <p>
-        Type in the search box (<kbd>/</kbd>) to search all {ops ? ops.toLocaleString() + ' ' : ''}operations by method,
-        path and app, or browse them by module.
-      </p>
-      <ul>
-        <li><kbd>↑</kbd> <kbd>↓</kbd> move in the list, <kbd>Enter</kbd> opens</li>
-        <li><kbd>Ctrl</kbd>+<kbd>Enter</kbd> sends the request, <kbd>Esc</kbd> cancels it</li>
-        <li>Requests run as you, in your browser. The History tab keeps the ones you sent.</li>
-      </ul>
-      {summary && summary.modules.some((m) => m.state === 'failed') && (
-        <p class="rab-n-subtle">
-          {summary.modules.filter((m) => m.state === 'failed').length} modules could not be described; they are listed
-          with the reason.
-        </p>
-      )}
+      <div class="rab-n-welcome-inner">
+        {missing && <div class="rab-n-banner">The operation in the link no longer exists on this instance.</div>}
+        {indexing && <div class="rab-n-banner">The catalog is still being built; the operation in the link opens when its module is ready.</div>}
+        <div class="rab-n-welcome-hero">
+          <span class="rab-n-welcome-icon" aria-hidden="true">
+            <svg class="rab-n-svg" width="22" height="22" viewBox="0 0 24 24" fill="none">
+              <path d="M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
+          <div>
+            <h2>Find an operation</h2>
+            <p class="rab-n-welcome-lead">
+              Type in the search box (<kbd>/</kbd>) to search all {ops ? ops.toLocaleString() + ' ' : ''}operations by method,
+              path and app, or browse them by module.
+            </p>
+          </div>
+        </div>
+        <ul class="rab-n-welcome-grid">
+          <li class="rab-n-welcome-card">
+            <div class="rab-n-welcome-card-title">
+              <span class="rab-n-welcome-card-dot nav" aria-hidden="true" />
+              Navigate
+            </div>
+            <kbd>↑</kbd> <kbd>↓</kbd> move in the list, <kbd>Enter</kbd> opens
+          </li>
+          <li class="rab-n-welcome-card">
+            <div class="rab-n-welcome-card-title">
+              <span class="rab-n-welcome-card-dot run" aria-hidden="true" />
+              Execute
+            </div>
+            <kbd>Ctrl</kbd>+<kbd>Enter</kbd> sends the request, <kbd>Esc</kbd> cancels it
+          </li>
+          <li class="rab-n-welcome-card">
+            <div class="rab-n-welcome-card-title">
+              <span class="rab-n-welcome-card-dot hist" aria-hidden="true" />
+              Session &amp; History
+            </div>
+            Requests run as you, in your browser. The History tab keeps the ones you sent.
+          </li>
+        </ul>
+        {summary && summary.modules.some((m) => m.state === 'failed') && (
+          <p class="rab-n-subtle rab-n-welcome-note">
+            {summary.modules.filter((m) => m.state === 'failed').length} modules could not be described; they are listed
+            with the reason.
+          </p>
+        )}
+      </div>
     </div>
   );
 }

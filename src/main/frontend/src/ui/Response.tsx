@@ -30,17 +30,34 @@ export function ResponseView({ result, running, onCancel }: {
   if (running) {
     return (
       <div class="rab-n-response rab-n-response-state" data-testid="response-running">
-        <span class="rab-n-spinner" /> Sending… <button class="rab-n-link" onClick={onCancel}>Cancel (Esc)</button>
+        <div class="rab-n-response-state-inner">
+          <span class="rab-n-spinner" /> Sending… <button class="rab-n-link" onClick={onCancel}>Cancel (Esc)</button>
+        </div>
       </div>
     );
   }
   if (!result) {
-    return <div class="rab-n-response rab-n-response-state rab-n-subtle">Send the request to see the response here.</div>;
+    return (
+      <div class="rab-n-response rab-n-response-state rab-n-subtle">
+        <div class="rab-n-response-state-inner">
+          <svg class="rab-n-svg" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M2.5 4.5h11v7h-11v-7zM5 8h6M5 6.3h3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span>Send the request to see the response here.</span>
+        </div>
+      </div>
+    );
   }
   if (result.error) {
     return (
       <div class="rab-n-response rab-n-response-state" data-testid="response-error">
-        <span class="rab-n-error">{result.error === 'aborted' ? 'The request was cancelled.' : 'The request failed: ' + result.error}</span>
+        <div class="rab-n-response-state-inner is-error">
+          <svg class="rab-n-svg rab-n-error" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5" />
+            <path d="M8 5v3.5M8 10.7v.4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          </svg>
+          <span class="rab-n-error">{result.error === 'aborted' ? 'The request was cancelled.' : 'The request failed: ' + result.error}</span>
+        </div>
       </div>
     );
   }
@@ -57,9 +74,9 @@ export function ResponseView({ result, running, onCancel }: {
       )}
       <div class="rab-n-statusline">
         <span class={'rab-n-status-code ' + statusClass} data-testid="response-status">{result.status} {result.statusText}</span>
-        <span class="rab-n-subtle">{Math.round(result.durationMs)} ms</span>
-        <span class="rab-n-subtle">{formatBytes(result.size)}{result.truncated ? ' (truncated)' : ''}</span>
-        <span class="rab-n-subtle rab-n-ellipsis" title={result.url}>{result.method} {result.url}</span>
+        <span class="rab-n-metric">{Math.round(result.durationMs)} ms</span>
+        <span class="rab-n-metric">{formatBytes(result.size)}{result.truncated ? ' (truncated)' : ''}</span>
+        <span class="rab-n-subtle rab-n-ellipsis rab-n-status-url" title={result.url}>{result.method} {result.url}</span>
         <span class="rab-n-spacer" />
         {result.size > 0 && (
           <button
@@ -69,6 +86,9 @@ export function ResponseView({ result, running, onCancel }: {
               if (blob) download(blob, fileName);
             }}
           >
+            <svg class="rab-n-svg" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M8 2.5v7.5M5 7.5L8 10.5l3-3M3 13h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
             Download
           </button>
         )}
@@ -88,7 +108,7 @@ export function ResponseView({ result, running, onCancel }: {
       {view === 'headers' ? (
         <div class="rab-n-headers" data-testid="response-headers">
           {result.headers.map(([k, v], i) => (
-            <div key={i}><span class="rab-n-header-name">{k}:</span> {v}</div>
+            <div class="rab-n-header-row" key={i}><span class="rab-n-header-name">{k}:</span> {v}</div>
           ))}
         </div>
       ) : result.kind === 'binary' ? (
@@ -118,33 +138,39 @@ function FindBox({ onFind, onStep, count, index }: {
   useEffect(() => () => clearTimeout(timer.current), []);
   return (
     <div class="rab-n-find">
-      <input
-        type="search"
-        placeholder="Find in response"
-        value={needle}
-        onInput={(e) => {
-          const v = (e.target as HTMLInputElement).value;
-          setNeedle(v);
-          clearTimeout(timer.current);
-          timer.current = setTimeout(() => {
-            timer.current = undefined;
-            onFind(v);
-          }, 150);
-        }}
-        onKeyDown={(e) => {
-          if (e.key !== 'Enter') return;
-          if (timer.current !== undefined) {
-            // typed less than 150 ms ago: search now instead of stepping through the old matches
+      <div class="rab-n-find-wrap">
+        <svg class="rab-n-svg rab-n-find-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.5" />
+          <path d="M10.5 10.5L13.5 13.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+        <input
+          type="search"
+          placeholder="Find in response"
+          value={needle}
+          onInput={(e) => {
+            const v = (e.target as HTMLInputElement).value;
+            setNeedle(v);
             clearTimeout(timer.current);
-            timer.current = undefined;
-            onFind(needle);
-          } else {
-            onStep(e.shiftKey ? -1 : 1);
-          }
-        }}
-        aria-label="Find in response"
-      />
-      {needle && <span class="rab-n-subtle">{count ? `${index + 1} of ${count}` : 'no match'}</span>}
+            timer.current = setTimeout(() => {
+              timer.current = undefined;
+              onFind(v);
+            }, 150);
+          }}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter') return;
+            if (timer.current !== undefined) {
+              // typed less than 150 ms ago: search now instead of stepping through the old matches
+              clearTimeout(timer.current);
+              timer.current = undefined;
+              onFind(needle);
+            } else {
+              onStep(e.shiftKey ? -1 : 1);
+            }
+          }}
+          aria-label="Find in response"
+        />
+      </div>
+      {needle && <span class="rab-n-subtle rab-n-find-count">{count ? `${index + 1} of ${count}` : 'no match'}</span>}
     </div>
   );
 }
