@@ -9,8 +9,10 @@ install).
 | File | What it does |
 |---|---|
 | `product.sh` | Starts, waits for, shows and stops a throwaway Jira or Confluence (`atlas-run-standalone`) in its own work directory and port. |
-| `smoke.py` | Installs the plugin jar through UPM and checks it over HTTP: all modules enabled, the page as admin (search field, checkbox, the product's decorator, product name), the list of REST modules on the page and **every WADL on it** (the sidebar is built from them), the plugin's web resources and Angular views, the pretty URL `/restbrowser`, the redirect of an anonymous user to the login page, and no error or stack trace of the plugin in the product's log since the run started. |
+| `smoke.py` | Installs the plugin jar through UPM and checks it over HTTP: all modules enabled, the page as admin (search field, checkbox, the product's decorator, product name), the list of REST modules on the page and **every WADL on it** (the sidebar is built from them), the plugin's web resources and Angular views, the pretty URL `/restbrowser`, the redirect of an anonymous user to the login page, and no error or stack trace of the plugin in the product's log since the run started. It also checks **the new UI and its catalog API**: the page `/next` (id, base URL, the web resource `next-assets`, anonymous redirect), the summary (format, hash, ETag, `no-cache`, 304, 401 for anonymous), a complete catalog with at least 95% of the modules ok and the product's core module supported, the index (`immutable`, 404 with `no-store` for a wrong hash), the catalog's operations equal to every loadable WADL's methods, and `refresh` (403 without `X-Atlassian-Token`, 204 with it, then complete again). |
 | `ui.js` | The page in headless Edge/Chrome: Angular starts, the public APIs load into the sidebar with the product's core REST API among them (Jira's `api/2`), the "Show only public APIs" checkbox is on by default and can be turned off (what `RestApiBrowserSmokeTest` checks on the refapp), all APIs then load, search narrows the list, a core resource (Jira's `api/2/serverInfo`) shows its `GET` method and **Send** shows the product's answer, the view shows a resource's description (when no WADL documents one, as on Jira 11, the check sets one in the page), a path parameter's value is URL-encoded in the request (a `GET` of an issue or page that cannot exist); no JavaScript exception from the plugin, no failed request for its own resources, and at least 95% of the WADLs load. Screenshots in `shots/` (git-ignored). |
+| `ui_next.js` | The new UI (`/plugins/servlet/restbrowser/next`) in headless Edge/Chrome: the catalog loads, search, an operation's form, **Send** and the response viewer, history, URL encoding of a path parameter, a deep link that prefills without sending, and no error of the plugin. Screenshots in `shots/`. |
+| `cdp.js` | Shared helper of `ui.js` and `ui_next.js`: launches headless Edge/Chrome and drives it over the DevTools protocol; not run on its own. |
 
 ## Prerequisites
 
@@ -26,7 +28,7 @@ install).
   RAB_SDK_HOME="/path/to/atlassian-plugin-sdk-9.11.2"
   RAB_JAVA_HOME="/path/to/jdk-21"
   ```
-- Python 3.9+ (standard library only), Node 22+ and Edge or Chrome for `ui.js`.
+- Python 3.9+ (standard library only), Node 22+ and Edge or Chrome for `ui.js` and `ui_next.js`.
 - Git Bash on Windows (or any bash on Linux/macOS).
 - Network access to `maven.atlassian.com` on the first start (Jira's WAR is about 500 MB, Confluence's 1 GB, then
   cached in the local Maven repository).
@@ -40,6 +42,7 @@ mvn -B clean package -DskipTests                   # target/rest-api-browser-<ve
 src/test/product/product.sh start                  # Jira 11.3.13 at http://localhost:2992/jira, admin/admin
 python src/test/product/smoke.py --expect-version 11.3.13
 node src/test/product/ui.js
+node src/test/product/ui_next.js                   # the new UI
 src/test/product/product.sh stop                   # or keep it running for the next build
 ```
 
@@ -103,6 +106,7 @@ the other `RAB_*` settings apply to it too:
 RAB_PRODUCT=confluence src/test/product/product.sh start
 RAB_PRODUCT=confluence python src/test/product/smoke.py --expect-version 10.2.20
 RAB_PRODUCT=confluence node src/test/product/ui.js
+RAB_PRODUCT=confluence node src/test/product/ui_next.js
 RAB_PRODUCT=confluence src/test/product/product.sh stop
 ```
 

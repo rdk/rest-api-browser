@@ -1,7 +1,9 @@
 # New UI: plan
 
-Status: draft, reviewed once (Gemini 4 Neon, notes worked in). The classic AngularJS UI stays at its URL,
-unchanged; the new UI gets its own page.
+Status: step 0 (spike) done: the Jersey runtime model works on Jira 11.3.13 and Confluence 10.2.20 and matches every
+WADL that loads. Step 1 is implemented (backend, `/catalog` API, Preact page, `src/test/product` checks). Draft,
+reviewed once (Gemini 4 Neon, notes worked in). The classic AngularJS UI stays at its URL, unchanged; the new UI gets
+its own page.
 
 **[verify]** marks an assumption about the Atlassian platform that the step 0 spike confirms or refutes.
 
@@ -307,6 +309,11 @@ list. If that proves costly, the fallback is a read-only CodeMirror 6, loaded on
 
 The Jersey source is compared with every WADL that works. Where it can't reach a module, `ClassScanSource` becomes
 that module's source; nothing else in the design changes.
+
+**Step 0 results.** Jira 11.3.13: 116 modules, 114 described, 1,754 operations, equal to the WADLs' 1,754; the two
+failures are Crowd's `appmanagement` and `usermanagement`, which need application credentials. Confluence 10.2.20:
+134 modules, 132 described, including `/rest/api` (183 operations), whose WADL Confluence cannot generate. A cold
+build takes under 15 s locally. The product gzips REST JSON, and the immutable cache header survives.
 
 **Before step 1**, in the existing code:
 - remove the dead SOAP/JSON-RPC code and the `ewadl` endpoint;

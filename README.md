@@ -56,12 +56,25 @@ pages link to it too. The sidebar lists the REST resources of the product and it
 default, limits it to the product's public APIs. Select a resource to see its methods, fill in the parameters and
 **Send** the request as the logged-in user.
 
+The [new UI (preview)](#new-ui-preview) is at `<base URL>/plugins/servlet/restbrowser/next`.
+
 Users who are not logged in are sent to the login page. Starting the product with `-Drest.api.browser.anonymous=true`
 lets them use the page too, so anyone who can reach the product can open it.
 
+## New UI (preview)
+
+Open `<base URL>/plugins/servlet/restbrowser/next`. It is a second page next to the classic one, which stays as it is.
+
+It works differently: the server builds a catalog of the product's REST API from Jersey's runtime model (served at
+`/rest/restbrowser/1/catalog`), so the browser fetches and parses no WADL. That is why it works on Confluence 10, where
+the classic page's public list is empty. It adds search, a history of sent requests, **Copy as curl** and deep links
+that prefill a request without sending it. Plan and status: [docs/NEW-UI-PLAN.md](docs/NEW-UI-PLAN.md).
+
 ## Build
 
-Needs JDK 21 and Maven 3.9; `pom.xml` declares Atlassian's public Maven repository, where the dependencies are.
+Needs JDK 21 and Maven 3.9; `pom.xml` declares Atlassian's public Maven repository, where the dependencies are. The
+first build also needs network access: the frontend-maven-plugin downloads Node 24 into `target/` and the npm
+packages of the new UI. `src/main/frontend` holds its TypeScript sources (`npm test`, `npm run build` there).
 
 ```bash
 mvn -B clean package -DskipTests   # target/rest-api-browser-<version>.jar

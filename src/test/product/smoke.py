@@ -28,6 +28,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+import xml.etree.ElementTree as ET
 import zipfile
 
 PLUGIN_KEY = 'com.atlassian.labs.rest-api-browser'
@@ -199,6 +200,166 @@ def product_log_path(j, version, product):
     return p if os.path.isfile(p) else None
 
 
+def wait_complete(j, seconds=120):
+    """Poll the catalog summary every 2 s until it is complete: (summary or None, headers of the last answer)."""
+    summary, h = None, {}
+    deadline = time.time() + seconds
+    while True:
+        s, summary, h = j.json('/rest/restbrowser/1/catalog')
+        if s == 200 and isinstance(summary, dict) and summary.get('complete'):
+            return summary, h
+        if time.time() >= deadline:
+            return None, h
+        time.sleep(2)
+
+
+def norm_path(path):
+    """A path with its templates (also {name: regex}) as {}, one leading slash, none trailing."""
+    path = re.sub(r'\{[^{}]*\}', '{}', path or '')
+    return '/' + re.sub(r'/+', '/', path).strip('/')
+
+
+def wadl_operations(text):
+    """The set of (method, normalized path) of a WADL: resources/resource walked recursively, path attributes joined."""
+    ops = set()
+
+    def local(e):
+        return e.tag.rsplit('}', 1)[-1]
+
+    def walk(e, base):
+        for c in e:
+            if local(c) == 'resource':
+                p = base + '/' + (c.get('path') or '')
+                for m in c:
+                    if local(m) == 'method' and m.get('name'):
+                        ops.add((m.get('name').upper(), norm_path(p)))
+                walk(c, p)
+            elif local(c) == 'resources':
+                walk(c, base)
+
+    walk(ET.fromstring(text), '')
+    return ops
+
+
+def new_ui(j, a, P):
+    """The new UI (servlet /next) and its catalog REST API (/rest/restbrowser/1/catalog)."""
+    NEXT = SERVLET + '/next'
+    API = '/rest/restbrowser/1/catalog'
+    s, page, h = j.call('GET', NEXT + '?os_authType=basic', headers={'Accept': 'text/html'})
+    if s in (301, 302, 303) and '/pulp/' in h.get('location', ''):
+        s, page, h = j.call('GET', NEXT + '?os_authType=basic', headers={'Accept': 'text/html'})
+    check('GET %s as %s answers 200 text/html' % (NEXT, a.user),
+          s == 200 and 'text/html' in h.get('content-type', ''), (s, h.get('content-type'), h.get('location')))
+    check('the new page has id="rab-next" and data-base-url', 'id="rab-next"' in page and 'data-base-url' in page,
+          page[:300])
+    assets = sorted(set(html.unescape(u) for u in re.findall(r'(?:src|href)="([^"]*:next-assets[^"]*)"', page)))
+    check('the new page loads the web resource next-assets (next.js and next.css)',
+          any('next.js' in u for u in assets) and any('next.css' in u for u in assets), assets or page[:300])
+    bad = []
+    for u in assets:
+        s, body, _ = j.call('GET', urllib.parse.urljoin(j.url + '/', u), auth=False)
+        if s != 200 or not body.strip():
+            bad.append('%s -> %s' % (u, s))
+    if assets:
+        check('the %d next-assets URLs answer 200 with content' % len(assets), not bad, bad)
+    s, _, h = j.call('GET', NEXT, auth=False, headers={'Accept': 'text/html'})
+    loc = h.get('location', '')
+    check('anonymous GET %s is sent to the login page' % NEXT,
+          s in (301, 302, 303) and 'login' in loc.lower() and 'restbrowser' in urllib.parse.unquote(loc), (s, loc))
+
+    # ---- the summary
+    s, summary, h = j.json(API)
+    etag = h.get('etag', '')
+    check('GET %s as %s: 200 JSON with format 1, hash, product and modules' % (API, a.user),
+          s == 200 and isinstance(summary, dict) and summary.get('format') == 1 and summary.get('hash')
+          and summary.get('product') and isinstance(summary.get('modules'), list), (s, str(summary)[:200]))
+    if not isinstance(summary, dict):
+        return
+    check('the summary has an ETag ending in -a" (admin) and Cache-Control no-cache',
+          etag.endswith('-a"') and 'no-cache' in h.get('cache-control', ''), (etag, h.get('cache-control')))
+    s, _, h2 = j.call('GET', API, headers={'Accept': 'application/json', 'If-None-Match': etag})
+    check('a second GET with If-None-Match answers 304', s == 304, (s, h2.get('etag')))
+    s, _, h = j.call('GET', API, auth=False, headers={'Accept': 'application/json'})
+    check('anonymous GET %s is refused (401 or a redirect to the login page)' % API,
+          s == 401 or (s in (301, 302, 303) and 'login' in h.get('location', '').lower()), (s, h.get('location')))
+    print('Anonymous catalog request: %s' % ('401' if s == 401 else 'redirect %s to %s' % (s, h.get('location'))))
+
+    # ---- complete
+    t0 = time.time()
+    summary, h = wait_complete(j)
+    if not check('the catalog becomes complete', summary, 'not complete after 120 s'):
+        return
+    print('The catalog was complete after %.0f s' % (time.time() - t0))
+    mods = summary['modules']
+    okm = [m for m in mods if m.get('state') == 'ok']
+    for m in mods:
+        if m.get('state') != 'ok':
+            warn('catalog module failed: %s (%s): %s %s' % (m.get('id'), m.get('path'), m.get('reason'), m.get('error', '')))
+    print('The catalog has %d modules, %d ok, %d operations, hash %s'
+          % (len(mods), len(okm), sum(m.get('opCount', 0) for m in okm), summary['hash']))
+    check('at least 95%% of the catalog\'s modules are ok (%d of %d)' % (len(okm), len(mods)),
+          mods and len(okm) >= 0.95 * len(mods), [m.get('id') for m in mods if m.get('state') != 'ok'][:10])
+    core_path = P['core'].replace('/rest/', '', 1).strip('/')
+    core = [m for m in okm if m.get('path') == core_path]
+    check('%s\'s core module (%s) is ok, supported, with at least 50 operations' % (P['name'], core_path),
+          core and core[0].get('stability') == 'supported' and core[0].get('opCount', 0) >= 50,
+          core[0] if core else [m.get('path') for m in mods][:10])
+
+    # ---- the index
+    hash_ = summary['hash']
+    s, idx, h = j.json('%s/index/%s' % (API, hash_))
+    cc = h.get('cache-control', '')
+    check('GET %s/index/{hash}: 200, Cache-Control immutable and private' % API,
+          s == 200 and 'immutable' in cc and 'private' in cc, (s, cc))
+    ops = idx.get('operations') if isinstance(idx, dict) else None
+    ids = set(m['id'] for m in mods)
+    check('the index has the same hash and operations of known modules',
+          ops and idx.get('hash') == hash_ and all(o.get('module') in ids for o in ops),
+          (idx.get('hash') if isinstance(idx, dict) else None, len(ops or [])))
+    s, body, h = j.call('GET', '%s/index/%s' % (API, 'f' * 24), headers={'Accept': 'application/json'})
+    check('GET the index with a wrong hash: 404 and Cache-Control no-store',
+          s == 404 and 'no-store' in h.get('cache-control', ''), (s, h.get('cache-control')))
+
+    # ---- against the WADLs
+    by_module = {}
+    for o in ops or []:
+        by_module.setdefault(o['module'], set()).add((o['method'].upper(), norm_path(o['path'])))
+    comparable, agree, wadl_total, cat_total = 0, 0, 0, 0
+    for m in okm:
+        s, body, _ = j.call('GET', '/rest/%s/application.wadl' % m['path'].strip('/'),
+                            headers={'Accept': 'application/xml'})
+        if s != 200 or not is_wadl(body):
+            continue
+        try:
+            want = wadl_operations(body)
+        except ET.ParseError:
+            continue
+        have = by_module.get(m['id'], set())
+        comparable += 1
+        wadl_total += len(want)
+        cat_total += len(have)
+        if want == have:
+            agree += 1
+        else:
+            only_w, only_c = sorted(want - have), sorted(have - want)
+            warn('catalog differs from the WADL in %s (%s): %d only in the WADL %s, %d only in the catalog %s'
+                 % (m['id'], m['path'], len(only_w), only_w[:3], len(only_c), only_c[:3]))
+    print('WADL methods %d, catalog operations %d, in %d modules whose WADL loads' % (wadl_total, cat_total, comparable))
+    check('the catalog agrees with the WADLs in at least 95%% of the comparable modules (%d of %d)' % (agree, comparable),
+          comparable and agree >= 0.95 * comparable, '')
+
+    # ---- refresh
+    s, body, _ = j.call('POST', API + '/refresh', headers={'Accept': 'application/json'})
+    check('POST %s/refresh without X-Atlassian-Token answers 403' % API, s == 403, (s, body[:100]))
+    s, body, _ = j.call('POST', API + '/refresh', headers={'Accept': 'application/json', 'X-Atlassian-Token': 'no-check'})
+    check('POST %s/refresh with X-Atlassian-Token: no-check answers 204' % API, s == 204, (s, body[:100]))
+    if s == 204:
+        summary2, _ = wait_complete(j)
+        check('the catalog is complete again after the refresh', summary2 and
+              len([m for m in summary2['modules'] if m.get('state') == 'ok']) == len(okm),
+              summary2 and summary2.get('progress'))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('--product', choices=sorted(PRODUCTS), default=os.environ.get('RAB_PRODUCT', 'jira'))
@@ -363,6 +524,9 @@ def main():
     loc = h.get('location', '')
     check('anonymous GET %s is sent to the login page' % SERVLET,
           s in (301, 302, 303) and 'login' in loc.lower() and 'restbrowser' in urllib.parse.unquote(loc), (s, loc))
+
+    # ---- the new UI and its catalog API
+    new_ui(j, a, P)
 
     # ---- the product's log: no error of the plugin since the install
     if log:

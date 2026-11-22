@@ -1,0 +1,203 @@
+package com.atlassian.labs.restbrowser.rest;
+
+import com.atlassian.labs.restbrowser.catalog.CatalogService;
+import com.atlassian.labs.restbrowser.catalog.CatalogSnapshot;
+import com.atlassian.labs.restbrowser.catalog.CatalogTestSupport;
+import com.atlassian.labs.restbrowser.catalog.Model.ModuleEntry;
+import com.atlassian.labs.restbrowser.catalog.Model.Operation;
+import com.atlassian.labs.restbrowser.catalog.Model.State;
+import com.atlassian.sal.api.ApplicationProperties;
+import com.atlassian.sal.api.UrlMode;
+import com.atlassian.sal.api.user.UserKey;
+import com.atlassian.sal.api.user.UserManager;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.ws.rs.core.Response;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
+
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+public class CatalogResourceTest {
+
+    private static final String ANONYMOUS = "rest.api.browser.anonymous";
+
+    private final CatalogService catalog = mock(CatalogService.class);
+    private final UserManager userManager = mock(UserManager.class);
+    private final ApplicationProperties props = mock(ApplicationProperties.class);
+    private final HttpServletRequest request = mock(HttpServletRequest.class);
+    private final UserKey user = new UserKey("user");
+    private CatalogSnapshot snapshot;
+    private CatalogResource resource;
+    private String previousAnonymous;
+
+    @Before
+    public void setUp() {
+        previousAnonymous = System.getProperty(ANONYMOUS);
+        System.clearProperty(ANONYMOUS);
+        snapshot = snapshot(true);
+        when(catalog.current(any())).thenAnswer(i -> snapshot);
+        when(props.getDisplayName()).thenReturn("Jira");
+        when(props.getVersion()).thenReturn("10.3.0");
+        when(props.getBuildNumber()).thenReturn("1");
+        when(props.getBaseUrl(UrlMode.RELATIVE)).thenReturn("/jira");
+        resource = new CatalogResource(catalog, userManager, props);
+    }
+
+    @After
+    public void tearDown() {
+        if (previousAnonymous == null) {
+            System.clearProperty(ANONYMOUS);
+        } else {
+            System.setProperty(ANONYMOUS, previousAnonymous);
+        }
+    }
+
+    private static CatalogSnapshot snapshot(boolean complete) {
+        ModuleEntry m = CatalogTestSupport.module("a", "api/1", State.ok, "1.0");
+        return CatalogTestSupport.snapshot(List.of(m),
+                List.of(new Operation("a:GET:x", "a", CatalogTestSupport.spec("GET", "x"))), complete, "1.0.0");
+    }
+
+    private void login(boolean admin, boolean sysadmin) {
+        when(userManager.getRemoteUserKey(request)).thenReturn(user);
+        when(userManager.isAdmin(user)).thenReturn(admin || sysadmin);
+        when(userManager.isSystemAdmin(user)).thenReturn(sysadmin);
+    }
+
+    @Test
+    public void summaryNeedsALogin() {
+        Response r = resource.summary(request);
+        assertEquals(401, r.getStatus());
+        assertEquals("no-store", r.getHeaderString("Cache-Control"));
+        verify(catalog, never()).current(any());
+    }
+
+    @Test
+    public void indexNeedsALogin() {
+        assertEquals(401, resource.index(snapshot.hash(), request).getStatus());
+    }
+
+    @Test
+    public void anonymousIsAllowedWithTheSystemProperty() {
+        System.setProperty(ANONYMOUS, "true");
+        Response r = resource.summary(request);
+        assertEquals(200, r.getStatus());
+        assertEquals("\"" + snapshot.hash() + "-u\"", r.getHeaderString("ETag"));
+    }
+
+    @Test
+    public void summaryForANonAdminHasUserEtag() {
+        login(false, false);
+        Response r = resource.summary(request);
+        assertEquals(200, r.getStatus());
+        assertEquals("\"" + snapshot.hash() + "-u\"", r.getHeaderString("ETag"));
+        assertEquals("private, no-cache", r.getHeaderString("Cache-Control"));
+        assertTrue(((String) r.getEntity()).contains("\"admin\":false"));
+        assertTrue(((String) r.getEntity()).contains("\"baseUrl\":\"/jira\""));
+    }
+
+    @Test
+    public void summaryForAnAdminHasAdminEtag() {
+        login(true, false);
+        Response r = resource.summary(request);
+        assertEquals(200, r.getStatus());
+        assertEquals("\"" + snapshot.hash() + "-a\"", r.getHeaderString("ETag"));
+        assertTrue(((String) r.getEntity()).contains("\"admin\":true"));
+    }
+
+    @Test
+    public void summaryAnswers304WhenTheEtagMatches() {
+        login(false, false);
+        when(request.getHeader("If-None-Match")).thenReturn("\"" + snapshot.hash() + "-u\"");
+        Response r = resource.summary(request);
+        assertEquals(304, r.getStatus());
+        assertEquals("\"" + snapshot.hash() + "-u\"", r.getHeaderString("ETag"));
+        assertNull(r.getEntity());
+    }
+
+    @Test
+    public void anAdminsEtagDoesNotMatchAUsersCache() {
+        login(true, false);
+        when(request.getHeader("If-None-Match")).thenReturn("\"" + snapshot.hash() + "-u\"");
+        assertEquals(200, resource.summary(request).getStatus());
+    }
+
+    @Test
+    public void completeIndexIsImmutable() {
+        login(false, false);
+        Response r = resource.index(snapshot.hash(), request);
+        assertEquals(200, r.getStatus());
+        assertEquals("private, max-age=31536000, immutable", r.getHeaderString("Cache-Control"));
+        assertEquals(new String(snapshot.index(), StandardCharsets.UTF_8),
+                new String((byte[]) r.getEntity(), StandardCharsets.UTF_8));
+    }
+
+    @Test
+    public void incompleteIndexIsNotCached() {
+        login(false, false);
+        snapshot = snapshot(false);
+        Response r = resource.index(snapshot.hash(), request);
+        assertEquals(200, r.getStatus());
+        assertEquals("private, no-cache", r.getHeaderString("Cache-Control"));
+    }
+
+    @Test
+    public void indexOfAnotherHashIs404WithNoStore() {
+        login(false, false);
+        Response r = resource.index("0123456789abcdef01234567", request);
+        assertEquals(404, r.getStatus());
+        assertEquals("no-store", r.getHeaderString("Cache-Control"));
+        assertTrue(((String) r.getEntity()).contains(snapshot.hash()));
+    }
+
+    @Test
+    public void refreshIsForbiddenForANonSystemAdmin() {
+        login(true, false);
+        when(request.getHeader("X-Atlassian-Token")).thenReturn("no-check");
+        assertEquals(403, resource.refresh(null, request).getStatus());
+        verify(catalog, never()).refresh(any());
+    }
+
+    @Test
+    public void refreshIsForbiddenWithoutAUser() {
+        when(request.getHeader("X-Atlassian-Token")).thenReturn("no-check");
+        assertEquals(403, resource.refresh(null, request).getStatus());
+    }
+
+    @Test
+    public void refreshIsForbiddenWithoutTheXsrfHeader() {
+        login(true, true);
+        Response r = resource.refresh(null, request);
+        assertEquals(403, r.getStatus());
+        assertTrue(((String) r.getEntity()).contains("xsrf"));
+        verify(catalog, never()).refresh(any());
+    }
+
+    @Test
+    public void refreshOfEverythingAnswers204() {
+        login(true, true);
+        when(request.getHeader("X-Atlassian-Token")).thenReturn("no-check");
+        assertEquals(204, resource.refresh(null, request).getStatus());
+        verify(catalog).refresh(null);
+        assertEquals(204, resource.refresh("  ", request).getStatus());
+    }
+
+    @Test
+    public void refreshOfOneModule() {
+        login(true, true);
+        when(request.getHeader("X-Atlassian-Token")).thenReturn("no-check");
+        assertEquals(204, resource.refresh("a:b", request).getStatus());
+        verify(catalog).refresh("a:b");
+    }
+}
