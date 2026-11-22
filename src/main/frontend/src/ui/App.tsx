@@ -171,8 +171,6 @@ export function App({ baseUrl, classicUrl, product }: Props) {
   }, [baseUrl, store]);
 
   const menu: MenuItem[] = [
-    { id: 'expand', label: 'Expand all modules', onSelect: () => onCollapsed(new Set()) },
-    { id: 'collapse', label: 'Collapse all modules', onSelect: () => onCollapsed(new Set(summary?.modules.map((m) => m.id))) },
     {
       id: 'layout',
       label: 'Reset the layout',

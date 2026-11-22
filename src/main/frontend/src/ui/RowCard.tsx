@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import type { Module, Operation } from '../core/types';
-import { MethodBadge } from './bits';
+import { MethodBadge, PathText } from './bits';
 import { accessFact, moduleFact, originLabel, paramSummary, sourceLabel, stabilityLabel, type Fact } from './facts';
 
 export type CardTarget = { kind: 'op'; op: Operation; module?: Module } | { kind: 'module'; module: Module; count: number };
@@ -36,7 +36,7 @@ function OpFacts({ op, m, baseUrl }: { op: Operation; m?: Module; baseUrl: strin
     <>
       <div class="rab-n-card-head">
         <MethodBadge method={op.method} />
-        <span class="rab-n-card-path">{m ? m.path + '/' : ''}{op.path}</span>
+        <span class="rab-n-card-path"><PathText path={(m ? m.path + '/' : '') + op.path} prefix={m?.path.length} /></span>
       </div>
       {m && <div class="rab-n-card-url">{baseUrl}/rest/{m.path}/{op.path}</div>}
       <dl class="rab-n-card-facts">
@@ -60,7 +60,7 @@ function ModuleFacts({ m, count }: { m: Module; count: number }) {
   return (
     <>
       <div class="rab-n-card-head">
-        <span class="rab-n-card-path">{m.path}</span>
+        <span class="rab-n-card-path"><PathText path={m.path} /></span>
       </div>
       <dl class="rab-n-card-facts">
         <Row name="API"><Dot fact={moduleFact(m)} />{stabilityLabel(m)}</Row>
@@ -103,7 +103,7 @@ function Row({ name, children }: { name: string; children: ComponentChildren }) 
 }
 
 function Dot({ fact }: { fact?: Fact }) {
-  return fact ? <span class={'rab-n-dot rab-n-tone-' + fact.tone} aria-hidden="true" /> : null;
+  return fact ? <span class={'rab-n-tick rab-n-card-tick rab-n-tone-' + fact.tone} aria-hidden="true" /> : null;
 }
 
 function clip(s: string, n: number): string {

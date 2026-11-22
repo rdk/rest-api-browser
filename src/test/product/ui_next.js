@@ -23,6 +23,7 @@ if (!P) { console.log(`ui_next.js: RAB_PRODUCT is ${Object.keys(PRODUCTS).join('
 const BASE = (process.env.RAB_URL || P.url).replace(/\/$/, '');
 const USER = process.env.RAB_USER || 'admin', PASS = process.env.RAB_PASSWORD || 'admin';
 const PAGE = BASE + '/plugins/servlet/restbrowser/next';
+const CONTEXT = new URL(BASE).pathname.replace(/\/$/, '');
 const SHOTS = path.join(__dirname, 'shots');
 const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
 
@@ -66,6 +67,10 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         const found = await b.waitFor(`!!document.querySelector('[data-testid=op][data-path=${q(P.title)}]')`, 5000);
         c.check(`searching "${P.search}" lists ${P.title}`, found, await b.evaluate(
             `[...document.querySelectorAll('[data-testid=op]')].slice(0, 5).map(e => e.dataset.path)`));
+        const marked = await b.evaluate(`[...document.querySelectorAll('[data-testid=op][data-path=${q(P.title)}] .rab-n-pp-hit')].map(e => e.textContent)`);
+        c.check('the search words are marked in the path, the module part told apart',
+            marked.length > 0 && marked.every(m => P.search.toLowerCase().split(' ').some(w => m.toLowerCase().includes(w) || w.includes(m.toLowerCase())))
+            && await b.evaluate(`!!document.querySelector('[data-testid=op][data-path=${q(P.title)}] .rab-n-pp-mod')`), marked);
 
         // the hover card of a row: the pointer rests on the row, the card spells out the app and the access
         const rect = await b.evaluate(`(() => { const e = document.querySelector('[data-testid=op][data-path=${q(P.title)}]');
@@ -83,6 +88,9 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         c.check(`opening ${P.title} shows its form`, await openOp(P.search, P.title));
         const url = await text('[data-testid=live-url]');
         c.check('the live URL ends with the operation path', url.endsWith('/rest/' + P.title), url);
+        const idle = await b.evaluate(`(() => { const e = document.querySelector('[data-testid=response-idle]');
+            return e ? Math.round(e.getBoundingClientRect().height) : -1; })()`);
+        c.check(`before a response, the response area is a slim line (${idle} px)`, idle > 0 && idle < 48, idle);
         await click('[data-testid=send]');
         const answered = await b.waitFor(`${P.answer}.test((document.querySelector('[data-testid=response]') || {}).textContent || '')`, 20000);
         c.check(`Send shows the product's answer (status ${(await text('[data-testid=response-status]')).trim()})`, answered,
@@ -94,7 +102,16 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         let templatedKey = null;
         if (await openOp(P.templated.split('/').slice(-2).join(' ').replace(/[{}]/g, ''), P.templated)) {
             templatedKey = await b.evaluate(`new URLSearchParams(location.search).get('op')`);
+            const mark = () => b.evaluate(`(() => { const i = document.querySelector('input[name=${P.param}]');
+                const m = i && i.parentElement.querySelector('[data-testid=check]'); return m ? m.dataset.state : 'none'; })()`);
+            const empty = { mark: await mark(), tab: await b.evaluate(`!!document.querySelector('[data-testid=params-warn]')`),
+                send: await b.evaluate(`document.querySelector('[data-testid=send]').disabled`) };
+            await b.shot(path.join(SHOTS, `${PRODUCT}-next-5-form.png`));
             await type(`input[name=${q(P.param)}]`, ODD);
+            await sleep(100);
+            const filled = { mark: await mark(), tab: await b.evaluate(`!!document.querySelector('[data-testid=params-warn]')`) };
+            c.check('an empty required value shows a warning sign, a filled one a check', empty.mark === 'warn' && empty.tab && empty.send
+                && filled.mark === 'ok' && !filled.tab, { empty, filled });
             const live = await text('[data-testid=live-url]');
             c.check('the live URL carries the path value URL-encoded', live.includes('/' + ODD_ENCODED), live);
             const method = await b.evaluate(`(document.querySelector('[data-testid=send]') || {}).textContent || ''`);
@@ -156,6 +173,69 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         const reset = await b.waitFor(`Math.round(document.querySelector('.rab-n-side').getBoundingClientRect().width) === 430`, 2000);
         c.check('"Reset the layout" brings the list back to its default width', reset,
             await b.evaluate(`document.querySelector('.rab-n-side').getBoundingClientRect().width`));
+
+        // every operation's ticks agree with the catalog: "/" lists them all; the list is scrolled through
+        await type('[data-testid=search]', '/');
+        await sleep(600);
+        const TICKS = `
+            const cat = await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/catalog', { credentials: 'same-origin' })).json();
+            const idx = await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/catalog/index/' + cat.hash, { credentials: 'same-origin' })).json();
+            const mods = new Map(cat.modules.map(m => [m.id, m]));
+            const kind = m => m.stability === 'supported' ? ['supported'] : m.stability === 'app' || m.origin === 'user' ? ['app']
+                : m.origin === 'bundled' ? ['bundled'] : [];
+            const ACCESS = { UnrestrictedAccess: 'open', AnonymousSiteAccess: 'open', AnonymousAllowed: 'open',
+                UnlicensedSiteAccess: 'unlicensed', AdminOnly: 'admin', SystemAdminOnly: 'sysadmin' };
+            const list = document.querySelector('.rab-n-vlist');
+            const tones = row => [...row.querySelectorAll('.rab-n-tick')].map(t => [...t.classList].find(c => c.startsWith('rab-n-tone-')).slice(11)).join(' ');
+            const scan = async sel => {
+                const seen = new Map();
+                for (let top = 0; ; top += list.clientHeight) {
+                    list.scrollTop = top;
+                    await new Promise(r => { requestAnimationFrame(() => setTimeout(r, 0)); setTimeout(r, 120); });
+                    for (const row of list.querySelectorAll(sel)) seen.set(row.dataset.id, tones(row));
+                    if (top + list.clientHeight >= list.scrollHeight) break;
+                }
+                list.scrollTop = 0;
+                return seen;
+            };`;
+        const ticks = await b.evaluate(`(async () => { ${TICKS}
+            const ops = new Map(idx.operations.map(o => [o.key, o]));
+            const seen = await scan('[data-testid=op]');
+            const wrong = [];
+            const counts = {};
+            for (const [id, got] of seen) {
+                const op = ops.get(id);
+                const want = op ? [...kind(mods.get(op.module)), ...(op.deprecated ? ['deprecated'] : []), ...(ACCESS[op.access] ? [ACCESS[op.access]] : [])].join(' ') : '?';
+                if (got !== want) wrong.push({ id, got, want });
+                for (const t of got.split(' ').filter(Boolean)) counts[t] = (counts[t] || 0) + 1;
+            }
+            return { listed: seen.size, total: idx.operations.length, wrong: wrong.length, examples: wrong.slice(0, 5), counts };
+        })()`);
+        c.check(`every operation's ticks agree with the catalog (${ticks.listed} rows: ${JSON.stringify(ticks.counts)})`,
+            ticks.listed === ticks.total && ticks.wrong === 0, ticks);
+
+        // the module button folds every module, the modules' ticks agree with the catalog, and it unfolds them again
+        await type('[data-testid=search]', '');
+        await sleep(400);
+        const folded = await click('[data-testid=toggle-modules][data-state=expanded]')
+            && await b.waitFor(`!!document.querySelector('[data-testid=toggle-modules][data-state=collapsed]') && !document.querySelector('[data-testid=op]')`, 3000);
+        const moduleTicks = await b.evaluate(`(async () => { ${TICKS}
+            const seen = await scan('[data-testid=module]');
+            const wrong = [];
+            for (const [id, got] of seen) {
+                const want = kind(mods.get(id.slice('module:'.length)) || {}).join(' ');
+                if (got !== want) wrong.push({ id, got, want });
+            }
+            // a module without operations is not listed (unless it failed or is still being read)
+            const withOps = new Set(idx.operations.map(o => o.module));
+            const total = cat.modules.filter(m => withOps.has(m.id) || m.state !== 'ok').length;
+            return { listed: seen.size, total, wrong: wrong.length, examples: wrong.slice(0, 5) };
+        })()`);
+        c.check(`every module's tick agrees with the catalog (${moduleTicks.listed} modules)`,
+            moduleTicks.listed === moduleTicks.total && moduleTicks.wrong === 0, moduleTicks);
+        const unfolded = await click('[data-testid=toggle-modules][data-state=collapsed]')
+            && await b.waitFor(`!!document.querySelector('[data-testid=toggle-modules][data-state=expanded]') && !!document.querySelector('[data-testid=op]')`, 3000);
+        c.check('the small button in the list folds and unfolds every module', folded && unfolded, { folded, unfolded });
 
         // supported only narrows the list
         await type('[data-testid=search]', '');

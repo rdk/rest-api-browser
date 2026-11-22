@@ -38,12 +38,12 @@ export function ResponseView({ result, running, onCancel }: {
   }
   if (!result) {
     return (
-      <div class="rab-n-response rab-n-response-state rab-n-subtle">
+      <div class="rab-n-response rab-n-response-state" data-testid="response-idle">
         <div class="rab-n-response-state-inner">
-          <svg class="rab-n-svg" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <svg class="rab-n-svg" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <path d="M2.5 4.5h11v7h-11v-7zM5 8h6M5 6.3h3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-          <span>Send the request to see the response here.</span>
+          <span>The response shows here once you send the request (<kbd>Ctrl</kbd>+<kbd>Enter</kbd>).</span>
         </div>
       </div>
     );

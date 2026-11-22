@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { Module, Operation, Summary } from '../core/types';
 import { groupRows, search, type GroupRow, type SearchRow } from '../core/search';
 import { VirtualList } from './VirtualList';
-import { MethodBadge } from './bits';
+import { MethodBadge, PathText } from './bits';
+import { searchWords } from '../core/pathparts';
 import { moduleFact, rowTicks, type Fact } from './facts';
 import { RowCard, type CardTarget } from './RowCard';
 
@@ -37,6 +38,7 @@ export function Sidebar(p: SidebarProps) {
     typing.current = setTimeout(() => p.onQuery(v), 120);
   };
   const searching = p.query.trim().length > 0;
+  const words = useMemo(() => searchWords(p.query), [p.query]);
   const modulesById = useMemo(() => new Map((p.summary?.modules ?? []).map((m) => [m.id, m])), [p.summary]);
   const hits = useMemo(() => search(p.rows, p.query, { supportedOnly: p.supportedOnly }), [p.rows, p.query, p.supportedOnly]);
   const lines: Line[] = useMemo(() => {
@@ -46,6 +48,12 @@ export function Sidebar(p: SidebarProps) {
       g.kind === 'module' ? g : ({ kind: 'op', op: g.op } as Line),
     );
   }, [hits, searching, p.summary, p.collapsed]);
+  // one small button folds or unfolds every module: unfold when all the listed ones are folded, else fold them all
+  const allCollapsed = useMemo(
+    () => !searching && lines.length > 0 && lines.every((l) => l.kind !== 'module' || p.collapsed.has(l.module.id)),
+    [lines, searching, p.collapsed],
+  );
+  const toggleAll = () => p.onCollapsed(allCollapsed ? new Set() : new Set((p.summary?.modules ?? []).map((m) => m.id)));
   const hiddenBySupported = useMemo(
     () => (p.supportedOnly && hits.length === 0 ? search(p.rows, p.query).length : 0),
     [hits, p.rows, p.query, p.supportedOnly],
@@ -193,6 +201,21 @@ export function Sidebar(p: SidebarProps) {
               <>{total.toLocaleString()} operations in {s.modules.length} modules</>
             )}
           </span>
+          {!searching && s && lines.length > 0 && (
+            <button
+              class="rab-n-mini"
+              onClick={toggleAll}
+              title={allCollapsed ? 'Expand all modules' : 'Collapse all modules'}
+              aria-label={allCollapsed ? 'Expand all modules' : 'Collapse all modules'}
+              data-testid="toggle-modules"
+              data-state={allCollapsed ? 'collapsed' : 'expanded'}
+            >
+              <svg class="rab-n-svg" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <rect x="2.5" y="2.5" width="11" height="11" rx="2.5" stroke="currentColor" strokeWidth="1.3" />
+                <path d={allCollapsed ? 'M5.5 8h5M8 5.5v5' : 'M5.5 8h5'} stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+            </button>
+          )}
           <button
             class={'rab-n-pill' + (p.supportedOnly ? ' on' : '')}
             aria-pressed={p.supportedOnly}
@@ -260,7 +283,9 @@ export function Sidebar(p: SidebarProps) {
                 data-id={l.op.key}
               >
                 <MethodBadge method={l.op.method} />
-                <span class="rab-n-op-path">{searching ? full : '/' + l.op.path}</span>
+                <span class="rab-n-op-path">
+                  {searching ? <PathText path={full} prefix={m?.path.length} words={words} /> : <PathText path={'/' + l.op.path} />}
+                </span>
                 <Ticks facts={rowTicks(l.op, m, searching)} />
               </button>
             );
@@ -292,7 +317,7 @@ function ModuleRow({ index, module, count, collapsed, active, onClick }: {
       data-id={'module:' + module.id}
     >
       <span class="rab-n-chevron">{collapsed ? '▸' : '▾'}</span>
-      <span class="rab-n-module-path">{module.path}</span>
+      <span class="rab-n-module-path"><PathText path={module.path} /></span>
       <Ticks facts={kind ? [kind] : []} />
       <span class="rab-n-count">
         {module.state === 'ok' ? count : module.state === 'pending' ? '…' : 'failed: ' + (module.reason ?? 'error')}

@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import type { ComponentChildren } from 'preact';
 import type { Module, Operation, Param, Summary } from '../core/types';
 import { buildRequest, mediaChoices, setHeader, toCurl, type BuiltRequest, type RequestValues } from '../core/request';
 import { findTemplates } from '../core/template';
+import { checkValue, type Check } from '../core/validate';
 import type { RequestRunner, RunResult } from './runner';
 import type { HistoryEntry, UserStore } from './userstore';
-import { CopyButton, MethodBadge, Tabs, WRITE_METHODS } from './bits';
+import { CheckMark, CopyButton, MethodBadge, PathText, Tabs, WarnGlyph, WRITE_METHODS } from './bits';
 import { ResponseView } from './Response';
 
 /** What the user has typed for one operation; kept per operation while the page is open. */
@@ -130,6 +132,11 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
   const setValues = (values: RequestValues) => setDraft({ ...latest.current, values });
   const visibleParams = withTemplateParams(op).filter((p) => p.in !== 'form');
   const formParams = op.params.filter((p) => p.in === 'form');
+  const regexes = useMemo(() => templateRegexes(op.path), [op.path]);
+  const warnings = visibleParams.reduce(
+    (n, p) => n + valuesOf(p, draft.values).filter((v, i, all) => checkAt(p, v, i, all, regexes[p.name])?.state === 'warn').length, 0);
+  // the response takes room only once there is one to show; until then a slim line, and the form has the space
+  const compact = !draft.result || !!draft.result.error;
   const hasBadges = module?.stability === 'supported' || module?.stability === 'app' || !!op.access || !!op.deprecated;
 
   return (
@@ -137,7 +144,7 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
       <div class="rab-n-op-head">
         <div class="rab-n-op-title">
           <MethodBadge method={method} />
-          <span class="rab-n-op-fullpath" data-testid="operation-path">{fullPath}</span>
+          <span class="rab-n-op-fullpath" data-testid="operation-path"><PathText path={fullPath} prefix={module?.path.length} /></span>
           {hasBadges && (
             <span class="rab-n-op-badges">
               {module?.stability === 'supported' && <span class="rab-n-tag rab-n-tag-supported">Supported</span>}
@@ -151,7 +158,7 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
         </div>
         <div class={'rab-n-urlbar' + (write ? ' is-write' : '') + (isDelete ? ' is-delete' : '')}>
           <div class="rab-n-url-group">
-            <code class="rab-n-url" data-testid="live-url" title={built.url}>{built.url}</code>
+            <code class="rab-n-url" data-testid="live-url" title={built.url}>{built.error ? <MissingTemplates url={built.url} /> : built.url}</code>
             <CopyButton label="Copy URL" text={() => absolute(built.url)} />
           </div>
           {running ? (
@@ -178,15 +185,26 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
             </button>
           )}
         </div>
-        {built.error && <div class="rab-n-hint" data-testid="build-error">{built.error}</div>}
       </div>
-      <div class="rab-n-op-split">
+      <div class={'rab-n-op-split' + (compact ? ' is-compact' : '')}>
         <div class="rab-n-request" style={{ flexBasis: Math.round(split * 100) + '%' }}>
           <Tabs<Tab>
             value={tab}
             onChange={setTab}
             tabs={[
-              { id: 'params', label: `Params (${visibleParams.length})` },
+              {
+                id: 'params',
+                label: (
+                  <>
+                    Params ({visibleParams.length})
+                    {warnings > 0 && (
+                      <span class="rab-n-tab-warn" title={warnings === 1 ? '1 value needs attention' : `${warnings} values need attention`} data-testid="params-warn">
+                        <WarnGlyph size={12} />
+                      </span>
+                    )}
+                  </>
+                ),
+              },
               ...(hasBody ? [{ id: 'body' as Tab, label: 'Body' }] : []),
               { id: 'headers', label: 'Headers' },
               { id: 'history', label: `History (${history.length})` },
@@ -194,7 +212,7 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
           />
           <div class="rab-n-tabpane">
             {tab === 'params' && (
-              <ParamsTab params={visibleParams} formParams={formParams} values={draft.values} onValues={setValues} />
+              <ParamsTab params={visibleParams} formParams={formParams} values={draft.values} onValues={setValues} regexes={regexes} />
             )}
             {tab === 'body' && <BodyTab op={op} values={draft.values} onValues={setValues} />}
             {tab === 'headers' && <HeadersTab op={op} draft={draft} onDraft={setDraft} write={write} />}
@@ -212,7 +230,7 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
             )}
           </div>
         </div>
-        <SplitHandle split={split} onSplit={onSplit} />
+        {!compact && <SplitHandle split={split} onSplit={onSplit} />}
         <ResponseView result={draft.result} running={running} onCancel={cancel} />
       </div>
     </div>
@@ -228,6 +246,35 @@ function withTemplateParams(op: Operation): Param[] {
   return missing.length ? [...op.params, ...missing] : op.params;
 }
 
+/** The regex of each path template that has one: "{mode: view|edit}". */
+function templateRegexes(path: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const t of findTemplates(path)) if (t.regex) out[t.name] = t.regex;
+  return out;
+}
+
+function valuesOf(p: Param, values: RequestValues): string[] {
+  return p.in === 'query' ? values.query[p.name] ?? [''] : [((values as any)[p.in]?.[p.name] as string | undefined) ?? ''];
+}
+
+/** The check of one of a parameter's values; an empty extra value of a repeating one is fine. */
+function checkAt(p: Param, v: string, i: number, all: string[], regex?: string): Check {
+  if (!v.trim() && (i > 0 || all.some((x) => x.trim()))) return null;
+  return checkValue(p, v, regex);
+}
+
+/** The URL while a required path value is missing: its templates stand out. */
+function MissingTemplates({ url }: { url: string }) {
+  const out: ComponentChildren[] = [];
+  let last = 0;
+  for (const t of findTemplates(url)) {
+    out.push(url.slice(last, t.start), <span key={t.start} class="rab-n-url-missing">{url.slice(t.start, t.end)}</span>);
+    last = t.end;
+  }
+  out.push(url.slice(last));
+  return <>{out}</>;
+}
+
 function tryBuild(summary: Summary, op: Operation, draft: Draft): { request?: BuiltRequest; url: string; error?: string } {
   try {
     const req = buildRequest(summary, op, draft.values, { accept: draft.values.accept, noXsrfHeader: draft.noXsrfHeader });
@@ -241,8 +288,8 @@ function tryBuild(summary: Summary, op: Operation, draft: Draft): { request?: Bu
   }
 }
 
-function ParamsTab({ params, formParams, values, onValues }: {
-  params: Param[]; formParams: Param[]; values: RequestValues; onValues: (v: RequestValues) => void;
+function ParamsTab({ params, formParams, values, onValues, regexes }: {
+  params: Param[]; formParams: Param[]; values: RequestValues; onValues: (v: RequestValues) => void; regexes: Record<string, string>;
 }) {
   if (!params.length && !formParams.length) return <div class="rab-n-subtle rab-n-pad">This operation takes no parameters.</div>;
   const order = ['path', 'query', 'header', 'matrix'];
@@ -251,8 +298,7 @@ function ParamsTab({ params, formParams, values, onValues }: {
     if (p.in === 'query') onValues({ ...values, query: { ...values.query, [p.name]: list } });
     else onValues({ ...values, [p.in]: { ...(values as any)[p.in], [p.name]: list[0] ?? '' } });
   };
-  const get = (p: Param): string[] =>
-    p.in === 'query' ? values.query[p.name] ?? [''] : [((values as any)[p.in]?.[p.name] as string | undefined) ?? ''];
+  const get = (p: Param): string[] => valuesOf(p, values);
   return (
     <table class="rab-n-params" data-testid="params">
       <tbody>
@@ -265,14 +311,18 @@ function ParamsTab({ params, formParams, values, onValues }: {
                 {p.required && <span class="rab-n-required" title="Required">*</span>}
               </td>
               <td class="rab-n-param-value">
-                {list.map((v, i) => (
+                {list.map((v, i) => {
+                  const check = checkAt(p, v, i, list, regexes[p.name]);
+                  return (
                   <div class="rab-n-param-row" key={i}>
-                    <ParamInput param={p} value={v} onChange={(nv) => set(p, list.map((x, j) => (j === i ? nv : x)))} />
+                    <ParamInput param={p} value={v} invalid={check?.state === 'warn' && !!v.trim()} onChange={(nv) => set(p, list.map((x, j) => (j === i ? nv : x)))} />
+                    <CheckMark check={check} />
                     {p.repeating && list.length > 1 && (
                       <button class="rab-n-icon" aria-label="Remove value" onClick={() => set(p, list.filter((_, j) => j !== i))}>×</button>
                     )}
                   </div>
-                ))}
+                  );
+                })}
                 {p.repeating && p.in === 'query' && (
                   <button class="rab-n-link" onClick={() => set(p, [...list, ''])}>+ value</button>
                 )}
@@ -295,13 +345,14 @@ function ParamsTab({ params, formParams, values, onValues }: {
   );
 }
 
-function ParamInput({ param, value, onChange }: { param: Param; value: string; onChange: (v: string) => void }) {
-  const placeholder = param.default !== undefined ? 'default: ' + param.default : param.required ? 'required' : '';
+function ParamInput({ param, value, invalid, onChange }: { param: Param; value: string; invalid?: boolean; onChange: (v: string) => void }) {
+  const cls = 'rab-n-input' + (invalid ? ' is-warn' : '');
+  const placeholder = param.default && param.in !== 'path' ? 'default: ' + param.default : param.required ? 'required' : '';
   const on = (e: Event) => onChange((e.target as HTMLInputElement | HTMLSelectElement).value);
   if (param.type === 'boolean' || (param.options && param.options.length)) {
     const options = param.type === 'boolean' ? ['true', 'false'] : param.options!;
     return (
-      <select class="rab-n-input" value={value} onChange={on} name={param.name}>
+      <select class={cls} value={value} onChange={on} name={param.name}>
         <option value="">{placeholder || '(not set)'}</option>
         {options.map((o) => <option key={o} value={o}>{o}</option>)}
       </select>
@@ -310,7 +361,7 @@ function ParamInput({ param, value, onChange }: { param: Param; value: string; o
   const numeric = param.type === 'int' || param.type === 'long' || param.type === 'number';
   return (
     <input
-      class="rab-n-input"
+      class={cls}
       name={param.name}
       inputMode={numeric ? 'numeric' : undefined}
       value={value}
@@ -351,6 +402,12 @@ function BodyTab({ op, values, onValues }: { op: Operation; values: RequestValue
         </label>
         {op.bodyType && <span class="rab-n-subtle">Java type: {op.bodyType}</span>}
         <span class="rab-n-spacer" />
+        {isJson && !!values.body?.trim() && (
+          <span class={'rab-n-json-check ' + (error ? 'is-warn' : 'is-ok')} data-testid="json-check">
+            <CheckMark check={error ? { state: 'warn', message: 'Not valid JSON: ' + error } : { state: 'ok', message: 'Valid JSON' }} />
+            <span class="rab-n-json-check-text" title={error ?? undefined}>{error ? 'Not valid JSON: ' + error : 'Valid JSON'}</span>
+          </span>
+        )}
         {isJson && <button class="rab-n-button" onClick={format} disabled={!!error || !values.body?.trim()}>Format</button>}
       </div>
       <textarea
@@ -361,7 +418,6 @@ function BodyTab({ op, values, onValues }: { op: Operation; values: RequestValue
         placeholder={isJson ? '{ }' : ''}
         data-testid="body"
       />
-      {error && <div class="rab-n-error">JSON: {error}</div>}
     </div>
   );
 }

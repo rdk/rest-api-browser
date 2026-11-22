@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
+import { pathParts } from '../core/pathparts';
+import type { Check } from '../core/validate';
 
 export const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -7,6 +9,47 @@ export function MethodBadge({ method }: { method: string }) {
   const m = method.toUpperCase();
   const cls = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(m) ? m.toLowerCase() : 'other';
   return <span class={'rab-n-method rab-n-method-' + cls}>{m === 'DELETE' ? 'DEL' : m}</span>;
+}
+
+/**
+ * A path with its parts told apart: the resource words in the text color, separators, versions and the module prefix
+ * fainter, {templates} in their own color, the search's words marked.
+ */
+export function PathText({ path, prefix, words }: { path: string; prefix?: number; words?: string[] }) {
+  return (
+    <>
+      {pathParts(path, { prefix, words }).map((p, i) =>
+        p.kind === 'text' && !p.hit ? p.text : <span key={i} class={'rab-n-pp-' + p.kind + (p.hit ? ' rab-n-pp-hit' : '')}>{p.text}</span>,
+      )}
+    </>
+  );
+}
+
+export function WarnGlyph({ size = 13 }: { size?: number }) {
+  return (
+    <svg class="rab-n-svg" width={size} height={size} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M8 2.4l6 10.6H2L8 2.4z" fill="currentColor" fillOpacity="0.16" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+      <path d="M8 6.6v2.9M8 11.4v.1" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** The form's mark beside a value: a warning sign with the reason, a green check once it is fine; the slot stays when empty. */
+export function CheckMark({ check }: { check: Check }) {
+  if (!check) return <span class="rab-n-check" aria-hidden="true" />;
+  const ok = check.state === 'ok';
+  return (
+    <span class={'rab-n-check ' + (ok ? 'is-ok' : 'is-warn')} title={check.message} role="img" aria-label={check.message}
+          data-testid="check" data-state={check.state}>
+      {ok ? (
+        <svg class="rab-n-svg" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M3.4 8.6l2.9 2.9 6.3-6.6" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      ) : (
+        <WarnGlyph />
+      )}
+    </span>
+  );
 }
 
 export function Tabs<T extends string>({ tabs, value, onChange }: {
