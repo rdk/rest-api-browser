@@ -147,7 +147,10 @@ angular.module('RAB')
                     if(!tmplVar.value) {
                         throw new SendRequestError('You forgot to provide a value for the following required parameter: <b>' + tmplVar.name + '</b>');
                     }
-                    url = url.replace(pat, tmplVar.value);
+                    // encode the value, but keep its slashes: a template such as {path:.+} spans several segments.
+                    // A function as replacement, so that "$&" or "$1" in a value stays literal.
+                    var encoded = _.map(String(tmplVar.value).split('/'), encodeURIComponent).join('/');
+                    url = url.replace(pat, function() { return encoded; });
                 });
 
                 queryParams = _.chain(_.compact(method.params.concat(method.customParams)))

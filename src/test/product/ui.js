@@ -6,18 +6,23 @@
 //   RAB_PRODUCT=confluence node src/test/product/ui.js     # http://localhost:1992/confluence
 //   RAB_URL=... RAB_USER=... RAB_PASSWORD=... node src/test/product/ui.js
 //   RAB_BROWSER="C:/path/to/msedge.exe" node src/test/product/ui.js
+//   RAB_BROWSER_ARGS="--ignore-certificate-errors" node src/test/product/ui.js   # extra browser flags
 //
 // Needs Node 22+ (fetch, WebSocket) and Edge or Chrome; no npm packages (it speaks the DevTools protocol itself).
 // Exit code: 0 all checks passed, 1 a check failed, 2 not run. The last line is "N checks, N passed, N failed".
 const { spawn } = require('child_process'), fs = require('fs'), os = require('os'), path = require('path');
 
-// per product: its URL, a public resource of its core REST API to search for, select and send, and its answer
+// per product: its URL, a public resource of its core REST API to search for, select and send, and its answer; a
+// resource with a path parameter, which is sent with a value that needs URL encoding (a read of nothing that exists)
 const PRODUCTS = {
     jira: { name: 'Jira', url: 'http://localhost:2992/jira', core: /^api\/2\//, coreName: 'api/2',
-        resource: 'serverInfo', answer: /"baseUrl"|"version"/ },
+        resource: 'serverInfo', answer: /"baseUrl"|"version"/,
+        templated: 'api/2/issue/{issueIdOrKey}', templateParam: 'issueIdOrKey' },
     confluence: { name: 'Confluence', url: 'http://localhost:1992/confluence', core: /^api\//, coreName: 'api',
-        resource: 'user/current', answer: /"username"|"userKey"/ },
+        resource: 'user/current', answer: /"username"|"userKey"/,
+        templated: 'api/content/{id}', templateParam: 'id' },
 };
+const ODD_VALUE = 'no such?#%&$&', ODD_VALUE_ENCODED = 'no%20such%3F%23%25%26%24%26';
 const PRODUCT = process.env.RAB_PRODUCT || 'jira', P = PRODUCTS[PRODUCT];
 if (!P) { console.log(`ui.js: RAB_PRODUCT is ${Object.keys(PRODUCTS).join(' or ')}, not ${PRODUCT}`); process.exit(2); }
 const BASE = (process.env.RAB_URL || P.url).replace(/\/$/, '');
@@ -31,6 +36,7 @@ const BROWSERS = [
     '/usr/bin/microsoft-edge', '/usr/bin/google-chrome', '/usr/bin/chromium',
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
 ].filter(Boolean);
+const BROWSER_ARGS = (process.env.RAB_BROWSER_ARGS || '').split(/\s+/).filter(Boolean);
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const results = [];
@@ -55,7 +61,7 @@ function check(name, ok, detail) {
     const port = 9400 + Math.floor(Math.random() * 500);
     const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'rab-ui-'));
     const browser = spawn(exe, ['--headless=new', '--disable-gpu', '--no-first-run', '--user-data-dir=' + profile,
-        '--remote-debugging-port=' + port, '--window-size=1500,1000', 'about:blank'], { stdio: 'ignore' });
+        '--remote-debugging-port=' + port, '--window-size=1500,1000', ...BROWSER_ARGS, 'about:blank'], { stdio: 'ignore' });
     let ws;
     try {
         let target;
@@ -169,6 +175,61 @@ function check(name, ok, detail) {
             await shot(PRODUCT + '-4-response');
         } else {
             console.log('SKIP sending a request: no Send button found in the resource view');
+        }
+
+        // opens a resource by its exact name: search for it, then click it (the view gets its resource from the list)
+        const openResource = async name => {
+            await evaluate(`(() => { const s = document.querySelector("#searchField"); s.value = ${JSON.stringify(name)};
+                s.dispatchEvent(new Event("input", { bubbles: true })); s.dispatchEvent(new Event("change", { bubbles: true })); })()`);
+            await sleep(800);
+            if (!await click(`#searchTextResults li a[title=${JSON.stringify(name)}]`)) return false;
+            return waitFor(`(() => { const h = document.querySelector("[ng-view] .rab-resource-title");
+                return !!h && h.textContent.trim().startsWith(${JSON.stringify(name)}); })()`, 20000);
+        };
+
+        // ---- the resource's own description (the WADL's doc of the resource; 4.1.1 and earlier never showed it).
+        // Jira 11's WADLs document no resource at all: then the check gives the core resource a description in the
+        // page (nothing is sent) and checks that the view shows it.
+        const described = await evaluate(`(() => {
+            const all = angular.element(document.querySelector("#rab")).scope().resources || [];
+            const has = r => r.description && r.description.trim().length >= 20;
+            let r = all.find(r => has(r) && ${P.core}.test(r.name)) || all.find(has), set = false;
+            if (!r) {
+                r = all.find(r => ${P.core}.test(r.name) && r.name.endsWith(${JSON.stringify(P.resource)}));
+                if (r) { r.description = "Description set by ui.js: no WADL here documents its resources."; set = true; }
+            }
+            return r ? { name: r.name, set, text: r.description.replace(/\\s+/g, " ").trim().slice(0, 60) } : null; })()`);
+        if (!described) {
+            console.log('SKIP the resource description: no resource to show one on');
+        } else {
+            const label = `the view shows the description of ${described.name}${described.set ? ' (set by the check)' : ''}`;
+            if (await openResource(described.name)) {
+                const shownText = await waitFor(`(() => { const p = document.querySelector("[ng-view] .rab-resource-description");
+                    return !!p && p.offsetParent !== null && p.textContent.replace(/\\s+/g, " ").includes(${JSON.stringify(described.text)}); })()`, 10000);
+                check(label, shownText, described.text);
+            } else {
+                check(label, false, 'could not open the resource');
+            }
+        }
+
+        // ---- a path parameter's value is URL encoded (4.1.1 and earlier put it into the URL as typed)
+        if (!await openResource(P.templated)) {
+            console.log(`SKIP the path parameter: ${P.templated} is not in the list`);
+        } else {
+            const pane = '[ng-view] .tabs-pane.active-pane';
+            const filled = await evaluate(`(() => { const i = document.querySelector(${JSON.stringify(pane + ' input[name="' + P.templateParam + '"]')});
+                if (!i) return false; i.value = ${JSON.stringify(ODD_VALUE)}; i.dispatchEvent(new Event("input", { bubbles: true })); return true; })()`);
+            const method = await evaluate(`(document.querySelector(${JSON.stringify(pane)}) || {}).id`);
+            // only ever a GET: the value names nothing that exists, but a write on a shared instance is not a test
+            if (filled && method === 'GET' && await click(pane + ' button.aui-button-primary')) {
+                const called = await waitFor(`/\\(\\d+\\)$/.test(((document.querySelector(${JSON.stringify(pane + ' .rab-resp code')}) || {}).textContent || "").trim())`, 20000);
+                const call = await evaluate(`((document.querySelector(${JSON.stringify(pane + ' .rab-resp code')}) || {}).textContent || "").trim()`);
+                check(`GET ${P.templated} with ${JSON.stringify(ODD_VALUE)} requests the encoded value`,
+                    called && call.includes('/' + ODD_VALUE_ENCODED + ' ('), call);
+                await shot(PRODUCT + '-5-path-parameter');
+            } else {
+                check(`GET ${P.templated} with a path parameter can be sent`, false, { filled, method });
+            }
         }
 
         // ---- errors
