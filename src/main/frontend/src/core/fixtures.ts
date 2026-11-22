@@ -30,7 +30,7 @@ export function summary(modules: Module[], extra: Partial<Summary> = {}): Summar
   return {
     format: 1,
     product: { name: 'Jira', version: '11.3.13', build: '1' },
-    baseUrl: 'http://host/jira',
+    baseUrl: '/jira',
     hash: 'h1',
     complete: true,
     progress: { done: modules.length, total: modules.length },

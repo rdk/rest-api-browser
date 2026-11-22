@@ -22,6 +22,7 @@ export function findTemplates(path: string): TemplateMatch[] {
 
 // Split on "/" but not inside braces, because a regex may contain one.
 export function splitSegments(path: string): string[] {
+  if (path === '') return [];
   const out: string[] = [];
   let depth = 0;
   let start = 0;

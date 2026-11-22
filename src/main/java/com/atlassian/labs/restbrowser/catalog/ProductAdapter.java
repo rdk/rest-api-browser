@@ -28,6 +28,8 @@ public class ProductAdapter {
     private final String productId;
     private final List<Pattern> supported;
     private final Supplier<PluginMetadataManager> metadata;
+    /** Set on the first failure: an optional service that is not there would otherwise time out on every call. */
+    private volatile boolean metadataUnavailable;
 
     public ProductAdapter(ApplicationProperties applicationProperties, Supplier<PluginMetadataManager> metadata) {
         this(platformId(applicationProperties), metadata);
@@ -53,7 +55,8 @@ public class ProductAdapter {
                 }
                 return pmm.isSystemProvided(plugin) ? "product" : "bundled";
             } catch (RuntimeException e) {
-                LOGGER.debug("PluginMetadataManager failed for {}", plugin.getKey(), e);
+                metadataUnavailable = true;
+                LOGGER.debug("PluginMetadataManager is not available; using the plugins' own flags", e);
             }
         }
         if (!plugin.isBundledPlugin()) {
@@ -73,6 +76,9 @@ public class ProductAdapter {
     }
 
     private PluginMetadataManager metadataOrNull() {
+        if (metadataUnavailable) {
+            return null;
+        }
         try {
             return metadata == null ? null : metadata.get();
         } catch (RuntimeException | LinkageError e) {

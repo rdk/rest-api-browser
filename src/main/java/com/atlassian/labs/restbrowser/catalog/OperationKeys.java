@@ -16,11 +16,19 @@ import java.util.Map;
  */
 final class OperationKeys {
 
+    /**
+     * A total order, so every node assigns the same suffixes to the same operations whatever order Jersey lists them
+     * in: normalized path first, so renaming a template does not move a suffix to another operation.
+     */
     private static final Comparator<OperationSpec> ORDER = Comparator
-            .comparing(OperationSpec::path)
+            .comparing((OperationSpec o) -> normalize(o.path()))
             .thenComparing(OperationSpec::method)
             .thenComparing(o -> String.join(",", o.consumes()))
-            .thenComparing(o -> String.join(",", o.produces()));
+            .thenComparing(o -> String.join(",", o.produces()))
+            .thenComparing(OperationSpec::path)
+            .thenComparing(o -> String.valueOf(o.params()))
+            .thenComparing(o -> String.valueOf(o.bodyType()))
+            .thenComparing(o -> String.valueOf(o.access()));
 
     private OperationKeys() {
     }
@@ -55,7 +63,9 @@ final class OperationKeys {
         int slash = type.indexOf('/');
         String subtype = slash < 0 ? type : type.substring(slash + 1);
         int semicolon = subtype.indexOf(';');
-        return (semicolon < 0 ? subtype : subtype.substring(0, semicolon)).trim();
+        String clean = (semicolon < 0 ? subtype : subtype.substring(0, semicolon)).trim();
+        // only characters that are safe in a URL parameter and readable; "*" and the like fall back to a counter
+        return clean.matches("[A-Za-z0-9.+-]+") ? clean : "2";
     }
 
     /** Replaces every {template}, including ones whose regular expression contains braces, by {}. */

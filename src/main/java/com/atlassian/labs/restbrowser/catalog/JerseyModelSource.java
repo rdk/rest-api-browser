@@ -27,6 +27,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Supplier;
 
 import static org.slf4j.LoggerFactory.getLogger;
@@ -83,7 +84,7 @@ public class JerseyModelSource implements SpecSource {
         List<OperationSpec> operations = new ArrayList<>();
         Map<Class<?>, Boolean> locatorClasses = new IdentityHashMap<>();
         for (Object root : roots) {
-            visit(root, "", 0, operations, locatorClasses);
+            visit(root, "", 0, operations, locatorClasses, new Inherited(List.of(), null, false));
         }
         return Optional.of(new ModuleSpec(id(), operations));
     }
@@ -153,8 +154,12 @@ public class JerseyModelSource implements SpecSource {
         }
     }
 
+    /** What a sub-resource locator passes down to the operations below it. */
+    private record Inherited(List<Param> params, String access, boolean deprecated) {
+    }
+
     private void visit(Object resource, String prefix, int depth, List<OperationSpec> out,
-                       Map<Class<?>, Boolean> locatorClasses) {
+                       Map<Class<?>, Boolean> locatorClasses, Inherited inherited) {
         try {
             if (Boolean.TRUE.equals(call(resource, "isExtended"))) {
                 return; // Jersey's own additions, such as application.wadl
@@ -162,7 +167,7 @@ public class JerseyModelSource implements SpecSource {
             String path = join(prefix, (String) call(resource, "getPath"));
             for (Object method : (List<?>) call(resource, "getResourceMethods")) {
                 if (!Boolean.TRUE.equals(call(method, "isExtended"))) {
-                    out.add(operation(method, path));
+                    out.add(operation(method, path, inherited));
                 }
             }
             Object locator = call(resource, "getResourceLocator");
@@ -171,41 +176,48 @@ public class JerseyModelSource implements SpecSource {
                 Class<?> type = (Class<?>) call(invocable, "getRawResponseType");
                 if (type != null && type != Object.class && !type.isInterface() && locatorClasses.put(type, true) == null) {
                     Object sub = call(resource.getClass(), null, "from", new Class<?>[]{Class.class}, type);
-                    visit(sub, path, depth + 1, out, locatorClasses);
+                    // the locator's own parameters (its path parameters, typically) apply to everything below it
+                    List<Param> params = new ArrayList<>(inherited.params());
+                    String[] ignoredBody = new String[1];
+                    for (Object p : (List<?>) call(invocable, "getParameters")) {
+                        param(p, params, ignoredBody);
+                    }
+                    Method handling = (Method) call(invocable, "getHandlingMethod");
+                    String access = handling == null ? inherited.access() : firstNonNull(access(handling), inherited.access());
+                    boolean deprecated = inherited.deprecated()
+                            || (handling != null && handling.isAnnotationPresent(Deprecated.class));
+                    visit(sub, path, depth + 1, out, locatorClasses, new Inherited(List.copyOf(params), access, deprecated));
                     locatorClasses.remove(type);
                 }
             }
             for (Object child : (List<?>) call(resource, "getChildResources")) {
-                visit(child, path, depth, out, locatorClasses);
+                visit(child, path, depth, out, locatorClasses, inherited);
             }
         } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
             LOGGER.debug("Skipped part of the resource model below {}", prefix, e);
         }
     }
 
-    private OperationSpec operation(Object method, String path) throws ReflectiveOperationException {
+    private OperationSpec operation(Object method, String path, Inherited inherited) throws ReflectiveOperationException {
         String httpMethod = (String) call(method, "getHttpMethod");
         List<String> consumes = mediaTypes(call(method, "getConsumedTypes"));
         List<String> produces = mediaTypes(call(method, "getProducedTypes"));
         Object invocable = call(method, "getInvocable");
         Method handling = (Method) call(invocable, "getHandlingMethod");
-        List<Param> params = new ArrayList<>();
+        List<Param> params = new ArrayList<>(inherited.params());
         String[] bodyType = new String[1];
         for (Object p : (List<?>) call(invocable, "getParameters")) {
             param(p, params, bodyType);
         }
-        String access = null;
-        boolean deprecated = false;
+        String access = inherited.access();
+        boolean deprecated = inherited.deprecated();
         if (handling != null) {
-            access = access(handling);
-            if (access == null) {
-                access = access(handling.getDeclaringClass());
-            }
-            deprecated = handling.isAnnotationPresent(Deprecated.class)
+            access = firstNonNull(access(handling), access);
+            deprecated |= handling.isAnnotationPresent(Deprecated.class)
                     || handling.getDeclaringClass().isAnnotationPresent(Deprecated.class);
         }
-        return new OperationSpec(httpMethod, path, consumes, produces, List.copyOf(params), access, deprecated,
-                bodyType[0]);
+        return new OperationSpec(httpMethod, path, consumes, produces, completePathParams(path, params), access,
+                deprecated, bodyType[0]);
     }
 
     private static void param(Object p, List<Param> out, String[] bodyType) throws ReflectiveOperationException {
@@ -278,16 +290,82 @@ public class JerseyModelSource implements SpecSource {
         return List.copyOf(names);
     }
 
-    /** The simple name of the first Atlassian security annotation, such as AdminOnly or AnonymousSiteAccess. */
-    private static String access(AnnotatedElement element) {
+    /** Access levels, by annotation simple name (com.atlassian.annotations.security, REST v2 and REST v1). */
+    static final Set<String> ACCESS_ANNOTATIONS = Set.of("SystemAdminOnly", "AdminOnly", "LicensedOnly",
+            "UnlicensedSiteAccess", "AnonymousSiteAccess", "UnrestrictedAccess", "AnonymousAllowed");
+
+    /** The handler's access level: from the method, else its class, else the package of the class. */
+    static String access(Method handling) {
+        String a = accessOf(handling);
+        if (a == null) {
+            a = accessOf(handling.getDeclaringClass());
+        }
+        if (a == null && handling.getDeclaringClass().getPackage() != null) {
+            a = accessOf(handling.getDeclaringClass().getPackage());
+        }
+        return a;
+    }
+
+    private static String accessOf(AnnotatedElement element) {
         for (Annotation a : element.getAnnotations()) {
-            String name = a.annotationType().getName();
-            if (name.startsWith("com.atlassian.annotations.security.")
-                    || name.startsWith("com.atlassian.plugins.rest.api.security.annotation.")) {
-                return a.annotationType().getSimpleName();
+            Class<? extends Annotation> type = a.annotationType();
+            if (type.getName().startsWith("com.atlassian.") && ACCESS_ANNOTATIONS.contains(type.getSimpleName())) {
+                return type.getSimpleName();
             }
         }
         return null;
+    }
+
+    private static String firstNonNull(String a, String b) {
+        return a != null ? a : b;
+    }
+
+    /**
+     * Drops duplicate parameters (a locator one and the method one) and adds a required string path parameter for
+     * every path template that no parameter declares, such as one injected into a field: the request form needs an
+     * input for each of them.
+     */
+    static List<Param> completePathParams(String path, List<Param> params) {
+        Map<String, Param> unique = new java.util.LinkedHashMap<>();
+        for (Param p : params) {
+            unique.putIfAbsent(p.in() + ":" + p.name(), p);
+        }
+        for (String name : templateNames(path)) {
+            unique.putIfAbsent("path:" + name, new Param(name, "path", "string", true, null, List.of(), false));
+        }
+        return List.copyOf(unique.values());
+    }
+
+    /** The names of the templates of a path: "{issueIdOrKey}" and "{id: [0-9]+}" give issueIdOrKey and id. */
+    static List<String> templateNames(String path) {
+        List<String> names = new ArrayList<>();
+        int depth = 0;
+        StringBuilder current = null;
+        for (int i = 0; i < path.length(); i++) {
+            char c = path.charAt(i);
+            if (c == '{') {
+                if (depth++ == 0) {
+                    current = new StringBuilder();
+                    continue;
+                }
+            } else if (c == '}') {
+                depth = Math.max(0, depth - 1);
+                if (depth == 0 && current != null) {
+                    String t = current.toString();
+                    int colon = t.indexOf(':');
+                    String name = (colon < 0 ? t : t.substring(0, colon)).trim();
+                    if (!name.isEmpty()) {
+                        names.add(name);
+                    }
+                    current = null;
+                    continue;
+                }
+            }
+            if (depth > 0 && current != null) {
+                current.append(c);
+            }
+        }
+        return names;
     }
 
     private static List<String> mediaTypes(Object list) {

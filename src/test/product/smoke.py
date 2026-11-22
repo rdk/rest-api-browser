@@ -275,8 +275,10 @@ def new_ui(j, a, P):
           and summary.get('product') and isinstance(summary.get('modules'), list), (s, str(summary)[:200]))
     if not isinstance(summary, dict):
         return
-    check('the summary has an ETag ending in -a" (admin) and Cache-Control no-cache',
-          etag.endswith('-a"') and 'no-cache' in h.get('cache-control', ''), (etag, h.get('cache-control')))
+    # admins' ETags end in -a, system administrators' in -s (they may also rebuild the catalog)
+    check('the summary has an admin ETag (ending in -a" or -s") and Cache-Control no-cache',
+          (etag.endswith('-a"') or etag.endswith('-s"')) and 'no-cache' in h.get('cache-control', ''),
+          (etag, h.get('cache-control')))
     s, _, h2 = j.call('GET', API, headers={'Accept': 'application/json', 'If-None-Match': etag})
     check('a second GET with If-None-Match answers 304', s == 304, (s, h2.get('etag')))
     s, _, h = j.call('GET', API, auth=False, headers={'Accept': 'application/json'})

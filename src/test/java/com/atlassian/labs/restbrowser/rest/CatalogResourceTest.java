@@ -12,14 +12,17 @@ import com.atlassian.sal.api.user.UserKey;
 import com.atlassian.sal.api.user.UserManager;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.StreamingOutput;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -112,8 +115,31 @@ public class CatalogResourceTest {
         login(true, false);
         Response r = resource.summary(request);
         assertEquals(200, r.getStatus());
-        assertEquals("\"" + snapshot.hash() + "-a\"", r.getHeaderString("ETag"));
+        assertEquals("\"" + snapshot.adminTag() + "-a\"", r.getHeaderString("ETag"));
+        assertTrue(snapshot.adminTag().matches(snapshot.hash() + "-[0-9a-f]{8}"));
         assertTrue(((String) r.getEntity()).contains("\"admin\":true"));
+        assertTrue(((String) r.getEntity()).contains("\"sysadmin\":false"));
+    }
+
+    @Test
+    public void summaryForASystemAdminHasItsOwnEtag() {
+        login(true, true);
+        Response r = resource.summary(request);
+        assertEquals("\"" + snapshot.adminTag() + "-s\"", r.getHeaderString("ETag"));
+        assertTrue(((String) r.getEntity()).contains("\"sysadmin\":true"));
+    }
+
+    @Test
+    public void matchesAcceptsTheUsualForms() {
+        assertTrue(CatalogResource.matches("abc-u", "abc-u"));
+        assertTrue(CatalogResource.matches("\"abc-u\"", "abc-u"));
+        assertTrue(CatalogResource.matches("W/\"abc-u\"", "abc-u"));
+        assertTrue(CatalogResource.matches("\"abc-u-gzip\"", "abc-u"));
+        assertTrue(CatalogResource.matches("\"x\", W/\"abc-u\" , \"y\"", "abc-u"));
+        assertTrue(CatalogResource.matches("*", "abc-u"));
+        assertFalse(CatalogResource.matches("\"abc-a\"", "abc-u"));
+        assertFalse(CatalogResource.matches("\"x\", \"y\"", "abc-u"));
+        assertFalse(CatalogResource.matches(null, "abc-u"));
     }
 
     @Test
@@ -134,13 +160,15 @@ public class CatalogResourceTest {
     }
 
     @Test
-    public void completeIndexIsImmutable() {
+    public void completeIndexIsImmutable() throws Exception {
         login(false, false);
         Response r = resource.index(snapshot.hash(), request);
         assertEquals(200, r.getStatus());
         assertEquals("private, max-age=31536000, immutable", r.getHeaderString("Cache-Control"));
-        assertEquals(new String(snapshot.index(), StandardCharsets.UTF_8),
-                new String((byte[]) r.getEntity(), StandardCharsets.UTF_8));
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ((StreamingOutput) r.getEntity()).write(out);
+        assertEquals(new String(snapshot.index(), StandardCharsets.UTF_8), out.toString(StandardCharsets.UTF_8));
+        assertEquals(snapshot.index().length, r.getMetadata().getFirst("Content-Length"));
     }
 
     @Test

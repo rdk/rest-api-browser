@@ -36,6 +36,7 @@ export function buildLines(text: string): LineModel | null {
       if (c === 92) {
         const e = text[i + 1];
         if (e === undefined || !'"\\/bfnrtu'.includes(e)) return null;
+        if (e === 'u' && !/^[0-9a-fA-F]{4}$/.test(text.slice(i + 2, i + 6))) return null;
         i += 2;
       } else i++;
     }
@@ -131,13 +132,16 @@ export function visibleLines(model: LineModel, collapsed: Set<number>): number[]
   return out;
 }
 
+const lowered = new WeakMap<LineModel, string[]>();
+
 export function find(model: LineModel, needle: string): number[] {
   const out: number[] = [];
   const n = needle.toLowerCase();
   if (!n) return out;
-  const { lines } = model;
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].text.toLowerCase().includes(n)) out.push(i);
+  let lower = lowered.get(model);
+  if (!lower) lowered.set(model, (lower = model.lines.map((l) => l.text.toLowerCase())));
+  for (let i = 0; i < lower.length; i++) {
+    if (lower[i].includes(n)) out.push(i);
   }
   return out;
 }

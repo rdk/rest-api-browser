@@ -1,5 +1,7 @@
 package com.atlassian.labs.restbrowser.catalog;
 
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertFalse;
 import com.atlassian.labs.restbrowser.catalog.Model.Operation;
 import com.atlassian.labs.restbrowser.catalog.Model.OperationSpec;
 import org.junit.Test;
@@ -104,5 +106,38 @@ public class OperationKeysTest {
         List<Operation> ops = OperationKeys.assign("m", List.of(
                 spec("GET", "a"), spec("POST", "a"), spec("GET", "b")));
         assertEquals(List.of("m:GET:a", "m:POST:a", "m:GET:b"), keys(ops));
+    }
+
+    @Test
+    public void specsDifferingOnlyInParamsGetStableKeysWhateverTheInputOrder() {
+        Model.Param x = new Model.Param("x", "query", "string", false, null, List.of(), false);
+        Model.Param y = new Model.Param("y", "query", "string", false, null, List.of(), false);
+        OperationSpec withX = new OperationSpec("GET", "a/{id}", List.of(), List.of("application/json"), List.of(x),
+                null, false, null);
+        OperationSpec withY = new OperationSpec("GET", "a/{id}", List.of(), List.of("application/json"), List.of(y),
+                null, false, null);
+        java.util.Map<OperationSpec, String> forward = keyBySpec(OperationKeys.assign("m", List.of(withX, withY)));
+        java.util.Map<OperationSpec, String> backward = keyBySpec(OperationKeys.assign("m", List.of(withY, withX)));
+        assertEquals(forward, backward);
+        assertEquals(2, new java.util.HashSet<>(forward.values()).size());
+    }
+
+    private static java.util.Map<OperationSpec, String> keyBySpec(List<Operation> ops) {
+        java.util.Map<OperationSpec, String> out = new java.util.HashMap<>();
+        for (Operation op : ops) {
+            out.put(op.spec(), op.key());
+        }
+        return out;
+    }
+
+    @Test
+    public void wildcardConsumesFallsBackToACounter() {
+        List<Operation> ops = OperationKeys.assign("m", List.of(
+                spec("POST", "u", "*/*"), spec("POST", "u", "*/*;q=0.5"), spec("POST", "u", "application/*")));
+        for (Operation op : ops) {
+            assertFalse(op.key(), op.key().contains("#*"));
+        }
+        assertEquals(3, ops.stream().map(Operation::key).distinct().count());
+        assertTrue(keys(ops).contains("m:POST:u#2"));
     }
 }

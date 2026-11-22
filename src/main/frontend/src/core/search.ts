@@ -97,6 +97,7 @@ export function groupRows(summary: Summary, rows: SearchRow[], collapsed: Set<st
     .sort(
       (a, b) =>
         ORIGIN_ORDER.indexOf(a.origin) - ORIGIN_ORDER.indexOf(b.origin) ||
+        STABILITY_RANK[a.stability] - STABILITY_RANK[b.stability] ||
         (a.path < b.path ? -1 : a.path > b.path ? 1 : 0) ||
         (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
     );

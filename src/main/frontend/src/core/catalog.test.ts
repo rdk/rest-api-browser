@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CatalogStore, type FetchFn } from './catalog';
+import { CatalogStore, RETRY_DELAYS_MS, type FetchFn } from './catalog';
 import { index, module, summary } from './fixtures';
 import type { Index, Summary } from './types';
 
@@ -48,7 +48,9 @@ describe('CatalogStore', () => {
     });
     current = 'fresh';
     const store = new CatalogStore('http://host/jira', srv.fetchFn);
-    await store.load();
+    const loading = store.load();
+    await vi.advanceTimersByTimeAsync(RETRY_DELAYS_MS[0]);
+    await loading;
     expect(store.summary?.hash).toBe('fresh');
     expect(srv.calls.filter((c) => !c.includes('/index/'))).toHaveLength(2);
   });
@@ -56,7 +58,62 @@ describe('CatalogStore', () => {
   it('gives up when the retry also 404s', async () => {
     const srv = server({ summary: () => summary(mods), index: () => null });
     const store = new CatalogStore('http://host/jira', srv.fetchFn);
-    await expect(store.load()).rejects.toThrow();
+    const result = expect(store.load()).rejects.toThrow();
+    await vi.advanceTimersByTimeAsync(RETRY_DELAYS_MS.reduce((a, b) => a + b));
+    await result;
+    expect(srv.calls.filter((c) => !c.includes('/index/'))).toHaveLength(1 + RETRY_DELAYS_MS.length);
+  });
+
+  it('retries a 404 up to 3 times, refetching the summary each time', async () => {
+    let n = 0;
+    const srv = server({ summary: () => summary(mods, { hash: `h${n++}` }), index: (h) => (h === 'h3' ? index([], h) : null) });
+    const store = new CatalogStore('http://host/jira', srv.fetchFn);
+    const loading = store.load();
+    await vi.advanceTimersByTimeAsync(2000);
+    await loading;
+    expect(store.index?.hash).toBe('h3');
+  });
+
+  it('surfaces a 401 as SessionExpired and stops polling', async () => {
+    const fetchFn: FetchFn = () => json({}, 401);
+    const store = new CatalogStore('http://host/jira', fetchFn);
+    await expect(store.load()).rejects.toMatchObject({ name: 'SessionExpired' });
+    expect(store.error?.name).toBe('SessionExpired');
+    let expired = false;
+    const srv = server({ summary: () => summary(mods, { complete: false }), index: (h) => index([], h) });
+    const p2 = new CatalogStore('http://host/jira', (url, init) => (expired ? json({}, 401) : srv.fetchFn(url, init)));
+    await p2.load();
+    expired = true;
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(p2.error?.name).toBe('SessionExpired');
+    const before = srv.calls.length;
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(srv.calls.length).toBe(before);
+  });
+
+  it('load() again clears the pending timer and the backoff', async () => {
+    const srv = server({ summary: () => summary(mods, { complete: false }), index: (h) => index([], h) });
+    const store = new CatalogStore('http://host/jira', srv.fetchFn);
+    await store.load();
+    await vi.advanceTimersByTimeAsync(1000);
+    await store.refreshSoon();
+    const before = srv.calls.filter((c) => !c.includes('/index/')).length;
+    await vi.advanceTimersByTimeAsync(999);
+    expect(srv.calls.filter((c) => !c.includes('/index/')).length).toBe(before);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(srv.calls.filter((c) => !c.includes('/index/')).length).toBe(before + 1);
+    store.stop();
+  });
+
+  it('load() bails out when stop() was called meanwhile', async () => {
+    const srv = server({ summary: () => summary(mods, { complete: false }), index: (h) => index([], h) });
+    const store = new CatalogStore('http://host/jira', srv.fetchFn);
+    const loading = store.load();
+    store.stop();
+    await loading;
+    expect(store.summary).toBeNull();
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(srv.calls).toHaveLength(1);
   });
 
   it('polls with 1, 2, 4, 8, 8 second backoff while incomplete', async () => {

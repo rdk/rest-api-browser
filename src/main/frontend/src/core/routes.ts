@@ -46,6 +46,15 @@ function safeDecode(s: string): string {
   }
 }
 
+// JAX-RS regexes are Java syntax; one that JavaScript rejects must not break the whole matcher.
+function tryRegExp(source: string): RegExp | null {
+  try {
+    return new RegExp(source);
+  } catch {
+    return null;
+  }
+}
+
 function compileTemplate(src: string): TemplateSeg {
   let source = '^';
   let last = 0;
@@ -53,13 +62,14 @@ function compileTemplate(src: string): TemplateSeg {
   let restricted = false;
   for (const t of findTemplates(src)) {
     source += escapeRegExp(src.slice(last, t.start));
-    source += `(?<p${names.length}>${t.regex ?? '[^/]+'})`;
-    if (t.regex) restricted = true;
+    const valid = t.regex && tryRegExp(`^(?:${t.regex})$`) ? t.regex : null;
+    source += `(?<p${names.length}>${valid ?? '[^/]+'})`;
+    if (valid) restricted = true;
     names.push(t.name);
     last = t.end;
   }
   source += escapeRegExp(src.slice(last)) + '$';
-  return { re: new RegExp(source), names, restricted };
+  return { re: tryRegExp(source) ?? /^[^/]+$/, names, restricted };
 }
 
 function insert(root: Node, op: Operation): void {
@@ -78,9 +88,12 @@ function insert(root: Node, op: Operation): void {
     if (only && i === segs.length - 1 && (only.regex === '.+' || only.regex === '.*')) {
       const key = only.name + only.regex;
       let rest = node.rests.get(key);
-      if (!rest) node.rests.set(key, (rest = { re: new RegExp(`^${only.regex}$`), name: only.name, ops: [] }));
-      rest.ops.push(op);
-      return;
+      const re = tryRegExp(`^${only.regex}$`);
+      if (!rest && re) node.rests.set(key, (rest = { re, name: only.name, ops: [] }));
+      if (rest) {
+        rest.ops.push(op);
+        return;
+      }
     }
     let next = node.templates.get(seg);
     if (!next) node.templates.set(seg, (next = { seg: compileTemplate(seg), node: newNode() }));
@@ -140,11 +153,18 @@ function parseQuery(qs: string): Record<string, string[]> {
 }
 
 // Returns the path below "/rest/", or null when the URL is not ours.
+// baseUrl is the context path ("/jira", "" at the root); the page's origin is assumed.
 function restPath(baseUrl: string, path: string): string | null {
-  const base = new URL(baseUrl);
+  const origin = typeof location !== 'undefined' ? location.origin : 'http://localhost';
+  const base = new URL(baseUrl, origin);
   let p = path;
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(p)) {
-    const u = new URL(p);
+    let u: URL;
+    try {
+      u = new URL(p);
+    } catch {
+      return null;
+    }
     if (u.origin !== base.origin) return null;
     p = u.pathname;
   } else if (!p.startsWith('/')) {

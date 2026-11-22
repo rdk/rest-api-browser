@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { memo } from 'preact/compat';
 import type { Index, Operation, Summary } from '../core/types';
 import { CatalogStore } from '../core/catalog';
 import { buildRows } from '../core/search';
-import { formatState, parseState } from '../core/router';
+import { formatState, parseState, type RouteState } from '../core/router';
+import { findTemplates } from '../core/template';
 import { RequestRunner } from './runner';
-import { UserStore } from './userstore';
+import { UserStore, isCredentialHeader } from './userstore';
 import { Sidebar } from './Sidebar';
 import { OperationView, emptyDraft, type Draft } from './Operation';
 
@@ -13,6 +15,10 @@ interface Props {
   classicUrl: string;
   product: string;
 }
+
+const MemoSidebar = memo(Sidebar);
+const MemoOperation = memo(OperationView);
+const NONE = new Set<string>();
 
 export function App({ baseUrl, classicUrl, product }: Props) {
   const store = useMemo(() => new CatalogStore(baseUrl), [baseUrl]);
@@ -26,9 +32,10 @@ export function App({ baseUrl, classicUrl, product }: Props) {
     const sync = () => {
       setSummary(store.summary);
       setIndex(store.index);
+      if (store.error) setLoadError(describeError(store.error));
     };
     const off = store.onChange(sync);
-    store.load().then(sync, (e) => setLoadError('Could not load the catalog: ' + (e instanceof Error ? e.message : e)));
+    store.load().then(sync, (e) => setLoadError(describeError(e)));
     return () => {
       off();
       store.stop();
@@ -37,12 +44,14 @@ export function App({ baseUrl, classicUrl, product }: Props) {
 
   const rows = useMemo(() => (summary && index ? buildRows(summary, index) : []), [summary, index]);
   const opsByKey = useMemo(() => new Map((index?.operations ?? []).map((o) => [o.key, o])), [index]);
+  const modulesById = useMemo(() => new Map((summary?.modules ?? []).map((m) => [m.id, m])), [summary]);
 
   // ---- preferences
   const [query, setQuery] = useState('');
   const [supportedOnly, setSupportedOnly] = useState(false);
   const [methods, setMethods] = useState<string[]>([]);
   const [collapsed, setCollapsed] = useState<Set<string> | null>(null);
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(430);
   const [split, setSplit] = useState(0.45);
   useEffect(() => {
@@ -52,52 +61,75 @@ export function App({ baseUrl, classicUrl, product }: Props) {
       if (p.collapsed) setCollapsed(new Set(p.collapsed));
       if (p.sidebarWidth) setSidebarWidth(p.sidebarWidth);
       if (p.split) setSplit(p.split);
+      setPrefsLoaded(true);
     });
   }, [userStore]);
-  // first visit: only the product's supported modules start expanded
+  // first visit: only the product's supported modules start expanded, decided as soon as the modules are known
   useEffect(() => {
-    if (collapsed === null && summary?.complete) {
+    if (prefsLoaded && collapsed === null && summary) {
       setCollapsed(new Set(summary.modules.filter((m) => m.stability !== 'supported').map((m) => m.id)));
     }
-  }, [summary, collapsed]);
-  const save = (patch: Parameters<UserStore['setPrefs']>[0]) => void userStore.setPrefs(patch);
+  }, [prefsLoaded, summary, collapsed]);
+  const save = useCallback((patch: Parameters<UserStore['setPrefs']>[0]) => void userStore.setPrefs(patch), [userStore]);
+  const onSupportedOnly = useCallback((v: boolean) => {
+    setSupportedOnly(v);
+    save({ supportedOnly: v });
+  }, [save]);
+  const onMethods = useCallback((m: string[]) => {
+    setMethods(m);
+    save({ methods: m });
+  }, [save]);
+  const onCollapsed = useCallback((c: Set<string>) => {
+    setCollapsed(c);
+    save({ collapsed: [...c] });
+  }, [save]);
+  const onSplit = useCallback((r: number) => {
+    setSplit(r);
+    save({ split: r });
+  }, [save]);
 
   // ---- selection, kept in the URL (?op=...)
-  const initial = useMemo(() => parseState(location.search), []);
-  const [selectedKey, setSelectedKey] = useState<string | undefined>(initial.op);
+  const routeState = useRef<RouteState>(parseState(location.search));
+  const [selectedKey, setSelectedKey] = useState<string | undefined>(routeState.current.op);
   const drafts = useRef(new Map<string, Draft>());
-  const [, rerender] = useState(0);
   useEffect(() => {
-    const onPop = () => setSelectedKey(parseState(location.search).op);
+    const onPop = () => {
+      routeState.current = parseState(location.search);
+      if (routeState.current.op !== selectedRef.current) runner.abort();
+      setSelectedKey(routeState.current.op);
+    };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
-  }, []);
+  }, [runner]);
+  const selectedRef = useRef(selectedKey);
+  selectedRef.current = selectedKey;
   const select = useCallback((op: Operation) => {
+    // switching to another operation cancels the running request
+    if (op.key !== selectedRef.current) runner.abort();
     setSelectedKey(op.key);
-    const url = location.pathname + formatState({ op: op.key, path: {}, q: {}, h: {} });
+    routeState.current = { op: op.key, path: {}, q: {}, h: {} };
+    const url = location.pathname + formatState(routeState.current);
     if (location.pathname + location.search !== url) history.pushState(null, '', url);
+  }, [runner]);
+  const onDraft = useCallback((key: string, d: Draft) => {
+    drafts.current.set(key, d);
   }, []);
 
-  const op = selectedKey ? opsByKey.get(selectedKey) : undefined;
+  // while the catalog is being (re)built, an open operation stays open even if its module is briefly missing
+  const lastOp = useRef<Operation | undefined>(undefined);
+  let op = selectedKey ? opsByKey.get(selectedKey) : undefined;
+  if (!op && selectedKey && lastOp.current?.key === selectedKey && summary && !summary.complete) op = lastOp.current;
+  lastOp.current = op;
   let draft: Draft | undefined;
   if (op) {
     draft = drafts.current.get(op.key);
     if (!draft) {
-      draft = emptyDraft(op);
-      if (initial.op === op.key) {
-        // values from a deep link fill the form; they are never sent by themselves
-        draft.values = {
-          ...draft.values,
-          path: { ...initial.path },
-          query: { ...draft.values.query, ...initial.q },
-          header: { ...initial.h },
-        };
-      }
+      draft = prefill(op, emptyDraft(op), routeState.current);
       drafts.current.set(op.key, draft);
     }
   }
 
-  // ---- layout: fill the viewport below the product's header, no page scrollbar
+  // ---- layout: fill the viewport below the product's header
   const root = useRef<HTMLDivElement>(null);
   const [height, setHeight] = useState(600);
   useLayoutEffect(() => {
@@ -110,14 +142,24 @@ export function App({ baseUrl, classicUrl, product }: Props) {
     return () => window.removeEventListener('resize', measure);
   }, []);
 
-  const refresh = async () => {
-    await fetch(baseUrl + '/rest/restbrowser/1/catalog/refresh', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'X-Atlassian-Token': 'no-check' },
-    });
-    await store.load();
-  };
+  const [refreshError, setRefreshError] = useState<string | undefined>();
+  const refresh = useCallback(async () => {
+    setRefreshError(undefined);
+    try {
+      const res = await fetch(baseUrl + '/rest/restbrowser/1/catalog/refresh', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'X-Atlassian-Token': 'no-check' },
+      });
+      if (!res.ok) {
+        setRefreshError(res.status === 403 ? 'Only system administrators can rebuild the catalog.' : `The rebuild failed (${res.status}).`);
+        return;
+      }
+      await store.refreshSoon();
+    } catch (e) {
+      setRefreshError('The rebuild failed: ' + (e instanceof Error ? e.message : String(e)));
+    }
+  }, [baseUrl, store]);
 
   return (
     <div class="rab-n" ref={root} style={{ height: height + 'px' }}>
@@ -129,7 +171,7 @@ export function App({ baseUrl, classicUrl, product }: Props) {
       </div>
       <div class="rab-n-body-row">
         <div class="rab-n-side" style={{ width: sidebarWidth + 'px' }}>
-          <Sidebar
+          <MemoSidebar
             summary={summary}
             rows={rows}
             selectedKey={selectedKey}
@@ -137,50 +179,36 @@ export function App({ baseUrl, classicUrl, product }: Props) {
             query={query}
             onQuery={setQuery}
             supportedOnly={supportedOnly}
-            onSupportedOnly={(v) => {
-              setSupportedOnly(v);
-              save({ supportedOnly: v });
-            }}
+            onSupportedOnly={onSupportedOnly}
             methods={methods}
-            onMethods={(m) => {
-              setMethods(m);
-              save({ methods: m });
-            }}
-            collapsed={collapsed ?? new Set()}
-            onCollapsed={(c) => {
-              setCollapsed(c);
-              save({ collapsed: [...c] });
-            }}
-            onRefresh={summary?.admin ? refresh : undefined}
-            loadError={loadError}
+            onMethods={onMethods}
+            collapsed={collapsed ?? NONE}
+            onCollapsed={onCollapsed}
+            onRefresh={summary?.sysadmin ? refresh : undefined}
+            loadError={loadError ?? refreshError}
           />
         </div>
-        <SideHandle
-          onWidth={(w) => setSidebarWidth(w)}
-          onDone={(w) => save({ sidebarWidth: w })}
-        />
+        <SideHandle onWidth={setSidebarWidth} onDone={(w) => save({ sidebarWidth: w })} />
         <div class="rab-n-main">
           {op && draft && summary ? (
-            <OperationView
+            <MemoOperation
               key={op.key}
               summary={summary}
               op={op}
-              module={summary.modules.find((m) => m.id === op.module)}
-              draft={draft}
-              onDraft={(d) => {
-                drafts.current.set(op.key, d);
-                rerender((n) => n + 1);
-              }}
+              module={modulesById.get(op.module)}
+              initialDraft={draft}
+              onDraft={onDraft}
               runner={runner}
               userStore={userStore}
               split={split}
-              onSplit={(r) => {
-                setSplit(r);
-                save({ split: r });
-              }}
+              onSplit={onSplit}
             />
           ) : (
-            <Welcome summary={summary} missing={!!selectedKey && !!index && !op} />
+            <Welcome
+              summary={summary}
+              missing={!!selectedKey && !!index && !op && !!summary?.complete}
+              indexing={!!selectedKey && !op && !summary?.complete}
+            />
           )}
         </div>
       </div>
@@ -188,11 +216,41 @@ export function App({ baseUrl, classicUrl, product }: Props) {
   );
 }
 
-function Welcome({ summary, missing }: { summary: Summary | null; missing: boolean }) {
+function describeError(e: unknown): string {
+  if (e instanceof Error && e.name === 'SessionExpired') return 'Your session has expired: reload the page to log in again.';
+  return 'Could not load the catalog: ' + (e instanceof Error ? e.message : String(e));
+}
+
+/**
+ * Values from a deep link fill the form; they are never sent by themselves. Only parameters the operation declares
+ * are taken, so a link cannot add anything the form does not show; other headers go to the visible custom headers,
+ * and credential headers are dropped.
+ */
+function prefill(op: Operation, draft: Draft, state: RouteState): Draft {
+  if (state.op !== op.key) return draft;
+  const declared = (where: string) => new Set(op.params.filter((p) => p.in === where).map((p) => p.name));
+  const pathNames = new Set([...declared('path'), ...findTemplates(op.path).map((t) => t.name)]);
+  const queryNames = declared('query');
+  const headerNames = declared('header');
+  const path = Object.fromEntries(Object.entries(state.path).filter(([k]) => pathNames.has(k)));
+  const query = Object.fromEntries(Object.entries(state.q).filter(([k]) => queryNames.has(k)));
+  const header = Object.fromEntries(Object.entries(state.h).filter(([k]) => headerNames.has(k)));
+  const custom = Object.entries(state.h)
+    .filter(([k]) => !headerNames.has(k) && !isCredentialHeader(k))
+    .map(([name, value]) => ({ name, value }));
+  return {
+    ...draft,
+    values: { ...draft.values, path, query: { ...draft.values.query, ...query }, header },
+    custom,
+  };
+}
+
+function Welcome({ summary, missing, indexing }: { summary: Summary | null; missing: boolean; indexing: boolean }) {
   const ops = summary ? summary.modules.reduce((n, m) => n + m.opCount, 0) : 0;
   return (
     <div class="rab-n-welcome" data-testid="welcome">
       {missing && <div class="rab-n-banner">The operation in the link no longer exists on this instance.</div>}
+      {indexing && <div class="rab-n-banner">The catalog is still being built; the operation in the link opens when its module is ready.</div>}
       <h2>Find an operation</h2>
       <p>
         Type in the search box (<kbd>/</kbd>) to search all {ops ? ops.toLocaleString() + ' ' : ''}operations by method,
@@ -217,18 +275,23 @@ function SideHandle({ onWidth, onDone }: { onWidth: (w: number) => void; onDone:
   const ref = useRef<HTMLDivElement>(null);
   const onDown = (e: PointerEvent) => {
     const row = ref.current?.parentElement;
-    if (!row) return;
+    const side = row?.firstElementChild as HTMLElement | null;
+    if (!row || !side) return;
     e.preventDefault();
     const left = row.getBoundingClientRect().left;
     let last = 0;
+    // resize the element directly while dragging; the state (and a re-render) follows once, on release
     const move = (ev: PointerEvent) => {
       last = Math.round(Math.min(row.clientWidth * 0.6, Math.max(240, ev.clientX - left)));
-      onWidth(last);
+      side.style.width = last + 'px';
     };
     const up = () => {
       document.removeEventListener('pointermove', move);
       document.removeEventListener('pointerup', up);
-      if (last) onDone(last);
+      if (last) {
+        onWidth(last);
+        onDone(last);
+      }
     };
     document.addEventListener('pointermove', move);
     document.addEventListener('pointerup', up);

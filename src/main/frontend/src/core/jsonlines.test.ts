@@ -52,6 +52,12 @@ describe('jsonlines', () => {
     expect(find(m, '')).toEqual([]);
   });
 
+  it('rejects invalid unicode escapes', () => {
+    expect(buildLines('"\\u00e9"')).not.toBeNull();
+    expect(buildLines('"\\u12g4"')).toBeNull();
+    expect(buildLines('"\\u12"')).toBeNull();
+  });
+
   it('builds a ~5 MB document quickly', () => {
     const items = Array.from({ length: 30000 }, (_, i) => ({
       id: i,
@@ -73,5 +79,8 @@ describe('jsonlines', () => {
     expect(vis.length).toBe(3);
     expect(hits).toHaveLength(1);
     expect(built).toBeLessThan(3000);
+    const t3 = performance.now();
+    expect(find(m, 'number 12345')).toHaveLength(1);
+    expect(performance.now() - t3).toBeLessThan(200);
   });
 });

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { Module, Operation, Param, Summary } from '../core/types';
-import { buildRequest, toCurl, type BuiltRequest, type RequestValues } from '../core/request';
+import { buildRequest, mediaChoices, setHeader, toCurl, type BuiltRequest, type RequestValues } from '../core/request';
+import { findTemplates } from '../core/template';
 import type { RequestRunner, RunResult } from './runner';
 import type { HistoryEntry, UserStore } from './userstore';
 import { CopyButton, MethodBadge, Tabs, WRITE_METHODS } from './bits';
@@ -18,7 +19,10 @@ export function emptyDraft(op: Operation): Draft {
   const query: Record<string, string[]> = {};
   for (const p of op.params) if (p.in === 'query') query[p.name] = [''];
   return {
-    values: { path: {}, query, header: {}, matrix: {}, contentType: op.consumes[0], accept: op.produces[0] },
+    values: {
+      path: {}, query, header: {}, matrix: {},
+      contentType: mediaChoices(op.consumes)[0], accept: mediaChoices(op.produces)[0],
+    },
     custom: [],
     noXsrfHeader: false,
     result: null,
@@ -31,18 +35,37 @@ interface Props {
   summary: Summary;
   op: Operation;
   module?: Module;
-  draft: Draft;
-  onDraft: (d: Draft) => void;
+  /** The draft to start from; the view owns it from then on and reports every change through onDraft. */
+  initialDraft: Draft;
+  onDraft: (key: string, d: Draft) => void;
   runner: RequestRunner;
   userStore: UserStore;
   split: number;
   onSplit: (ratio: number) => void;
 }
 
-export function OperationView({ summary, op, module, draft, onDraft, runner, userStore, split, onSplit }: Props) {
+export function OperationView({ summary, op, module, initialDraft, onDraft, runner, userStore, split, onSplit }: Props) {
   const [tab, setTab] = useState<Tab>('params');
   const [running, setRunning] = useState(false);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  // the draft lives here, so typing re-renders this view only, not the list or the whole page
+  const [draft, setDraftState] = useState<Draft>(initialDraft);
+  const latest = useRef(draft);
+  const mounted = useRef(true);
+  const setDraft = (d: Draft) => {
+    latest.current = d;
+    if (mounted.current) setDraftState(d);
+    onDraft(op.key, d);
+  };
+  // switching to another operation cancels the running request (App does it where the selection changes);
+  // here only the bookkeeping: a closed view or a superseded run must not write its result
+  const runSeq = useRef(0);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const method = op.method.toUpperCase();
   const write = WRITE_METHODS.has(method);
   const hasBody = method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE';
@@ -57,42 +80,51 @@ export function OperationView({ summary, op, module, draft, onDraft, runner, use
   const absolute = (url: string) => (url.startsWith('/') ? location.origin + url : url);
 
   const send = async () => {
-    if (!built.request || running) return;
+    const sent = latest.current;
+    const request = tryBuild(summary, op, sent).request;
+    if (!request || runner.running) return;
+    const run = ++runSeq.current;
     setRunning(true);
-    const result = await runner.run(built.request);
-    setRunning(false);
-    onDraft({ ...draft, result });
+    const result = await runner.run(request);
+    if (run !== runSeq.current) return; // a newer run took over
+    if (mounted.current) setRunning(false);
+    // keep what was typed while the request ran; only the result is new
+    setDraft({ ...latest.current, result });
     if (!result.error) {
       const entry = await userStore.addHistory({
         opKey: op.key,
         method,
-        url: built.request.url,
-        values: draft.values,
+        url: request.url,
+        values: sent.values,
+        custom: sent.custom,
+        noXsrfHeader: sent.noXsrfHeader,
         status: result.status,
         durationMs: Math.round(result.durationMs),
         size: result.size,
         bodyPreview: result.text?.slice(0, 2000),
       });
-      setHistory((h) => [entry, ...h].slice(0, 20));
+      if (mounted.current) setHistory((h) => [entry, ...h].slice(0, 20));
     }
   };
   const cancel = () => runner.abort();
+  const sendRef = useRef(send);
+  sendRef.current = send;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        send();
+        sendRef.current();
       } else if (e.key === 'Escape' && runner.running) {
-        cancel();
+        runner.abort();
       }
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  });
+  }, [runner]);
 
-  const setValues = (values: RequestValues) => onDraft({ ...draft, values });
-  const visibleParams = op.params.filter((p) => p.in !== 'form');
+  const setValues = (values: RequestValues) => setDraft({ ...latest.current, values });
+  const visibleParams = withTemplateParams(op).filter((p) => p.in !== 'form');
   const formParams = op.params.filter((p) => p.in === 'form');
 
   return (
@@ -144,11 +176,13 @@ export function OperationView({ summary, op, module, draft, onDraft, runner, use
               <ParamsTab params={visibleParams} formParams={formParams} values={draft.values} onValues={setValues} />
             )}
             {tab === 'body' && <BodyTab op={op} values={draft.values} onValues={setValues} />}
-            {tab === 'headers' && <HeadersTab op={op} draft={draft} onDraft={onDraft} write={write} />}
+            {tab === 'headers' && <HeadersTab op={op} draft={draft} onDraft={setDraft} write={write} />}
             {tab === 'history' && (
               <HistoryTab
                 entries={history}
-                onRestore={(e) => onDraft({ ...draft, values: e.values })}
+                onRestore={(e) =>
+                  setDraft({ ...latest.current, values: e.values, custom: e.custom ?? [], noXsrfHeader: !!e.noXsrfHeader })
+                }
                 onClear={async () => {
                   await userStore.clearHistory(op.key);
                   setHistory([]);
@@ -164,10 +198,19 @@ export function OperationView({ summary, op, module, draft, onDraft, runner, use
   );
 }
 
+/** The operation's parameters, plus a required path parameter for any template no parameter declares. */
+function withTemplateParams(op: Operation): Param[] {
+  const declared = new Set(op.params.filter((p) => p.in === 'path').map((p) => p.name));
+  const missing = findTemplates(op.path)
+    .filter((t) => !declared.has(t.name))
+    .map((t): Param => ({ name: t.name, in: 'path', type: 'string', required: true }));
+  return missing.length ? [...op.params, ...missing] : op.params;
+}
+
 function tryBuild(summary: Summary, op: Operation, draft: Draft): { request?: BuiltRequest; url: string; error?: string } {
   try {
     const req = buildRequest(summary, op, draft.values, { accept: draft.values.accept, noXsrfHeader: draft.noXsrfHeader });
-    for (const h of draft.custom) if (h.name.trim()) req.headers[h.name.trim()] = h.value;
+    for (const h of draft.custom) if (h.name.trim()) setHeader(req.headers, h.name.trim(), h.value);
     return { request: req, url: req.url };
   } catch (e) {
     // a required path parameter is still empty: show the template so the URL bar stays useful
@@ -209,7 +252,7 @@ function ParamsTab({ params, formParams, values, onValues }: {
                     )}
                   </div>
                 ))}
-                {p.repeating && (
+                {p.repeating && p.in === 'query' && (
                   <button class="rab-n-link" onClick={() => set(p, [...list, ''])}>+ value</button>
                 )}
               </td>
@@ -257,7 +300,7 @@ function ParamInput({ param, value, onChange }: { param: Param; value: string; o
 }
 
 function BodyTab({ op, values, onValues }: { op: Operation; values: RequestValues; onValues: (v: RequestValues) => void }) {
-  const types = op.consumes.length ? op.consumes : ['application/json'];
+  const types = mediaChoices(op.consumes);
   const contentType = values.contentType ?? types[0];
   const isJson = /json/i.test(contentType);
   const error = useMemo(() => {
@@ -303,7 +346,7 @@ function BodyTab({ op, values, onValues }: { op: Operation; values: RequestValue
 }
 
 function HeadersTab({ op, draft, onDraft, write }: { op: Operation; draft: Draft; onDraft: (d: Draft) => void; write: boolean }) {
-  const produces = op.produces.length ? op.produces : ['application/json'];
+  const produces = mediaChoices(op.produces);
   const custom = draft.custom.length ? draft.custom : [{ name: '', value: '' }];
   const setCustom = (list: { name: string; value: string }[]) => onDraft({ ...draft, custom: list });
   return (

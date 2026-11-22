@@ -70,12 +70,27 @@ public abstract class RequiresLoginServlet extends HttpServlet {
         response.sendRedirect(loginUriProvider.getLoginUri(getUri(request)).toASCIIString());
     }
 
-    private static URI getUri(final HttpServletRequest request) {
-        final StringBuffer builder = request.getRequestURL();
+    static URI getUri(final HttpServletRequest request) {
+        final StringBuilder builder = new StringBuilder(request.getRequestURL());
         if (request.getQueryString() != null) {
             builder.append("?");
             builder.append(request.getQueryString());
         }
-        return URI.create(builder.toString());
+        return URI.create(encodeIllegal(builder.toString()));
+    }
+
+    /** Percent-encodes characters a URI may not contain, which browsers send unencoded in deep links ({ and }). */
+    static String encodeIllegal(String uri) {
+        final StringBuilder out = new StringBuilder(uri.length());
+        uri.codePoints().forEach(c -> {
+            if ("{}|\\^`\"<> ".indexOf(c) >= 0 || c < 0x20 || c > 0x7e) {
+                for (byte b : new String(Character.toChars(c)).getBytes(java.nio.charset.StandardCharsets.UTF_8)) {
+                    out.append('%').append(String.format("%02X", b & 0xff));
+                }
+            } else {
+                out.appendCodePoint(c);
+            }
+        });
+        return out.toString();
     }
 }

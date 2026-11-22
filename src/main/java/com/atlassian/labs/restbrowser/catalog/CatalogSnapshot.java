@@ -29,16 +29,27 @@ public final class CatalogSnapshot {
     private final int done;
     private final int total;
     private final List<ModuleEntry> modules;
+    private final List<Operation> operations;
     private final byte[] index;
+    private final String adminTag;
 
     private CatalogSnapshot(String hash, boolean complete, int done, int total, List<ModuleEntry> modules,
-                            byte[] index) {
+                            List<Operation> operations, byte[] index) {
         this.hash = hash;
         this.complete = complete;
         this.done = done;
         this.total = total;
         this.modules = modules;
+        this.operations = operations;
         this.index = index;
+        // error details are node-specific, so they stay out of the shared hash; admins' ETag covers them
+        StringBuilder errors = new StringBuilder(hash);
+        for (ModuleEntry m : modules) {
+            if (m.error() != null) {
+                errors.append('\n').append(m.id()).append('=').append(m.error());
+            }
+        }
+        this.adminTag = hash + "-" + sha256(errors.toString()).substring(0, 8);
     }
 
     static CatalogSnapshot of(List<ModuleEntry> modules, List<Operation> operations, boolean complete, int done,
@@ -60,8 +71,18 @@ public final class CatalogSnapshot {
         hashInput.append(operationsJson);
         String hash = sha256(hashInput.toString()).substring(0, 24);
         String index = "{\"format\":" + FORMAT + ",\"hash\":\"" + hash + "\",\"operations\":" + operationsJson + "}";
-        return new CatalogSnapshot(hash, complete, done, total, List.copyOf(sortedModules),
+        return new CatalogSnapshot(hash, complete, done, total, List.copyOf(sortedModules), List.copyOf(sortedOps),
                 index.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** The same catalog marked incomplete: a rebuild has started. */
+    CatalogSnapshot incomplete(String ownVersion) {
+        return complete ? of(modules, operations, false, done, total, ownVersion) : this;
+    }
+
+    /** The ETag base for admins: the hash plus the error details only admins see. */
+    public String adminTag() {
+        return adminTag;
     }
 
     public String hash() {
@@ -89,11 +110,26 @@ public final class CatalogSnapshot {
         return index.clone();
     }
 
+    /** Writes the index document without copying it. */
+    public void writeIndex(java.io.OutputStream out) throws java.io.IOException {
+        out.write(index);
+    }
+
+    public int indexLength() {
+        return index.length;
+    }
+
     /**
      * The summary document for one user. Plugin versions and error details are for admins only.
      */
     public String summary(String productName, String productVersion, String productBuild, String baseUrl,
                           boolean admin) {
+        return summary(productName, productVersion, productBuild, baseUrl, admin, false);
+    }
+
+    /** The summary document; sysadmin tells the UI whether its user may trigger a rebuild. */
+    public String summary(String productName, String productVersion, String productBuild, String baseUrl,
+                          boolean admin, boolean sysadmin) {
         Json j = new Json().beginObject()
                 .field("format", FORMAT)
                 .name("product").beginObject()
@@ -104,6 +140,7 @@ public final class CatalogSnapshot {
                 .field("complete", complete)
                 .name("progress").beginObject().field("done", done).field("total", total).endObject()
                 .field("admin", admin)
+                .field("sysadmin", sysadmin)
                 .name("modules").beginArray();
         for (ModuleEntry m : modules) {
             j.beginObject()

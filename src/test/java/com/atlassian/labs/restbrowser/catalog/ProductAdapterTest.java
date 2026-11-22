@@ -122,4 +122,18 @@ public class ProductAdapterTest {
         when(pmm.isUserInstalled(org.mockito.ArgumentMatchers.any())).thenThrow(new IllegalStateException("x"));
         assertEquals("bundled", new ProductAdapter("jira", () -> pmm).origin(plugin(true, false)));
     }
+
+    @Test
+    public void managerIsNotCalledAgainAfterItFailedOnce() {
+        PluginMetadataManager pmm = mock(PluginMetadataManager.class);
+        when(pmm.isUserInstalled(org.mockito.ArgumentMatchers.any())).thenThrow(new IllegalStateException("x"));
+        ProductAdapter adapter = new ProductAdapter("jira", () -> pmm);
+        assertEquals("bundled", adapter.origin(plugin(true, false)));
+        assertEquals("product", adapter.origin(plugin(true, true)));
+        assertEquals("user", adapter.origin(plugin(false, false)));
+        org.mockito.Mockito.verify(pmm, org.mockito.Mockito.times(1))
+                .isUserInstalled(org.mockito.ArgumentMatchers.any());
+        org.mockito.Mockito.verify(pmm, org.mockito.Mockito.never())
+                .isSystemProvided(org.mockito.ArgumentMatchers.any());
+    }
 }

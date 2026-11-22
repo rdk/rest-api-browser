@@ -20,6 +20,20 @@ const s = summary(mods);
 const rows = buildRows(s, index(ops));
 const keys = (r: typeof rows) => r.map((x) => `${x.op.method} ${x.path}`);
 
+describe('groupRows order', () => {
+  it('puts supported modules first within an origin, then by path', () => {
+    const ms = [
+      module('b', 'a/1', { stability: 'internal' }),
+      module('c', 'z/1', { stability: 'supported' }),
+      module('d', 'b/1', { stability: 'supported' }),
+      module('e', 'a/2', { origin: 'bundled', stability: 'supported' }),
+    ];
+    const sm = summary(ms);
+    const out = groupRows(sm, buildRows(sm, index(ms.map((m) => op(m.id, 'GET', 'x')))));
+    expect(out.map((r) => (r.kind === 'module' ? r.module.id : '')).filter(Boolean)).toEqual(['d', 'c', 'b', 'e']);
+  });
+});
+
 describe('search', () => {
   it('ANDs tokens case-insensitively across method, path and plugin name', () => {
     expect(keys(search(rows, 'POST ISSUE'))).toEqual(['POST api/2/issue', 'POST my/1/issue/notify']);

@@ -11,6 +11,8 @@ export interface HistoryEntry {
   durationMs?: number;
   size?: number;
   bodyPreview?: string;
+  custom?: { name: string; value: string }[];   // custom headers, credentials removed
+  noXsrfHeader?: boolean;
 }
 
 export interface Prefs {
@@ -27,7 +29,7 @@ const PREVIEW_MAX = 2000;
 
 const ALWAYS_DROP = new Set(['authorization', 'proxy-authorization', 'cookie', 'set-cookie']);
 
-function isCredentialHeader(name: string): boolean {
+export function isCredentialHeader(name: string): boolean {
   const n = name.toLowerCase();
   if (n === 'x-atlassian-token') return false;
   return ALWAYS_DROP.has(n) || /token|secret|password/.test(n);
@@ -110,6 +112,7 @@ export class UserStore {
       id: newId(),
       at: Date.now(),
       values: cleanValues(entry.values),
+      custom: entry.custom?.filter((h) => h.name.trim() && !isCredentialHeader(h.name.trim())),
       bodyPreview: entry.bodyPreview === undefined ? undefined : entry.bodyPreview.slice(0, PREVIEW_MAX),
     };
     const kept: HistoryEntry[] = [];

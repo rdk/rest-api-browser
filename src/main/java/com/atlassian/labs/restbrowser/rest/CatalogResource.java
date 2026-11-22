@@ -1,6 +1,7 @@
 package com.atlassian.labs.restbrowser.rest;
 
-import com.atlassian.annotations.security.AnonymousSiteAccess;
+import com.atlassian.annotations.security.LicensedOnly;
+import com.atlassian.annotations.security.SystemAdminOnly;
 import com.atlassian.labs.restbrowser.catalog.CatalogService;
 import com.atlassian.labs.restbrowser.catalog.CatalogSnapshot;
 import com.atlassian.labs.restbrowser.servlet.RequiresLoginServlet;
@@ -19,6 +20,7 @@ import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.StreamingOutput;
 
 /**
  * The catalog of this node's REST API, for the new UI.
@@ -28,11 +30,12 @@ import jakarta.ws.rs.core.Response;
  *     complete;</li>
  *     <li>{@code POST /catalog/refresh}: system administrators rebuild the catalog.</li>
  * </ul>
- * Who may read it is the same rule as for the page: logged-in users, or anyone when the product runs with
- * {@code -Drest.api.browser.anonymous=true}.
+ * Who may read it: licensed users. The catalog lists every endpoint and app of the instance, so unlicensed accounts
+ * (for example service desk portal customers) and anonymous users get nothing, whatever
+ * {@code -Drest.api.browser.anonymous} says for the classic page.
  */
 @Path("/catalog")
-@AnonymousSiteAccess
+@LicensedOnly
 public class CatalogResource {
 
     static final String JSON = MediaType.APPLICATION_JSON + ";charset=UTF-8";
@@ -57,13 +60,17 @@ public class CatalogResource {
             return unauthorized();
         }
         CatalogSnapshot snapshot = catalog.current(request.getServletContext());
-        boolean admin = isAdmin(request);
-        String etag = "\"" + snapshot.hash() + (admin ? "-a" : "-u") + "\"";
-        if (etag.equals(request.getHeader("If-None-Match"))) {
+        UserKey user = userManager.getRemoteUserKey(request);
+        boolean admin = user != null && userManager.isAdmin(user);
+        boolean sysadmin = user != null && userManager.isSystemAdmin(user);
+        String tag = admin ? snapshot.adminTag() + (sysadmin ? "-s" : "-a") : snapshot.hash() + "-u";
+        String etag = "\"" + tag + "\"";
+        if (matches(request.getHeader("If-None-Match"), tag)) {
             return Response.notModified().header("ETag", etag).header("Cache-Control", "private, no-cache").build();
         }
         String body = snapshot.summary(applicationProperties.getDisplayName(), applicationProperties.getVersion(),
-                applicationProperties.getBuildNumber(), applicationProperties.getBaseUrl(UrlMode.RELATIVE), admin);
+                applicationProperties.getBuildNumber(), applicationProperties.getBaseUrl(UrlMode.RELATIVE), admin,
+                sysadmin);
         return Response.ok(body, JSON).header("ETag", etag).header("Cache-Control", "private, no-cache").build();
     }
 
@@ -80,12 +87,14 @@ public class CatalogResource {
             return Response.status(Response.Status.NOT_FOUND).header("Cache-Control", "no-store")
                     .type(JSON).entity("{\"error\":\"unknown-hash\",\"hash\":\"" + snapshot.hash() + "\"}").build();
         }
-        return Response.ok(snapshot.index(), JSON)
+        StreamingOutput body = snapshot::writeIndex;
+        return Response.ok(body, JSON).header("Content-Length", snapshot.indexLength())
                 .header("Cache-Control", snapshot.complete() ? IMMUTABLE : "private, no-cache").build();
     }
 
     @POST
     @Path("/refresh")
+    @SystemAdminOnly
     public Response refresh(@QueryParam("module") String module, @Context HttpServletRequest request) {
         UserKey user = userManager.getRemoteUserKey(request);
         if (user == null || !userManager.isSystemAdmin(user)) {
@@ -105,9 +114,28 @@ public class CatalogResource {
         return Boolean.getBoolean(RequiresLoginServlet.RAB_ANONYMOUS) || userManager.getRemoteUserKey(request) != null;
     }
 
-    private boolean isAdmin(HttpServletRequest request) {
-        UserKey user = userManager.getRemoteUserKey(request);
-        return user != null && userManager.isAdmin(user);
+    /**
+     * Whether an If-None-Match header names this tag: weak tags (W/), a suffix a compression filter may add
+     * ("-gzip") and lists are accepted.
+     */
+    static boolean matches(String ifNoneMatch, String tag) {
+        if (ifNoneMatch == null) {
+            return false;
+        }
+        for (String candidate : ifNoneMatch.split(",")) {
+            String c = candidate.trim();
+            if (c.startsWith("W/")) {
+                c = c.substring(2);
+            }
+            c = c.replace("\"", "");
+            if (c.endsWith("-gzip")) {
+                c = c.substring(0, c.length() - "-gzip".length());
+            }
+            if (c.equals(tag) || c.equals("*")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static Response unauthorized() {

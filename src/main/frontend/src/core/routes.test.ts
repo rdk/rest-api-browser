@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createMatcher } from './routes';
+import { splitSegments } from './template';
 import { index, module, op, summary } from './fixtures';
 
 const s = summary([module('jira:api2', 'api/2'), module('jira:api', 'api'), module('x:files', 'files/1')]);
@@ -15,9 +16,41 @@ const ops = [
 ];
 const m = createMatcher(s, index(ops));
 
+describe('routes robustness', () => {
+  it('works with a relative, an empty and an absolute baseUrl', () => {
+    for (const baseUrl of ['/jira', '', 'http://host/jira']) {
+      const prefix = baseUrl.replace(/^https?:\/\/host/, '');
+      const mm = createMatcher(summary([module('m', 'api/2')], { baseUrl }), index([op('m', 'GET', 'a/{k}')]));
+      expect(mm.match(`${prefix}/rest/api/2/a/1`)?.values.k).toBe('1');
+      expect(mm.match('rest/api/2/a/2')?.values.k).toBe('2');
+      expect(mm.match('http://[bad')).toBeNull();
+    }
+  });
+
+  it('survives Java-only regexes', () => {
+    const mm = createMatcher(summary([module('m', 'api/2')]), index([
+      op('m', 'GET', 'a/{x: (?i)abc}'),
+      op('m', 'GET', 'b/{x: [a-z]++}'),
+      op('m', 'GET', 'c/{x: \p{Alnum}+}/{y}'),
+      op('m', 'GET', 'ok/{id}'),
+    ]));
+    expect(mm.match('/rest/api/2/ok/1')?.values.id).toBe('1');
+    expect(mm.match('/rest/api/2/a/abc')?.values.x).toBe('abc');
+    expect(mm.match('/rest/api/2/b/zz')?.values.x).toBe('zz');
+  });
+
+  it('matches an operation at the module root', () => {
+    expect(splitSegments('')).toEqual([]);
+    const mm = createMatcher(summary([module('m', 'api/2')]), index([op('m', 'GET', ''), op('m', 'GET', 'x')]));
+    expect(mm.match('/jira/rest/api/2')?.op.path).toBe('');
+    expect(mm.match('/jira/rest/api/2/')?.op.path).toBe('');
+    expect(mm.match('/jira/rest/api/2/x')?.op.path).toBe('x');
+  });
+});
+
 describe('routes', () => {
   it('matches a full URL and returns values and query', () => {
-    const r = m.match('http://host/jira/rest/api/2/issue/PROJ-42?fields=a&fields=b&expand=x%20y')!;
+    const r = m.match('http://localhost/jira/rest/api/2/issue/PROJ-42?fields=a&fields=b&expand=x%20y')!;
     expect(r.op.method).toBe('GET');
     expect(r.op.path).toBe('issue/{issueIdOrKey}');
     expect(r.values).toEqual({ issueIdOrKey: 'PROJ-42' });

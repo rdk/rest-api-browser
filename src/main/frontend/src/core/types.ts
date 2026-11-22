@@ -3,9 +3,9 @@ export type Stability = 'supported' | 'internal' | 'app';
 export type ModuleState = 'ok' | 'pending' | 'failed';
 export interface Summary {            // GET /rest/restbrowser/1/catalog
   format: 1; product: { name: string; version: string; build: string };
-  baseUrl: string;                    // e.g. "http://host/jira", no trailing slash
+  baseUrl: string;                    // the context path, relative: "/jira", or "" at the root; no trailing slash
   hash: string; complete: boolean; progress: { done: number; total: number };
-  admin: boolean; modules: Module[];
+  admin: boolean; sysadmin?: boolean; modules: Module[];
 }
 export interface Module {
   id: string;                         // plugin module complete key, unique

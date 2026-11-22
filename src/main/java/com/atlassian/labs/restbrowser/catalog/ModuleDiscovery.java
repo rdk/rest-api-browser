@@ -65,8 +65,11 @@ public class ModuleDiscovery {
     }
 
     static String path(String basePath, String version) {
-        String p = basePath.startsWith("/") ? basePath.substring(1) : basePath;
-        return "none".equals(version) ? p : p + "/" + version;
+        String p = basePath.replaceAll("^/+|/+$", "");
+        if ("none".equals(version) || version == null || version.isEmpty()) {
+            return p;
+        }
+        return p.isEmpty() ? version : p + "/" + version;
     }
 
     private static Object call(Object target, String method) throws ReflectiveOperationException {

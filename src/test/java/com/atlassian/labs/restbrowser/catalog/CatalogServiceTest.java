@@ -20,11 +20,14 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -185,7 +188,7 @@ public class CatalogServiceTest {
         ModuleEntry b = entry(s, "b");
         assertEquals(State.failed, b.state());
         assertEquals("model-unavailable", b.reason());
-        assertEquals("details for admins", b.error());
+        assertEquals("fake: details for admins", b.error());
         assertEquals(0, b.opCount());
         assertEquals(State.ok, entry(s, "a").state());
     }
@@ -292,5 +295,158 @@ public class CatalogServiceTest {
         service.refresh("a");
         await(() -> service.current(null).modules().size() == 2 && service.current(null).complete());
         assertEquals(2, service.current(null).total());
+    }
+
+    /** A source with a fixed id that either fails or describes one operation. */
+    private static SpecSource src(String id, SpecException failure) {
+        return new SpecSource() {
+            @Override
+            public String id() {
+                return id;
+            }
+
+            @Override
+            public Optional<ModuleSpec> describe(RestModule module) throws SpecException {
+                if (failure != null) {
+                    throw failure;
+                }
+                return Optional.of(new ModuleSpec(id, List.of(new OperationSpec("GET", module.id() + "/y",
+                        List.of(), List.of(), List.of(), null, false, null))));
+            }
+        };
+    }
+
+    private CatalogService serviceWith(List<SpecSource> sources, ModuleDiscovery d) {
+        CatalogService svc = new CatalogService(d, sources, new ProductAdapter("jira", () -> null), null, () -> "1");
+        svc.afterPropertiesSet();
+        return svc;
+    }
+
+    private static void awaitLatch(CountDownLatch latch) {
+        try {
+            latch.await(10, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    @Test
+    public void concurrentFirstCallsBothGetASnapshot() throws Exception {
+        FakeDiscovery slow = new FakeDiscovery() {
+            @Override
+            public List<RestModule> discover() {
+                try {
+                    Thread.sleep(150);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                return super.discover();
+            }
+        };
+        slow.modules = List.of(module("a", "plugin.a"));
+        CatalogService svc = serviceWith(List.of(source), slow);
+        try {
+            CountDownLatch start = new CountDownLatch(1);
+            AtomicReference<CatalogSnapshot> one = new AtomicReference<>();
+            AtomicReference<CatalogSnapshot> two = new AtomicReference<>();
+            Thread t1 = new Thread(() -> {
+                awaitLatch(start);
+                one.set(svc.current(null));
+            });
+            Thread t2 = new Thread(() -> {
+                awaitLatch(start);
+                two.set(svc.current(null));
+            });
+            t1.start();
+            t2.start();
+            start.countDown();
+            t1.join(10_000);
+            t2.join(10_000);
+            assertNotNull(one.get());
+            assertNotNull(two.get());
+        } finally {
+            svc.destroy();
+        }
+    }
+
+    @Test
+    public void aSpecExceptionFallsThroughToTheNextSource() throws Exception {
+        discovery.modules = List.of(module("a", "plugin.a"));
+        CatalogService svc = serviceWith(
+                List.of(src("first", new SpecException("r1", "m1", null)), src("second", null)), discovery);
+        try {
+            svc.current(null);
+            await(() -> svc.current(null).complete());
+            ModuleEntry a = entry(svc.current(null), "a");
+            assertEquals(State.ok, a.state());
+            assertEquals("second", a.source());
+            assertEquals(1, a.opCount());
+        } finally {
+            svc.destroy();
+        }
+    }
+
+    @Test
+    public void whenAllSourcesFailTheLastReasonWins() throws Exception {
+        discovery.modules = List.of(module("a", "plugin.a"));
+        CatalogService svc = serviceWith(List.of(src("first", new SpecException("r1", "m1", null)),
+                src("second", new SpecException("r2", "m2", null))), discovery);
+        try {
+            svc.current(null);
+            await(() -> svc.current(null).complete());
+            ModuleEntry a = entry(svc.current(null), "a");
+            assertEquals(State.failed, a.state());
+            assertEquals("r2", a.reason());
+            assertEquals("second: m2", a.error());
+        } finally {
+            svc.destroy();
+        }
+    }
+
+    @Test
+    public void refreshOfEverythingMarksTheCatalogIncompleteAtOnce() throws Exception {
+        service.current(null);
+        CatalogSnapshot before = completeSnapshot();
+        source.gate = new CountDownLatch(1);
+        service.refresh(null);
+        CatalogSnapshot during = service.current(null);
+        assertFalse(during.complete());
+        assertNotEquals(before.hash(), during.hash());
+        source.gate.countDown();
+        await(() -> service.current(null).complete());
+        assertEquals(before.hash(), service.current(null).hash());
+    }
+
+    @Test
+    public void aModuleKeepsItsOperationsWhileItIsRebuilt() throws Exception {
+        service.current(null);
+        completeSnapshot();
+        source.gate = new CountDownLatch(1);
+        service.refresh("a");
+        await(() -> source.count("a") == 2); // the second describe is now blocked on the latch
+        CatalogSnapshot during = service.current(null);
+        assertFalse(during.complete());
+        ModuleEntry a = entry(during, "a");
+        assertEquals(State.ok, a.state());
+        assertEquals(2, a.opCount());
+        assertTrue(new String(during.index(), java.nio.charset.StandardCharsets.UTF_8)
+                .contains("\"key\":\"a:GET:a/x\""));
+        source.gate.countDown();
+        await(() -> service.current(null).complete());
+    }
+
+    @Test
+    public void aPluginEventWithoutRestModulesLeavesTheHashUnchanged() throws Exception {
+        service.current(null);
+        CatalogSnapshot before = completeSnapshot();
+        PluginEnabledEvent event = mock(PluginEnabledEvent.class);
+        Plugin plugin = mock(Plugin.class);
+        when(plugin.getKey()).thenReturn("plugin.without.rest");
+        when(event.getPlugin()).thenReturn(plugin);
+        service.onPluginEnabled(event);
+        service.build(); // what the debounced task does, without waiting for the debounce
+        assertEquals(before.hash(), service.current(null).hash());
+        assertTrue(service.current(null).complete());
+        assertEquals(1, source.count("a"));
     }
 }

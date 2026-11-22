@@ -88,7 +88,8 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
             if (/GET/.test(method)) {
                 await click('[data-testid=send]');
                 const st = await b.waitFor(`/\\d{3}/.test((document.querySelector('[data-testid=response-status]') || {}).textContent || '')`, 20000);
-                c.check('the GET with the odd value gets an answer', st, (await text('[data-testid=response-status]')).trim());
+                c.check('the GET with the odd value gets an answer', st,
+                    (await text('[data-testid=response-status]')).trim() || (await text('.rab-n-response')).slice(0, 200));
             }
         } else {
             console.log(`SKIP the path parameter: ${P.templated} is not in the list`);

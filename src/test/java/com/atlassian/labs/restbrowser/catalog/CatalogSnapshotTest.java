@@ -1,5 +1,6 @@
 package com.atlassian.labs.restbrowser.catalog;
 
+import static org.junit.Assert.assertSame;
 import com.atlassian.labs.restbrowser.catalog.Model.ModuleEntry;
 import com.atlassian.labs.restbrowser.catalog.Model.Operation;
 import com.atlassian.labs.restbrowser.catalog.Model.State;
@@ -140,5 +141,35 @@ public class CatalogSnapshotTest {
         assertFalse(m.containsKey("reason"));
         assertFalse(m.containsKey("error"));
         assertFalse(((Map<String, Object>) m.get("plugin")).containsKey("version"));
+    }
+
+    @Test
+    public void incompleteKeepsTheOperationsButChangesTheHash() {
+        CatalogSnapshot complete = base();
+        CatalogSnapshot incomplete = complete.incomplete("1.0.0");
+        assertTrue(complete.complete());
+        assertFalse(incomplete.complete());
+        assertNotEquals(complete.hash(), incomplete.hash());
+        assertEquals(complete.modules(), incomplete.modules());
+        assertEquals(complete.done(), incomplete.done());
+        assertEquals(complete.total(), incomplete.total());
+        String ops = "\"operations\":";
+        String c = new String(complete.index(), UTF_8);
+        String i = new String(incomplete.index(), UTF_8);
+        assertEquals(c.substring(c.indexOf(ops)), i.substring(i.indexOf(ops)));
+        assertSame(incomplete, incomplete.incomplete("1.0.0"));
+    }
+
+    @Test
+    public void adminTagCoversErrorMessagesButTheHashDoesNot() {
+        ModuleEntry one = new ModuleEntry("a", "api/1", "product", "supported", null, State.failed, "error", "first",
+                0, "plugin.a", "Plugin a", "1.0");
+        ModuleEntry two = new ModuleEntry("a", "api/1", "product", "supported", null, State.failed, "error", "second",
+                0, "plugin.a", "Plugin a", "1.0");
+        CatalogSnapshot s1 = snapshot(List.of(one), List.of(), true, "1.0.0");
+        CatalogSnapshot s2 = snapshot(List.of(two), List.of(), true, "1.0.0");
+        assertEquals(s1.hash(), s2.hash());
+        assertNotEquals(s1.adminTag(), s2.adminTag());
+        assertTrue(s1.adminTag().startsWith(s1.hash() + "-"));
     }
 }
