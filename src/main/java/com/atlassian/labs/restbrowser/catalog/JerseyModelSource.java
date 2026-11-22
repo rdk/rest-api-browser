@@ -1,6 +1,7 @@
 package com.atlassian.labs.restbrowser.catalog;
 
 import com.atlassian.labs.restbrowser.catalog.Model.ModuleSpec;
+import com.atlassian.labs.restbrowser.catalog.Model.Operation;
 import com.atlassian.labs.restbrowser.catalog.Model.OperationSpec;
 import com.atlassian.labs.restbrowser.catalog.Model.Param;
 import com.atlassian.labs.restbrowser.catalog.ModuleDiscovery.RestModule;
@@ -69,6 +70,43 @@ public class JerseyModelSource implements SpecSource {
         if (!module.restV2()) {
             return Optional.empty(); // REST v1 runs Jersey 1, a different model
         }
+        List<OperationSpec> operations = new ArrayList<>();
+        walk(module, operations, null);
+        return Optional.of(new ModuleSpec(id(), operations));
+    }
+
+    /**
+     * The Java behind one operation: what handles it and the sub-resource locators on the way. For the details of
+     * one operation, on demand; the caller turns it into strings at once and keeps nothing of it.
+     *
+     * @param definition the method the JAX-RS annotations are on (an interface's, sometimes)
+     * @param handling   the method that runs
+     * @param handlerClass the class Jersey instantiates, when it says so
+     * @param locators   the sub-resource locator methods from the root resource down, empty for most operations
+     */
+    public record Handler(Method definition, Method handling, Class<?> handlerClass, List<Method> locators) {
+    }
+
+    /** The handler of the operation with this catalog key in this module; empty when the module has no such operation. */
+    public Optional<Handler> handler(RestModule module, String key) throws SpecException {
+        if (!module.restV2()) {
+            return Optional.empty();
+        }
+        List<OperationSpec> operations = new ArrayList<>();
+        Map<OperationSpec, Handler> handlers = new IdentityHashMap<>();
+        walk(module, operations, handlers);
+        // the same keys as the catalog's: OperationKeys keeps the spec instances, so identity finds the handler
+        for (Operation op : OperationKeys.assign(module.id(), operations)) {
+            if (op.key().equals(key)) {
+                return Optional.ofNullable(handlers.get(op.spec()));
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** Visits the module's whole resource model; with {@code handlers}, records the handler of every operation too. */
+    private void walk(RestModule module, List<OperationSpec> operations, Map<OperationSpec, Handler> handlers)
+            throws SpecException {
         Object handler = applicationHandler(module);
         List<?> roots;
         try {
@@ -81,12 +119,10 @@ public class JerseyModelSource implements SpecSource {
         } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
             throw new SpecException("model-unavailable", "Couldn't read the resource model: " + e, e);
         }
-        List<OperationSpec> operations = new ArrayList<>();
         Map<Class<?>, Boolean> locatorClasses = new IdentityHashMap<>();
         for (Object root : roots) {
-            visit(root, "", 0, operations, locatorClasses, new Inherited(List.of(), null, false));
+            visit(root, "", 0, operations, handlers, locatorClasses, Inherited.NONE);
         }
-        return Optional.of(new ModuleSpec(id(), operations));
     }
 
     private Object applicationHandler(RestModule module) throws SpecException {
@@ -163,12 +199,14 @@ public class JerseyModelSource implements SpecSource {
         return tried.toString();
     }
 
-    /** What a sub-resource locator passes down to the operations below it. */
-    private record Inherited(List<Param> params, String access, boolean deprecated) {
+    /** What a sub-resource locator passes down to the operations below it; the locators only for the details. */
+    private record Inherited(List<Param> params, String access, boolean deprecated, List<Method> locators) {
+        static final Inherited NONE = new Inherited(List.of(), null, false, List.of());
     }
 
     private void visit(Object resource, String prefix, int depth, List<OperationSpec> out,
-                       Map<Class<?>, Boolean> locatorClasses, Inherited inherited) {
+                       Map<OperationSpec, Handler> handlers, Map<Class<?>, Boolean> locatorClasses,
+                       Inherited inherited) {
         try {
             if (Boolean.TRUE.equals(call(resource, "isExtended"))) {
                 return; // Jersey's own additions, such as application.wadl
@@ -176,15 +214,15 @@ public class JerseyModelSource implements SpecSource {
             String path = join(prefix, (String) call(resource, "getPath"));
             for (Object method : (List<?>) call(resource, "getResourceMethods")) {
                 if (!Boolean.TRUE.equals(call(method, "isExtended"))) {
-                    out.add(operation(method, path, inherited));
+                    out.add(operation(method, path, inherited, handlers));
                 }
             }
             Object locator = call(resource, "getResourceLocator");
             if (locator != null && depth < MAX_LOCATOR_DEPTH) {
-                visitLocator(resource, locator, path, depth, out, locatorClasses, inherited);
+                visitLocator(resource, locator, path, depth, out, handlers, locatorClasses, inherited);
             }
             for (Object child : (List<?>) call(resource, "getChildResources")) {
-                visit(child, path, depth, out, locatorClasses, inherited);
+                visit(child, path, depth, out, handlers, locatorClasses, inherited);
             }
         } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
             LOGGER.debug("Skipped part of the resource model below {}", prefix, e);
@@ -197,7 +235,8 @@ public class JerseyModelSource implements SpecSource {
      * is not entered again (recursive locators).
      */
     private void visitLocator(Object resource, Object locator, String path, int depth, List<OperationSpec> out,
-                              Map<Class<?>, Boolean> locatorClasses, Inherited inherited)
+                              Map<OperationSpec, Handler> handlers, Map<Class<?>, Boolean> locatorClasses,
+                              Inherited inherited)
             throws ReflectiveOperationException {
         Object invocable = call(locator, "getInvocable");
         Class<?> type = (Class<?>) call(invocable, "getRawResponseType");
@@ -217,18 +256,26 @@ public class JerseyModelSource implements SpecSource {
             Method handling = (Method) call(invocable, "getHandlingMethod");
             String access = inherited.access();
             boolean deprecated = inherited.deprecated();
+            List<Method> locators = inherited.locators();
             if (handling != null) {
                 access = firstNonNull(access(handling), access);
                 deprecated |= handling.isAnnotationPresent(Deprecated.class)
                         || handling.getDeclaringClass().isAnnotationPresent(Deprecated.class);
+                if (handlers != null) {
+                    List<Method> chain = new ArrayList<>(locators);
+                    chain.add(handling);
+                    locators = List.copyOf(chain);
+                }
             }
-            visit(sub, path, depth + 1, out, locatorClasses, new Inherited(List.copyOf(params), access, deprecated));
+            visit(sub, path, depth + 1, out, handlers, locatorClasses,
+                    new Inherited(List.copyOf(params), access, deprecated, locators));
         } finally {
             locatorClasses.remove(type);
         }
     }
 
-    private OperationSpec operation(Object method, String path, Inherited inherited) throws ReflectiveOperationException {
+    private OperationSpec operation(Object method, String path, Inherited inherited, Map<OperationSpec, Handler> handlers)
+            throws ReflectiveOperationException {
         String httpMethod = (String) call(method, "getHttpMethod");
         List<String> consumes = mediaTypes(call(method, "getConsumedTypes"));
         List<String> produces = mediaTypes(call(method, "getProducedTypes"));
@@ -246,8 +293,31 @@ public class JerseyModelSource implements SpecSource {
             deprecated |= handling.isAnnotationPresent(Deprecated.class)
                     || handling.getDeclaringClass().isAnnotationPresent(Deprecated.class);
         }
-        return new OperationSpec(httpMethod, path, consumes, produces, completePathParams(path, params), access,
-                deprecated, bodyType[0]);
+        OperationSpec spec = new OperationSpec(httpMethod, path, consumes, produces, completePathParams(path, params),
+                access, deprecated, bodyType[0]);
+        if (handlers != null) {
+            handlers.put(spec, new Handler(definitionMethod(invocable, handling), handling, handlerClass(invocable),
+                    inherited.locators()));
+        }
+        return spec;
+    }
+
+    private static Method definitionMethod(Object invocable, Method handling) {
+        try {
+            Object m = call(invocable, "getDefinitionMethod");
+            return m instanceof Method d ? d : handling;
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            return handling;
+        }
+    }
+
+    private static Class<?> handlerClass(Object invocable) {
+        try {
+            Object h = call(invocable, "getHandler");
+            return h == null ? null : (Class<?>) call(h, "getHandlerClass");
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            return null;
+        }
     }
 
     private static void param(Object p, List<Param> out, String[] bodyType) throws ReflectiveOperationException {

@@ -4,6 +4,7 @@ import com.atlassian.event.api.EventPublisher;
 import com.atlassian.labs.restbrowser.catalog.CatalogService;
 import com.atlassian.labs.restbrowser.catalog.JerseyModelSource;
 import com.atlassian.labs.restbrowser.catalog.ModuleDiscovery;
+import com.atlassian.labs.restbrowser.catalog.OperationDetails;
 import com.atlassian.labs.restbrowser.catalog.ProductAdapter;
 import com.atlassian.labs.restbrowser.util.TextUtils;
 import com.atlassian.plugin.Plugin;
@@ -56,5 +57,11 @@ public class LocalBeans {
                 });
         self.set(service);
         return service;
+    }
+
+    @Bean
+    public OperationDetails operationDetails(ModuleDiscovery discovery, CatalogService catalogService,
+                                             ProductAdapter productAdapter) {
+        return new OperationDetails(discovery, catalogService::jersey, productAdapter);
     }
 }

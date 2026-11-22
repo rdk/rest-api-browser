@@ -163,6 +163,19 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
             numbers === 0 && sentHeaders.some(h => /^accept:/i.test(h)), { numbers, sentHeaders });
         await b.evaluate(`([...document.querySelectorAll('[data-testid=response] [role=tab]')].find(t => /^Pretty/.test(t.textContent)) || {}).click?.(), true`);
         c.check('the History tab lists the request', await b.waitFor(`/History \\([1-9]/.test(document.body.textContent)`, 5000));
+        // the Java behind the operation (system administrators): its method and class, the OSGi bundle, the plugin
+        await b.evaluate(`([...document.querySelectorAll('.rab-n-request [role=tab]')].find(t => t.textContent.trim() === 'Java') || {}).click?.(), true`);
+        await b.waitFor(`!!document.querySelector('[data-testid=java-signature], [data-testid=java-error]')`, 20000);
+        const java = await b.evaluate(`(() => { const t = sel => (document.querySelector(sel) || {}).textContent || '';
+            return { error: t('[data-testid=java-error]'), signature: t('[data-testid=java-signature]'), cls: t('[data-testid=java-class]'),
+                bundle: t('[data-testid=java-bundle]'), plugin: t('[data-testid=java-plugin]'), key: new URLSearchParams(location.search).get('op') }; })()`);
+        const unknown = await b.evaluate(`fetch(${q(CONTEXT)} + '/rest/restbrowser/1/catalog/details?op=' + encodeURIComponent('no.such:module:GET:x'),
+            { credentials: 'same-origin' }).then(r => r.status)`);
+        c.check('the Java tab shows the method, its class, the OSGi bundle and the plugin',
+            !java.error && java.signature.includes('(') && /Name/.test(java.cls) && /Symbolic name|Not in an OSGi bundle/.test(java.bundle)
+            && java.plugin.includes(java.key.split(':')[0]) && unknown === 404,
+            { ...java, signature: java.signature.slice(0, 200), bundle: java.bundle.slice(0, 120), plugin: java.plugin.slice(0, 120), unknown });
+        await b.shot(path.join(SHOTS, `${PRODUCT}-next-7-java.png`));
 
         // a path parameter's value is URL-encoded; the request is a GET of something that cannot exist
         let templatedKey = null;
@@ -349,7 +362,7 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         // errors
         const own = b.exceptions.filter(e => /next\.js|rest-api-browser|restbrowser/i.test(e));
         c.check('no JavaScript exception from the new UI', own.length === 0, own);
-        const ownFailed = b.failedRequests.filter(u => /restbrowser|rest-api-browser/i.test(u));
+        const ownFailed = b.failedRequests.filter(u => /restbrowser|rest-api-browser/i.test(u) && !/op=no\.such%3Amodule/.test(u)); // the 404 asked on purpose
         c.check('no failed request for the plugin\'s own resources', ownFailed.length === 0, ownFailed.slice(0, 5));
         b.failedRequests.filter(u => !ownFailed.includes(u) && !/no%20such/.test(u)).forEach(u => console.log('WARN failed request: ' + u));
         console.log(`Screenshots: ${SHOTS}`);

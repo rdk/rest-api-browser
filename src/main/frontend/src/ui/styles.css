@@ -52,9 +52,9 @@
   --rab-bg-discovery: var(--ds-background-discovery, #f3f0ff);
 
   /* Paths and URLs: the second resource word, and one color per kind of parameter (the form's pills use them too) */
-  --rab-sub-color: var(--ds-text-accent-teal, #206a83);
+  --rab-sub-color: var(--ds-text-accent-blue, #0055cc);
   --rab-path-color: var(--rab-discovery);
-  --rab-query-color: var(--rab-info);
+  --rab-query-color: var(--ds-text-accent-teal, #206a83);
   --rab-matrix-color: var(--rab-warning);
 
   /* Theme-adaptive gradients */
@@ -1403,7 +1403,7 @@
   text-align: center;
 }
 .rab-n-in-path { background: var(--rab-bg-discovery); color: var(--rab-path-color); }
-.rab-n-in-query { background: var(--rab-bg-info); color: var(--rab-query-color); }
+.rab-n-in-query { background: var(--rab-bg-teal); color: var(--rab-query-color); }
 .rab-n-in-header { background: var(--rab-bg-success); color: var(--rab-success); }
 .rab-n-in-matrix { background: var(--rab-bg-warning); color: var(--rab-warning); }
 .rab-n-required { color: var(--rab-danger); margin-left: 3px; font-weight: 700; }
@@ -1435,6 +1435,55 @@
 .rab-n-json-check.is-warn { color: var(--rab-warning); }
 .rab-n-json-check.is-ok { color: var(--rab-success); }
 .rab-n-json-check-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Java tab: the method, its class, the bundle, the plugin and the REST module */
+.rab-n-java { padding: 6px 14px 16px; font-size: 12.5px; }
+.rab-n-java-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.rab-n-java-toggle { display: inline-flex; align-items: center; gap: 5px; color: var(--rab-subtle); cursor: pointer; }
+.rab-n-java-block { padding: 8px 0 10px; border-top: 1px solid var(--rab-border-subtle); }
+.rab-n-java-block:first-of-type { border-top: 0; }
+.rab-n-java-title {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--rab-subtle);
+}
+.rab-n-java-code {
+  margin: 0 0 8px;
+  padding: 8px 12px;
+  border-radius: var(--rab-radius-md);
+  border: 1px solid var(--rab-border-subtle);
+  background: var(--rab-sunken);
+  font: 12.5px/1.6 var(--rab-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.rab-n-jc-ann { color: var(--rab-warning); }
+.rab-n-jc-kw { color: var(--rab-discovery); font-weight: 600; }
+.rab-n-jc-type { color: var(--rab-sub-color); }
+.rab-n-jc-name { color: var(--rab-text); font-weight: 700; }
+.rab-n-jc-param { padding-left: 2ch; }
+.rab-n-java-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 3px 14px;
+  margin: 0;
+}
+.rab-n-java-facts dt { color: var(--rab-subtlest); }
+.rab-n-java-facts dd { margin: 0; min-width: 0; }
+.rab-n-java code, .rab-n-java-table code { font: 12px var(--rab-mono); }
+.rab-n-java-wrap { overflow-wrap: anywhere; }
+.rab-n-java-list { margin: 0; padding: 0; list-style: none; }
+.rab-n-java-list li { overflow-wrap: anywhere; }
+.rab-n-java-ok { color: var(--rab-success); font-weight: 600; }
+.rab-n-java-deprecated { color: var(--rab-danger); font-weight: 600; }
+.rab-n-java-error { color: var(--rab-danger); }
+.rab-n-java-more { margin-top: 8px; }
+.rab-n-java-more > summary { cursor: pointer; color: var(--rab-link); width: fit-content; }
+.rab-n-java-table { width: 100%; margin-top: 4px; border-collapse: collapse; }
+.rab-n-java-table td { padding: 2px 10px 2px 0; border-bottom: 1px solid var(--rab-border-subtle); vertical-align: top; overflow-wrap: anywhere; }
 
 /* Headers tab */
 .rab-n-headers-custom-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; max-width: 680px; }

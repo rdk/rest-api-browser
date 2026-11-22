@@ -8,6 +8,7 @@ import type { RequestRunner, RunResult } from './runner';
 import type { HistoryEntry, UserStore } from './userstore';
 import { CheckMark, CopyButton, MethodBadge, PathText, Tabs, WarnGlyph, WRITE_METHODS } from './bits';
 import { ResponseView } from './Response';
+import { JavaTab } from './JavaTab';
 
 /** What the user has typed for one operation; kept per operation while the page is open. */
 export interface Draft {
@@ -35,7 +36,7 @@ export function emptyDraft(op: Operation): Draft {
   };
 }
 
-type Tab = 'params' | 'body' | 'headers' | 'history';
+type Tab = 'params' | 'body' | 'headers' | 'history' | 'java';
 
 interface Props {
   summary: Summary;
@@ -246,6 +247,8 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
               ...(hasBody ? [{ id: 'body' as Tab, label: 'Body' }] : []),
               { id: 'headers', label: 'Headers' },
               { id: 'history', label: `History (${history.length})` },
+              // the Java behind the operation: internals, so for system administrators only (as the endpoint)
+              ...(summary.sysadmin ? [{ id: 'java' as Tab, label: 'Java' }] : []),
             ]}
           />
             <FormTools canUndo={canUndo} canRedo={canRedo} canReset={canReset}
@@ -256,6 +259,7 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
               <ParamsTab params={visibleParams} formParams={formParams} values={draft.values} onValues={setValues} regexes={regexes} />
             )}
             {tab === 'body' && <BodyTab op={op} values={draft.values} onValues={setValues} />}
+            {tab === 'java' && <JavaTab baseUrl={summary.baseUrl} opKey={op.key} />}
             {tab === 'headers' && <HeadersTab op={op} draft={draft} onDraft={(d) => editForm(formOf(d))} write={write} />}
             {tab === 'history' && (
               <HistoryTab

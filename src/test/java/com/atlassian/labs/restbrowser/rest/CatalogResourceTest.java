@@ -1,6 +1,7 @@
 package com.atlassian.labs.restbrowser.rest;
 
 import com.atlassian.labs.restbrowser.catalog.CatalogService;
+import com.atlassian.labs.restbrowser.catalog.OperationDetails;
 import com.atlassian.labs.restbrowser.catalog.CatalogSnapshot;
 import com.atlassian.labs.restbrowser.catalog.CatalogTestSupport;
 import com.atlassian.labs.restbrowser.catalog.Model.ModuleEntry;
@@ -39,6 +40,7 @@ public class CatalogResourceTest {
     private final UserManager userManager = mock(UserManager.class);
     private final ApplicationProperties props = mock(ApplicationProperties.class);
     private final HttpServletRequest request = mock(HttpServletRequest.class);
+    private final OperationDetails details = mock(OperationDetails.class);
     private final UserKey user = new UserKey("user");
     private CatalogSnapshot snapshot;
     private CatalogResource resource;
@@ -54,7 +56,7 @@ public class CatalogResourceTest {
         when(props.getVersion()).thenReturn("10.3.0");
         when(props.getBuildNumber()).thenReturn("1");
         when(props.getBaseUrl(UrlMode.RELATIVE)).thenReturn("/jira");
-        resource = new CatalogResource(catalog, userManager, props);
+        resource = new CatalogResource(catalog, userManager, props, details);
     }
 
     @After
@@ -219,6 +221,23 @@ public class CatalogResourceTest {
         assertEquals(204, resource.refresh(null, request).getStatus());
         verify(catalog).refresh(null);
         assertEquals(204, resource.refresh("  ", request).getStatus());
+    }
+
+    @Test
+    public void detailsAreForSystemAdminsOnly() {
+        login(true, false);
+        assertEquals(403, resource.details("a:b:GET:x", request).getStatus());
+        verify(details, never()).describe(any());
+    }
+
+    @Test
+    public void detailsPassTheStatusAndBodyOn() {
+        login(true, true);
+        when(details.describe("a:b:GET:x")).thenReturn(new OperationDetails.Result(404, "{\"error\":\"unknown-operation\"}"));
+        Response r = resource.details("a:b:GET:x", request);
+        assertEquals(404, r.getStatus());
+        assertEquals("{\"error\":\"unknown-operation\"}", r.getEntity());
+        assertEquals("no-store", r.getHeaderString("Cache-Control"));
     }
 
     @Test

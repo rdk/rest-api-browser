@@ -4,6 +4,7 @@ import com.atlassian.annotations.security.LicensedOnly;
 import com.atlassian.annotations.security.SystemAdminOnly;
 import com.atlassian.labs.restbrowser.catalog.CatalogService;
 import com.atlassian.labs.restbrowser.catalog.CatalogSnapshot;
+import com.atlassian.labs.restbrowser.catalog.OperationDetails;
 import com.atlassian.sal.api.ApplicationProperties;
 import com.atlassian.sal.api.UrlMode;
 import com.atlassian.sal.api.user.UserKey;
@@ -27,7 +28,9 @@ import jakarta.ws.rs.core.StreamingOutput;
  *     <li>{@code GET /catalog}: the small summary, per user, with an ETag;</li>
  *     <li>{@code GET /catalog/index/{hash}}: every operation, the same for every user, cached forever once
  *     complete;</li>
- *     <li>{@code POST /catalog/refresh}: system administrators rebuild the catalog.</li>
+ *     <li>{@code POST /catalog/refresh}: system administrators rebuild the catalog;</li>
+ *     <li>{@code GET /catalog/details?op=key}: system administrators see the Java behind one operation (its method
+ *     and class, the OSGi bundle, the plugin and the REST module).</li>
  * </ul>
  * Who may read it: licensed users. The catalog lists every endpoint and app of the instance, so unlicensed accounts
  * (for example service desk portal customers) and anonymous users get nothing, whatever
@@ -43,13 +46,15 @@ public class CatalogResource {
     private final CatalogService catalog;
     private final UserManager userManager;
     private final ApplicationProperties applicationProperties;
+    private final OperationDetails details;
 
     @Inject
     public CatalogResource(CatalogService catalog, UserManager userManager,
-                           ApplicationProperties applicationProperties) {
+                           ApplicationProperties applicationProperties, OperationDetails details) {
         this.catalog = catalog;
         this.userManager = userManager;
         this.applicationProperties = applicationProperties;
+        this.details = details;
     }
 
     @GET
@@ -107,6 +112,26 @@ public class CatalogResource {
         catalog.current(request.getServletContext());
         catalog.refresh(module == null || module.isBlank() ? null : module);
         return Response.noContent().build();
+    }
+
+    /**
+     * The Java behind one operation. System administrators only: it shows the internals of the product and its
+     * apps (class names, code locations, the bundle wiring). Read on demand, never cached.
+     */
+    @GET
+    @Path("/details")
+    @Produces(MediaType.APPLICATION_JSON)
+    @SystemAdminOnly
+    public Response details(@QueryParam("op") String op, @Context HttpServletRequest request) {
+        UserKey user = userManager.getRemoteUserKey(request);
+        if (user == null || !userManager.isSystemAdmin(user)) {
+            return Response.status(Response.Status.FORBIDDEN).type(JSON).header("Cache-Control", "no-store")
+                    .entity("{\"error\":\"system-admin-only\"}").build();
+        }
+        catalog.current(request.getServletContext()); // a module that has not started needs the ServletContext
+        OperationDetails.Result result = details.describe(op);
+        return Response.status(result.status()).type(JSON).header("Cache-Control", "no-store")
+                .entity(result.json()).build();
     }
 
     /** A second line behind @LicensedOnly: never anonymous, whatever the classic page allows. */

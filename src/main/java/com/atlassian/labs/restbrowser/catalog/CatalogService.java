@@ -116,6 +116,16 @@ public class CatalogService implements InitializingBean, DisposableBean {
         // the build thread may still be finishing: leave its maps to the garbage collector
     }
 
+    /** The source that reads Jersey's model, for the details of one operation; null when there is none. */
+    public JerseyModelSource jersey() {
+        for (SpecSource source : sources) {
+            if (source instanceof JerseyModelSource j) {
+                return j;
+            }
+        }
+        return null;
+    }
+
     /** The ServletContext of a request, needed to initialize REST modules that have not started yet. */
     public ServletContext servletContext() {
         return servletContext.get();
