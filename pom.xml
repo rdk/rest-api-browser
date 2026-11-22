@@ -225,6 +225,17 @@
     </dependencies>
 
     <build>
+        <resources>
+            <!-- Maven's default, minus what npm install leaves in assets/rab for the Grunt bundle: everything under
+                 assets/rab is a download resource of the plugin -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <excludes>
+                    <exclude>assets/rab/node_modules/**</exclude>
+                    <exclude>assets/rab/package-lock.json</exclude>
+                </excludes>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>com.atlassian.maven.plugins</groupId>
