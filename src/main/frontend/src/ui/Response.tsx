@@ -126,11 +126,19 @@ function FindBox({ onFind, onStep, count, index }: {
           const v = (e.target as HTMLInputElement).value;
           setNeedle(v);
           clearTimeout(timer.current);
-          timer.current = setTimeout(() => onFind(v), 150);
+          timer.current = setTimeout(() => {
+            timer.current = undefined;
+            onFind(v);
+          }, 150);
         }}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') {
+          if (e.key !== 'Enter') return;
+          if (timer.current !== undefined) {
+            // typed less than 150 ms ago: search now instead of stepping through the old matches
             clearTimeout(timer.current);
+            timer.current = undefined;
+            onFind(needle);
+          } else {
             onStep(e.shiftKey ? -1 : 1);
           }
         }}

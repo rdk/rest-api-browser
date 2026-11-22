@@ -73,7 +73,10 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
 
   useEffect(() => {
     setTab('params');
-    userStore.history(op.key).then(setHistory, () => setHistory([]));
+    userStore.history(op.key).then(
+      (h) => mounted.current && setHistory(h),
+      () => mounted.current && setHistory([]),
+    );
   }, [op.key]);
 
   const built = useMemo(() => tryBuild(summary, op, draft), [summary, op, draft]);
@@ -185,13 +188,13 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
                 }
                 onClear={async () => {
                   await userStore.clearHistory(op.key);
-                  setHistory([]);
+                  if (mounted.current) setHistory([]);
                 }}
               />
             )}
           </div>
         </div>
-        <SplitHandle onSplit={onSplit} />
+        <SplitHandle split={split} onSplit={onSplit} />
         <ResponseView result={draft.result} running={running} onCancel={cancel} />
       </div>
     </div>
@@ -394,7 +397,12 @@ function HistoryTab({ entries, onRestore, onClear }: { entries: HistoryEntry[]; 
   );
 }
 
-function SplitHandle({ onSplit }: { onSplit: (ratio: number) => void }) {
+function SplitHandle({ split, onSplit }: { split: number; onSplit: (ratio: number) => void }) {
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    e.preventDefault();
+    onSplit(Math.min(0.8, Math.max(0.15, split + (e.key === 'ArrowDown' ? 0.05 : -0.05))));
+  };
   const ref = useRef<HTMLDivElement>(null);
   const onDown = (e: PointerEvent) => {
     const parent = ref.current?.parentElement;
@@ -418,5 +426,9 @@ function SplitHandle({ onSplit }: { onSplit: (ratio: number) => void }) {
     document.addEventListener('pointerup', up);
     document.addEventListener('pointercancel', up);
   };
-  return <div ref={ref} class="rab-n-hsplit" onPointerDown={onDown} role="separator" aria-orientation="horizontal" />;
+  return (
+    <div ref={ref} class="rab-n-hsplit" onPointerDown={onDown} onKeyDown={onKeyDown} tabIndex={0}
+         role="separator" aria-orientation="horizontal" aria-label="Resize the request and the response"
+         aria-valuenow={Math.round(split * 100)} />
+  );
 }

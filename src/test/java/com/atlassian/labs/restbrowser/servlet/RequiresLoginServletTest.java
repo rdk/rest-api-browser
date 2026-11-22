@@ -30,6 +30,12 @@ public class RequiresLoginServletTest {
     }
 
     @Test
+    public void aPercentBeforeANonAsciiDigitIsStray() {
+        // U+0660 ARABIC-INDIC DIGIT ZERO is a digit for Character.digit, not a hex digit of an escape
+        assertEquals("http://h/x?a=%25%D9%A0%D9%A0", RequiresLoginServlet.encodeIllegal("http://h/x?a=%\u0660\u0660"));
+    }
+
+    @Test
     public void bracketsAStrayPercentAndHashAreEncodedButNotInTheAuthority() {
         assertEquals("http://[::1]:2990/jira?q.a%5B0%5D=1&p=100%25&x=%23y",
                 RequiresLoginServlet.encodeIllegal("http://[::1]:2990/jira?q.a[0]=1&p=100%&x=#y"));

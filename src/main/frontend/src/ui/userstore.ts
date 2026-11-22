@@ -47,7 +47,20 @@ function cleanValues(values: RequestValues): RequestValues {
   return { ...values, header, query: dropAuth(values.query ?? {}), matrix: dropAuth(values.matrix ?? {}), path: values.path ?? {} };
 }
 
+/** Removes credential parameters from a URL: query parameters, and matrix parameters (";token=...") in its path. */
 function cleanUrl(url: string): string {
+  const q0 = url.indexOf('?');
+  const path = q0 < 0 ? url : url.slice(0, q0);
+  const cleanPath = path.replace(/;([^;/?#=]*)(=[^;/?#]*)?/g, (m, name: string) => {
+    let n = name;
+    try {
+      n = decodeURIComponent(name);
+    } catch {
+      // keep the raw name
+    }
+    return isCredentialHeader(n) ? '' : m;
+  });
+  if (cleanPath !== path) url = cleanPath + (q0 < 0 ? '' : url.slice(q0));
   const q = url.indexOf('?');
   if (q < 0) return url;
   const hash = url.indexOf('#', q);

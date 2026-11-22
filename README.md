@@ -59,11 +59,13 @@ default, limits it to the product's public APIs. Select a resource to see its me
 The [new UI (preview)](#new-ui-preview) is at `<base URL>/plugins/servlet/restbrowser/next`.
 
 Users who are not logged in are sent to the login page. Starting the product with `-Drest.api.browser.anonymous=true`
-lets them use the page too, so anyone who can reach the product can open it.
+lets them use the classic page too, so anyone who can reach the product can open it. The new UI ignores that switch:
+it lists every endpoint and app of the instance, so it needs a user with a product license.
 
 ## New UI (preview)
 
-Open `<base URL>/plugins/servlet/restbrowser/next`. It is a second page next to the classic one, which stays as it is.
+Open `<base URL>/plugins/servlet/restbrowser/next` as a licensed user. It is a second page next to the classic one,
+which stays as it is.
 
 It works differently: the server builds a catalog of the product's REST API from Jersey's runtime model (served at
 `/rest/restbrowser/1/catalog`), so the browser fetches and parses no WADL. That is why it works on Confluence 10, where

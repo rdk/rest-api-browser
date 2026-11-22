@@ -80,7 +80,9 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         c.check('the History tab lists the request', await b.waitFor(`/History \\([1-9]/.test(document.body.textContent)`, 5000));
 
         // a path parameter's value is URL-encoded; the request is a GET of something that cannot exist
+        let templatedKey = null;
         if (await openOp(P.templated.split('/').slice(-2).join(' ').replace(/[{}]/g, ''), P.templated)) {
+            templatedKey = await b.evaluate(`new URLSearchParams(location.search).get('op')`);
             await type(`input[name=${q(P.param)}]`, ODD);
             const live = await text('[data-testid=live-url]');
             c.check('the live URL carries the path value URL-encoded', live.includes('/' + ODD_ENCODED), live);
@@ -95,6 +97,25 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
             console.log(`SKIP the path parameter: ${P.templated} is not in the list`);
         }
 
+        // the keyboard: / focuses the search, arrows move through the results, Enter opens one
+        const KEYS = { '/': [191, 'Slash'], ArrowDown: [40, 'ArrowDown'], Enter: [13, 'Enter'] };
+        const press = async key => {
+            const [code, name] = KEYS[key];
+            const base = { key, code: name, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code };
+            await b.send('Input.dispatchKeyEvent', { type: key === '/' ? 'keyDown' : 'rawKeyDown', ...base, ...(key === '/' ? { text: '/' } : {}) });
+            await b.send('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
+        };
+        await b.evaluate(`document.activeElement && document.activeElement.blur(), true`);
+        await press('/');
+        const focused = await b.evaluate(`document.activeElement === document.querySelector('[data-testid=search]')`);
+        await type('[data-testid=search]', P.search);
+        await sleep(400);
+        await press('ArrowDown');
+        await press('Enter');
+        const opened = await b.waitFor(`!!document.querySelector('[data-testid=operation-path]')
+            && document.querySelector('[data-testid=op].selected') !== null`, 5000);
+        c.check('the keyboard: / focuses the search, ArrowDown and Enter open the first result', focused && opened, { focused, opened });
+
         // supported only narrows the list
         await type('[data-testid=search]', '');
         const before = await b.evaluate(`(document.querySelector('[data-testid=status]') || {}).textContent || ''`);
@@ -104,8 +125,8 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         c.check('"Supported only" narrows the operations', /of/.test(after) && after !== before, { before, after });
         await click('[data-testid=supported-only]');
 
-        // a deep link fills the form and sends nothing
-        const key = await b.evaluate(`new URLSearchParams(location.search).get('op')`);
+        // a deep link fills the form and sends nothing (the operation with the path parameter, opened above)
+        const key = templatedKey || await b.evaluate(`new URLSearchParams(location.search).get('op')`);
         await b.navigate(PAGE + '?op=' + encodeURIComponent(key) + '&path.' + encodeURIComponent(P.param) + '=DEEP-1');
         const prefilled = await b.waitFor(`(document.querySelector('input[name=${P.param}]') || {}).value === 'DEEP-1'`, 60000);
         const sent = await b.evaluate(`!!document.querySelector('[data-testid=response]')`);

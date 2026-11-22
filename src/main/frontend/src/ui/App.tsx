@@ -198,7 +198,7 @@ export function App({ baseUrl, classicUrl, product }: Props) {
             loadError={loadError ?? refreshError}
           />
         </div>
-        <SideHandle onWidth={setSidebarWidth} onDone={(w) => save({ sidebarWidth: w })} />
+        <SideHandle width={sidebarWidth} onWidth={setSidebarWidth} onDone={(w) => save({ sidebarWidth: w })} />
         <div class="rab-n-main">
           {op && draft && summary ? (
             <MemoOperation
@@ -287,7 +287,15 @@ function Welcome({ summary, missing, indexing }: { summary: Summary | null; miss
   );
 }
 
-function SideHandle({ onWidth, onDone }: { onWidth: (w: number) => void; onDone: (w: number) => void }) {
+function SideHandle({ width, onWidth, onDone }: { width: number; onWidth: (w: number) => void; onDone: (w: number) => void }) {
+  // the keyboard resizes too: Tab to the divider, then the arrow keys
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    const next = Math.max(240, width + (e.key === 'ArrowRight' ? 20 : -20));
+    onWidth(next);
+    onDone(next);
+  };
   const ref = useRef<HTMLDivElement>(null);
   const onDown = (e: PointerEvent) => {
     const row = ref.current?.parentElement;
@@ -314,5 +322,8 @@ function SideHandle({ onWidth, onDone }: { onWidth: (w: number) => void; onDone:
     document.addEventListener('pointerup', up);
     document.addEventListener('pointercancel', up);
   };
-  return <div ref={ref} class="rab-n-vsplit" onPointerDown={onDown} role="separator" aria-orientation="vertical" />;
+  return (
+    <div ref={ref} class="rab-n-vsplit" onPointerDown={onDown} onKeyDown={onKeyDown} tabIndex={0}
+         role="separator" aria-orientation="vertical" aria-label="Resize the list" aria-valuenow={width} />
+  );
 }

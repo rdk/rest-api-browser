@@ -53,10 +53,11 @@ export function VirtualList({ count, rowHeight, renderRow, activeIndex, classNam
   useEffect(() => {
     const el = ref.current;
     if (!el || activeIndex === undefined || activeIndex < 0) return;
-    const top = (activeIndex * rowHeight) / scale;
-    const rowPx = rowHeight / scale;
-    if (top < el.scrollTop) el.scrollTop = top;
-    else if (top + rowPx > el.scrollTop + el.clientHeight) el.scrollTop = top + rowPx - el.clientHeight;
+    // compare in virtual coordinates (the rows'), then convert back to the scaled scroll position
+    const vTop = activeIndex * rowHeight;
+    const vScroll = el.scrollTop * scale;
+    if (vTop < vScroll) el.scrollTop = vTop / scale;
+    else if (vTop + rowHeight > vScroll + el.clientHeight) el.scrollTop = (vTop + rowHeight - el.clientHeight) / scale;
     setFirst(firstFor(el.scrollTop));
   }, [activeIndex, rowHeight]);
 

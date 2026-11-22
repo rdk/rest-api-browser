@@ -113,6 +113,10 @@ public abstract class RequiresLoginServlet extends HttpServlet {
     }
 
     private static boolean isHex(String s, int i) {
-        return i < s.length() && Character.digit(s.charAt(i), 16) >= 0;
+        if (i >= s.length()) {
+            return false;
+        }
+        final char c = s.charAt(i); // ASCII only: Character.digit also accepts other scripts' digits
+        return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
     }
 }

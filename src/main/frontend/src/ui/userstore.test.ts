@@ -165,4 +165,10 @@ describe('UserStore review fixes', () => {
     expect(e.values.matrix).toEqual({ m: '1' });
     expect(e.url).toBe('/rest/x?keep=2#h');
   });
+
+  it('scrubs credential matrix parameters from the url path', async () => {
+    const s = new UserStore('u', new FakeStorage());
+    const e = await s.addHistory(entry('a', { url: '/rest/x;token=abc;m=1/y;api_key=2?keep=3', values: values() }));
+    expect(e.url).toBe('/rest/x;m=1/y?keep=3');
+  });
 });

@@ -96,6 +96,11 @@ export function Sidebar(p: SidebarProps) {
       const step = e.key === 'ArrowDown' ? 1 : -1;
       const from = active < 0 ? (step > 0 ? -1 : lines.length) : active;
       setActive(Math.min(lines.length - 1, Math.max(0, from + step)));
+      if (inList) {
+        // keep the keyboard focus on the highlighted row (the list scrolls it into view and renders it first)
+        const list = target.closest('.rab-n-vlist');
+        requestAnimationFrame(() => (list?.querySelector('.rab-n-op.active, .rab-n-module.active') as HTMLElement | null)?.focus());
+      }
     } else if (e.key === 'Enter' && inSearch && active >= 0 && active < lines.length) {
       e.preventDefault();
       const l = lines[active];

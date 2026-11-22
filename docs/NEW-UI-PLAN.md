@@ -136,8 +136,9 @@ POST /catalog/refresh[?module=]      sysadmin, XSRF-checked: rebuild now
 - **Any other hash:** `404` with `no-store`. The client fetches `/catalog` again and follows the new hash. This also
   covers a request landing on another node.
 
-**Access**: logged-in users only, like the page. The catalog shows every endpoint, as the WADLs already do. Java
-handler names, plugin versions and error details are for admins only.
+**Access**: licensed users only (`@LicensedOnly`); anonymous and unlicensed accounts, such as service desk portal
+customers, get nothing, whatever `-Drest.api.browser.anonymous` allows on the classic page. Java handler names,
+plugin versions and error details are for admins only; rebuilding is for system administrators.
 
 The index holds everything needed to navigate, search **and render the request form**. With no docs in the WADLs,
 that is nearly all there is.
@@ -360,5 +361,5 @@ build takes under 15 s locally. The product gzips REST JSON, and the immutable c
 3. **Too much machinery for a small plugin.**
    - *Mitigation:* the first version has exactly one source, no detail tier, no frontend plugin mechanism and no
      type generation. Every later step is optional.
-   - *Decided deliberately:* the catalog shows every endpoint to any logged-in user, as the WADLs already do.
-     Handler names, plugin versions and error details go to admins only.
+   - *Decided deliberately:* the catalog shows every endpoint to any licensed user. Handler names, plugin versions
+     and error details go to admins only.
