@@ -25,6 +25,27 @@
         <url-pattern>/restbrowser</url-pattern>
     </servlet>
 
+    <!-- The new UI: its page, its REST API (the catalog) and its assets, built by Vite from src/main/frontend -->
+    <servlet name="REST API Browser (new UI)" key="rest-browser-next-servlet"
+           class="com.atlassian.labs.restbrowser.servlet.NextServlet">
+        <description>Serves the new UI's page.</description>
+        <url-pattern>/restbrowser/next</url-pattern>
+    </servlet>
+
+    <rest-migration key="rest-migration-key">
+        <rest-v2/>
+    </rest-migration>
+
+    <rest key="rest" path="/restbrowser" version="1">
+        <description>The catalog of this node's REST API, for the new UI.</description>
+        <package>com.atlassian.labs.restbrowser.rest</package>
+    </rest>
+
+    <web-resource key="next-assets">
+        <resource name="next.css" type="download" location="assets/next/next.css"/>
+        <resource name="next.js" type="download" location="assets/next/next.js"/>
+    </web-resource>
+
     <!--
         Web resources for the REST API Browser
      -->

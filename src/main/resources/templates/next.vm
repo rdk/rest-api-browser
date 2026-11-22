@@ -1,0 +1,15 @@
+#* @vtlvariable name="webResourceManager" type="com.atlassian.plugin.webresource.WebResourceManager" *#
+#* @vtlvariable name="textUtils" type="com.atlassian.labs.restbrowser.util.TextUtils" *#
+#* @vtlvariable name="baseUrl" type="java.lang.String" *#
+#* @vtlvariable name="productName" type="java.lang.String" *#
+<html>
+  <head>
+    <title>REST API Browser</title>
+    <meta name="decorator" content="atl.general">
+    $webResourceManager.requireResource("com.atlassian.labs.rest-api-browser:next-assets")
+  </head>
+  <body class="page-type-admin rab-next-page">
+    <div id="rab-next" data-base-url="$textUtils.htmlEncode($baseUrl)" data-product="$textUtils.htmlEncode($productName)"
+         data-classic-url="$textUtils.htmlEncode($baseUrl)/plugins/servlet/restbrowser"></div>
+  </body>
+</html>

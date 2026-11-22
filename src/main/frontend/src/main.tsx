@@ -1,8 +1,21 @@
 import { render } from 'preact';
+import { App } from './ui/App';
+import './ui/styles.css';
 
-function App() {
-  return <h1>REST API Browser</h1>;
+// the product puts web-resource scripts into the head, before the page's root element exists
+function mount() {
+  const root = document.getElementById('rab-next');
+  if (root) {
+    render(
+      <App
+        baseUrl={root.dataset.baseUrl ?? ''}
+        classicUrl={root.dataset.classicUrl ?? ''}
+        product={root.dataset.product ?? ''}
+      />,
+      root,
+    );
+  }
 }
 
-const root = document.getElementById('rab-next');
-if (root) render(<App />, root);
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
+else mount();

@@ -12,7 +12,6 @@ export default defineConfig({
       input: 'src/main.tsx',
       output: {
         format: 'iife',
-        inlineDynamicImports: true,
         entryFileNames: 'next.js',
         assetFileNames: (info) => (info.names?.some((n) => n.endsWith('.css')) ? 'next.css' : '[name][extname]'),
       },

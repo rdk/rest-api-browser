@@ -21,5 +21,6 @@ export interface Operation {
   method: string;                     // GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS
   path: string;                       // relative to the module, no leading slash, templates as written: "issue/{issueIdOrKey}"
   consumes: string[]; produces: string[]; params: Param[]; access?: string; deprecated?: boolean;
+  bodyType?: string;                  // the Java type of the request body, when the source knows it
 }
 export interface Index { format: 1; hash: string; operations: Operation[]; }   // GET /rest/restbrowser/1/catalog/index/{hash}

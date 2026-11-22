@@ -1,49 +1,39 @@
 package com.atlassian.labs.restbrowser.servlet;
 
 import com.atlassian.annotations.security.AnonymousSiteAccess;
+import com.atlassian.labs.restbrowser.catalog.ModuleDiscovery;
 import com.atlassian.labs.restbrowser.rest.model.RestDescriptor;
-import com.atlassian.plugin.ModuleDescriptor;
-import com.atlassian.plugin.Plugin;
-import com.atlassian.plugin.PluginAccessor;
-import com.atlassian.plugin.predicate.ModuleDescriptorPredicate;
 import com.atlassian.sal.api.ApplicationProperties;
 import com.atlassian.sal.api.auth.LoginUriProvider;
 import com.atlassian.sal.api.user.UserManager;
 import com.atlassian.templaterenderer.TemplateRenderer;
-import org.slf4j.Logger;
 
 import jakarta.servlet.http.HttpServletRequest;
-import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 import static java.util.Objects.requireNonNull;
-import static java.util.stream.Collectors.toList;
-import static org.slf4j.LoggerFactory.getLogger;
 
 /**
- * Renders the main page of this app.
+ * Renders the main page of the classic UI.
  */
 @AnonymousSiteAccess
 public class RestBrowserServlet extends RequiresLoginServlet {
 
-    private static final Logger LOGGER = getLogger(RestBrowserServlet.class);
-
     private static final String BROWSER_TEMPLATE = "/templates/browser.vm";
 
     private final ApplicationProperties applicationProperties;
-    private final PluginAccessor pluginAccessor;
+    private final ModuleDiscovery moduleDiscovery;
 
-    public RestBrowserServlet(final PluginAccessor pluginAccessor,
+    public RestBrowserServlet(final ModuleDiscovery moduleDiscovery,
                               final UserManager userManager,
                               final TemplateRenderer renderer,
                               final LoginUriProvider loginUriProvider,
                               final ApplicationProperties applicationProperties) {
         super(userManager, renderer, loginUriProvider);
         this.applicationProperties = requireNonNull(applicationProperties);
-        this.pluginAccessor = requireNonNull(pluginAccessor);
+        this.moduleDiscovery = requireNonNull(moduleDiscovery);
     }
 
     @Override
@@ -60,49 +50,16 @@ public class RestBrowserServlet extends RequiresLoginServlet {
         return BROWSER_TEMPLATE;
     }
 
-    // Can't use the non-deprecated getModuleDescriptors method until Fecru is on a newer version of Atlassian Plugins
-    @SuppressWarnings("deprecation")
     private List<RestDescriptor> getRestDescriptors() {
-        return pluginAccessor.getModuleDescriptors(describesRestModule()).stream()
-                .map(RestBrowserServlet::getRestDescriptor)
-                .filter(Optional::isPresent)
-                .map(Optional::get)
-                .collect(toList());
-    }
-
-    @SuppressWarnings("deprecation")
-    private static <T> ModuleDescriptorPredicate<T> describesRestModule() {
-        return md -> md != null &&
-                ("com.atlassian.plugins.rest.module.RestServletFilterModuleDescriptor".equals(md.getClass().getName())
-                        || "com.atlassian.plugins.rest.v2.descriptor.RestServletFilterModuleDescriptor".equals(md.getClass().getName()));
-    }
-
-    private static Optional<RestDescriptor> getRestDescriptor(final ModuleDescriptor<?> servlet) {
-        // com.atlassian.plugins.rest.module is exported as private, and com.atlassian.plugins.rest.v2.descriptor is not exported,
-        // so we have to use reflection to access the concrete descriptor we want
-        Class<?>[] params = {};
-        Object[] args = {};
-        String basePath;
-        Object apiVersion;
-        String version;
-        try {
-            Method getBasePath = servlet.getClass().getMethod("getBasePath", params);
-            basePath = (String) getBasePath.invoke(servlet, args);
-            Method getVersion = servlet.getClass().getMethod("getVersion", params);
-            apiVersion = getVersion.invoke(servlet, args);
-            version = apiVersion.toString();
-        } catch (final Exception e) {
-            LOGGER.debug("Couldn't get REST module info from {}", servlet, e);
-            return Optional.empty();
-        }
-        final Plugin plugin = servlet.getPlugin();
-        return Optional.of(new RestDescriptor.Builder()
-                .basePath(basePath)
-                .pluginCompleteKey(servlet.getCompleteKey())
-                .pluginDescription(servlet.getDescription())
-                .pluginKey(plugin.getKey())
-                .pluginName(plugin.getName())
-                .version(version)
-                .build());
+        return moduleDiscovery.discover().stream()
+                .map(m -> new RestDescriptor.Builder()
+                        .basePath(m.basePath())
+                        .version(m.version())
+                        .pluginCompleteKey(m.id())
+                        .pluginDescription(m.description())
+                        .pluginKey(m.pluginKey())
+                        .pluginName(m.pluginName())
+                        .build())
+                .toList();
     }
 }

@@ -12,3 +12,6 @@ src/test/product/shots/
 src/test/product/__pycache__/
 src/test/product/local.env
 src/main/resources/assets/rab/package-lock.json
+
+# agent worktrees of Claude Code
+.claude/worktrees/
