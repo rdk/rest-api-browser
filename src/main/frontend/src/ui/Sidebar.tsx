@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { Module, Operation, Summary } from '../core/types';
 import { groupRows, search, type GroupRow, type SearchRow } from '../core/search';
 import { VirtualList } from './VirtualList';
-import { MethodBadge, PathText } from './bits';
+import { MethodBadge, PathText, usePin } from './bits';
 import { searchWords } from '../core/pathparts';
 import { moduleFact, rowTicks, type Fact } from './facts';
 import { RowCard, type CardTarget } from './RowCard';
@@ -89,10 +89,20 @@ export function Sidebar(p: SidebarProps) {
   const [card, setCard] = useState<{ id: string; target: CardTarget; left: number; top: number } | null>(null);
   const cardTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const cardFor = useRef<string | undefined>(undefined);
-  const hideCard = () => {
+  const cardBox = useRef<HTMLDivElement | null>(null);
+  const forceHide = () => {
     clearTimeout(cardTimer.current);
     cardFor.current = undefined;
     setCard(null);
+  };
+  // Alt+P pins the card: it stays until a click outside it or Escape, whatever the pointer, the list or the focus do
+  const shownRef = useRef(false);
+  shownRef.current = !!card;
+  const pinned = usePin(() => shownRef.current, cardBox, forceHide);
+  const pinnedRef = useRef(false);
+  pinnedRef.current = pinned;
+  const hideCard = () => {
+    if (!pinnedRef.current) forceHide();
   };
   useEffect(() => hideCard, []);
   useEffect(() => hideCard(), [lines]);
@@ -114,6 +124,7 @@ export function Sidebar(p: SidebarProps) {
     }, delay);
   };
   const onListOver = (e: MouseEvent) => {
+    if (pinnedRef.current) return;
     const row = (e.target as Element).closest?.('[data-i]') as HTMLElement | null;
     if (row) scheduleCard(row, card ? 0 : CARD_DELAY);
   };
@@ -123,6 +134,7 @@ export function Sidebar(p: SidebarProps) {
     cardFor.current = ((e.target as Element).closest?.('[data-i]') as HTMLElement | null)?.dataset.id;
   };
   const onListFocus = (e: FocusEvent) => {
+    if (pinnedRef.current) return;
     const row = e.target as HTMLElement;
     if (row.dataset?.i !== undefined && row.matches(':focus-visible')) scheduleCard(row, CARD_DELAY);
   };
@@ -293,7 +305,8 @@ export function Sidebar(p: SidebarProps) {
         />
         </div>
       )}
-      {card && <RowCard target={card.target} baseUrl={s?.baseUrl ?? ''} left={card.left} top={card.top} rowHeight={ROW} />}
+      {card && <RowCard target={card.target} baseUrl={s?.baseUrl ?? ''} left={card.left} top={card.top} rowHeight={ROW}
+                        pinned={pinned} boxRef={cardBox} />}
     </div>
   );
 }

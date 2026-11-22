@@ -3,6 +3,7 @@ import type { Module, Operation, Param, Summary } from '../core/types';
 import { buildRequest, mediaChoices, setHeader, toCurl, urlParts, type BuiltRequest, type RequestValues, type UrlPart } from '../core/request';
 import { findTemplates } from '../core/template';
 import { checkValue, type Check } from '../core/validate';
+import { changedField, NO_HISTORY, record, redo as redoStep, undo as undoStep, type FormHistory, type FormState } from '../core/formhistory';
 import type { RequestRunner, RunResult } from './runner';
 import type { HistoryEntry, UserStore } from './userstore';
 import { CheckMark, CopyButton, MethodBadge, PathText, Tabs, WarnGlyph, WRITE_METHODS } from './bits';
@@ -14,7 +15,11 @@ export interface Draft {
   custom: { name: string; value: string }[];
   noXsrfHeader: boolean;
   result: RunResult | null;
+  /** The form's undo and redo steps. */
+  history?: FormHistory;
 }
+
+const formOf = (d: FormState): FormState => ({ values: d.values, custom: d.custom, noXsrfHeader: d.noXsrfHeader });
 
 export function emptyDraft(op: Operation): Draft {
   const query: Record<string, string[]> = {};
@@ -128,7 +133,40 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
     return () => document.removeEventListener('keydown', onKey);
   }, [runner]);
 
-  const setValues = (values: RequestValues) => setDraft({ ...latest.current, values });
+  // every change of the form goes through here, so it can be undone; the response is not part of it
+  const editForm = (next: FormState, separate = false) => {
+    const cur = latest.current;
+    const history = record(cur.history ?? NO_HISTORY, formOf(cur), next, Date.now(), separate);
+    if (history) setDraft({ ...cur, ...next, history });
+  };
+  const step = (which: 'undo' | 'redo') => {
+    const cur = latest.current;
+    const done = (which === 'undo' ? undoStep : redoStep)(cur.history ?? NO_HISTORY, formOf(cur));
+    if (done) setDraft({ ...cur, ...done.state, history: done.history });
+  };
+  const empty = useMemo(() => formOf(emptyDraft(op)), [op]);
+  const resetForm = () => editForm(empty, true);
+  const canUndo = !!draft.history?.undo.length;
+  const canRedo = !!draft.history?.redo.length;
+  const canReset = changedField(formOf(draft), empty) !== null;
+  const stepRef = useRef(step);
+  stepRef.current = step;
+  useEffect(() => {
+    // Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y outside a text field (a field keeps its own undo of what is typed into it)
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+      const k = e.key.toLowerCase();
+      if (k === 'z' || k === 'y') {
+        e.preventDefault();
+        stepRef.current(k === 'y' || e.shiftKey ? 'redo' : 'undo');
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
+  const setValues = (values: RequestValues) => editForm({ ...formOf(latest.current), values });
   const visibleParams = withTemplateParams(op).filter((p) => p.in !== 'form');
   const formParams = op.params.filter((p) => p.in === 'form');
   const regexes = useMemo(() => templateRegexes(op.path), [op.path]);
@@ -187,6 +225,7 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
       </div>
       <div class={'rab-n-op-split' + (compact ? ' is-compact' : '')}>
         <div class="rab-n-request" style={{ flexBasis: Math.round(split * 100) + '%' }}>
+          <div class="rab-n-tabbar">
           <Tabs<Tab>
             value={tab}
             onChange={setTab}
@@ -209,18 +248,19 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
               { id: 'history', label: `History (${history.length})` },
             ]}
           />
+            <FormTools canUndo={canUndo} canRedo={canRedo} canReset={canReset}
+                       onUndo={() => step('undo')} onRedo={() => step('redo')} onReset={resetForm} />
+          </div>
           <div class="rab-n-tabpane">
             {tab === 'params' && (
               <ParamsTab params={visibleParams} formParams={formParams} values={draft.values} onValues={setValues} regexes={regexes} />
             )}
             {tab === 'body' && <BodyTab op={op} values={draft.values} onValues={setValues} />}
-            {tab === 'headers' && <HeadersTab op={op} draft={draft} onDraft={setDraft} write={write} />}
+            {tab === 'headers' && <HeadersTab op={op} draft={draft} onDraft={(d) => editForm(formOf(d))} write={write} />}
             {tab === 'history' && (
               <HistoryTab
                 entries={history}
-                onRestore={(e) =>
-                  setDraft({ ...latest.current, values: e.values, custom: e.custom ?? [], noXsrfHeader: !!e.noXsrfHeader })
-                }
+                onRestore={(e) => editForm({ values: e.values, custom: e.custom ?? [], noXsrfHeader: !!e.noXsrfHeader }, true)}
                 onClear={async () => {
                   await userStore.clearHistory(op.key);
                   if (mounted.current) setHistory([]);
@@ -232,6 +272,33 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
         {!compact && <SplitHandle split={split} onSplit={onSplit} />}
         <ResponseView result={draft.result} running={running} onCancel={cancel} />
       </div>
+    </div>
+  );
+}
+
+/** Undo, redo and reset of the form, at the end of the request's tab bar. */
+function FormTools({ canUndo, canRedo, canReset, onUndo, onRedo, onReset }: {
+  canUndo: boolean; canRedo: boolean; canReset: boolean; onUndo: () => void; onRedo: () => void; onReset: () => void;
+}) {
+  const icon = (d: string) => (
+    <svg class="rab-n-svg" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d={d} stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+  return (
+    <div class="rab-n-form-tools" role="group" aria-label="The form's changes">
+      <button class="rab-n-tool" onClick={onUndo} disabled={!canUndo} title="Undo the last change of the form (Ctrl+Z outside a field)"
+              aria-label="Undo" data-testid="form-undo">
+        {icon('M6 3.5L3 6.5l3 3M3.5 6.5h6a3.5 3.5 0 010 7H7')}
+      </button>
+      <button class="rab-n-tool" onClick={onRedo} disabled={!canRedo} title="Redo (Ctrl+Y or Ctrl+Shift+Z outside a field)"
+              aria-label="Redo" data-testid="form-redo">
+        {icon('M10 3.5l3 3-3 3M12.5 6.5h-6a3.5 3.5 0 000 7H9')}
+      </button>
+      <button class="rab-n-tool" onClick={onReset} disabled={!canReset} title="Reset the form to its defaults (can be undone)"
+              aria-label="Reset the form" data-testid="form-reset">
+        {icon('M3.2 8a4.8 4.8 0 104.8-4.8H5.6M7.2 1.6L5.4 3.2 7.2 4.8')}
+      </button>
     </div>
   );
 }

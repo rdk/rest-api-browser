@@ -10,6 +10,7 @@ import { UserStore, isCredentialHeader } from './userstore';
 import { Sidebar } from './Sidebar';
 import { OperationView, emptyDraft, type Draft } from './Operation';
 import { Menu, type MenuItem } from './Menu';
+import { PinHint, usePin } from './bits';
 
 interface Props {
   baseUrl: string;
@@ -17,6 +18,8 @@ interface Props {
   product: string;
   /** This app's version, empty when unknown. */
   version: string;
+  /** The product's base URL as configured ("https://jira.example.com"), empty when unknown. */
+  siteUrl: string;
 }
 
 /** The project's home, its releases and its issues. */
@@ -31,7 +34,7 @@ const SPLIT = 0.45;
 /** The list may take up to this share of the width. */
 const MAX_SIDEBAR = 0.75;
 
-export function App({ baseUrl, classicUrl, product, version }: Props) {
+export function App({ baseUrl, classicUrl, product, version, siteUrl }: Props) {
   const store = useMemo(() => new CatalogStore(baseUrl), [baseUrl]);
   const runner = useMemo(() => new RequestRunner(), []);
   const userStore = useMemo(() => new UserStore(baseUrl || location.host), [baseUrl]);
@@ -176,6 +179,14 @@ export function App({ baseUrl, classicUrl, product, version }: Props) {
   }, [baseUrl, store]);
 
   const productLabel = summary ? `${summary.product.name} ${summary.product.version}` : product;
+  // the header's tooltip about the project: on hover or keyboard focus of the brand, pinned with Alt+P
+  const brandWrap = useRef<HTMLSpanElement>(null);
+  const aboutPinned = usePin(
+    () => !!brandWrap.current && (brandWrap.current.matches(':hover') || brandWrap.current.contains(document.activeElement)),
+    brandWrap,
+  );
+  const site = siteUrl.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').replace(/\/+$/, '');
+  const siteHost = site.split('/')[0];
   const menu: MenuItem[] = [
     {
       id: 'layout',
@@ -212,14 +223,15 @@ export function App({ baseUrl, classicUrl, product, version }: Props) {
   return (
     <div class="rab-n" ref={root} style={{ height: height + 'px' }}>
       <div class="rab-n-topbar">
-        <span class="rab-n-brand-wrap">
+        <div class="rab-n-top-left">
+        <span ref={brandWrap} class={'rab-n-brand-wrap' + (aboutPinned ? ' pinned' : '')}>
           <a class="rab-n-brand" href={REPO} target="_blank" rel="noopener noreferrer" aria-describedby="rab-n-about" data-testid="brand">
             <span class="rab-n-brand-mark" aria-hidden="true">
               <BrandIcon size={15} />
             </span>
             <strong class="rab-n-topbar-title">REST API Browser</strong>
           </a>
-          <About version={version} product={productLabel} operations={rows.length} modules={summary?.modules.length} />
+          <About version={version} product={productLabel} operations={rows.length} modules={summary?.modules.length} pinned={aboutPinned} />
         </span>
         {version && (
           <a class="rab-n-version" href={`${REPO}/releases`} target="_blank" rel="noopener noreferrer"
@@ -227,7 +239,20 @@ export function App({ baseUrl, classicUrl, product, version }: Props) {
             v{version}
           </a>
         )}
-        <span class="rab-n-spacer" />
+        </div>
+        <div class="rab-n-top-center">
+          {site && (
+            <a class="rab-n-site" href={siteUrl} title={`${product || 'The product'}'s base URL: ${siteUrl}`} data-testid="site">
+              <svg class="rab-n-svg" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <circle cx="8" cy="8" r="5.8" stroke="currentColor" strokeWidth="1.3" />
+                <path d="M2.4 8h11.2M8 2.2c1.7 1.6 2.5 3.6 2.5 5.8S9.7 12.2 8 13.8M8 2.2C6.3 3.8 5.5 5.8 5.5 8s.8 4.2 2.5 5.8" stroke="currentColor" strokeWidth="1.2" />
+              </svg>
+              <span class="rab-n-site-host">{siteHost}</span>
+              {site.length > siteHost.length && <span class="rab-n-site-path">{site.slice(siteHost.length)}</span>}
+            </a>
+          )}
+        </div>
+        <div class="rab-n-top-right">
         <a class="rab-n-top-link" href={classicUrl} title="The original REST API Browser" data-testid="classic-link">
           <svg class="rab-n-svg" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <rect x="2.5" y="3" width="11" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
@@ -236,6 +261,7 @@ export function App({ baseUrl, classicUrl, product, version }: Props) {
           Classic UI
         </a>
         <Menu label="More actions" items={menu} />
+        </div>
       </div>
       <div class="rab-n-body-row">
         <div class="rab-n-side" style={{ width: sidebarWidth + 'px' }}>
@@ -290,7 +316,9 @@ function BrandIcon({ size }: { size: number }) {
 }
 
 /** The header's tooltip about the project; the brand it describes opens the project on GitHub. */
-function About({ version, product, operations, modules }: { version: string; product: string; operations: number; modules?: number }) {
+function About({ version, product, operations, modules, pinned }: {
+  version: string; product: string; operations: number; modules?: number; pinned: boolean;
+}) {
   return (
     <div id="rab-n-about" class="rab-n-about" role="tooltip" data-testid="about">
       <div class="rab-n-about-head">
@@ -318,12 +346,13 @@ function About({ version, product, operations, modules }: { version: string; pro
         <dt>License</dt>
         <dd>Apache License 2.0</dd>
       </dl>
-      <div class="rab-n-about-foot">
+      <a class="rab-n-about-foot" href={REPO} target="_blank" rel="noopener noreferrer" tabIndex={-1}>
         <svg class="rab-n-svg" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
           <path d="M9 3h4v4M13 3L7.5 8.5M11.5 9.5V13h-8.5V4.5H6.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
         Click to open github.com/rdk/rest-api-browser
-      </div>
+      </a>
+      <PinHint pinned={pinned} />
     </div>
   );
 }

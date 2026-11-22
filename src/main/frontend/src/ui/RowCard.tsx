@@ -1,7 +1,7 @@
-import { useLayoutEffect, useRef } from 'preact/hooks';
+import { useLayoutEffect } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import type { Module, Operation } from '../core/types';
-import { MethodBadge, PathText } from './bits';
+import { MethodBadge, PathText, PinHint } from './bits';
 import { accessFact, moduleFact, originLabel, paramSummary, sourceLabel, stabilityLabel, type Fact } from './facts';
 
 export type CardTarget = { kind: 'op'; op: Operation; module?: Module } | { kind: 'module'; module: Module; count: number };
@@ -10,10 +10,11 @@ export type CardTarget = { kind: 'op'; op: Operation; module?: Module } | { kind
  * The hover card of a list row: everything the row's ticks stand for, spelled out, with the app's full name and
  * what else helps to pick an operation. It sits beside the list, aligned with the row, and never takes the pointer.
  */
-export function RowCard({ target, baseUrl, left, top, rowHeight }: {
-  target: CardTarget; baseUrl: string; left: number; top: number; rowHeight: number;
+export function RowCard({ target, baseUrl, left, top, rowHeight, pinned, boxRef }: {
+  target: CardTarget; baseUrl: string; left: number; top: number; rowHeight: number; pinned: boolean;
+  boxRef: { current: HTMLDivElement | null };
 }) {
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = boxRef;
   // keep the card inside the app: it moves up when it would overflow the bottom, the arrow stays at the row
   useLayoutEffect(() => {
     const el = ref.current;
@@ -24,8 +25,10 @@ export function RowCard({ target, baseUrl, left, top, rowHeight }: {
     el.style.setProperty('--arrow', Math.round(top - y + rowHeight / 2) + 'px');
   });
   return (
-    <div ref={ref} class="rab-n-card" role="tooltip" data-testid="row-card" style={{ left: left + 'px', top: top + 'px' }}>
+    <div ref={ref} class={'rab-n-card' + (pinned ? ' pinned' : '')} role="tooltip" data-testid="row-card"
+         style={{ left: left + 'px', top: top + 'px' }}>
       {target.kind === 'op' ? <OpFacts op={target.op} m={target.module} baseUrl={baseUrl} /> : <ModuleFacts m={target.module} count={target.count} />}
+      <PinHint pinned={pinned} />
     </div>
   );
 }

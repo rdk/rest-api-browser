@@ -42,6 +42,16 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         const setter = Object.getOwnPropertyDescriptor(e.constructor.prototype, 'value').set; setter.call(e, ${q(value)});
         e.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
     const click = sel => b.evaluate(`(() => { const e = document.querySelector(${q(sel)}); if (!e) return false; e.click(); return true; })()`);
+    const pressAltP = async () => {
+        const base = { key: 'p', code: 'KeyP', windowsVirtualKeyCode: 80, nativeVirtualKeyCode: 80, modifiers: 1 };
+        await b.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...base });
+        await b.send('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
+    };
+    const clickAt = async (x, y) => {
+        await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+        await b.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
+        await b.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
+    };
     const openOp = async (search, title, method = 'GET') => {
         const row = `[data-testid=op][data-method=${method}][data-path=${q(title)}]`;
         await type('[data-testid=search]', search);
@@ -67,6 +77,12 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
             const attrs = sel => { const e = top.querySelector(sel); return e && { text: e.textContent.trim(), href: e.getAttribute('href'), target: e.target }; };
             return { brand: attrs('[data-testid=brand]'), version: attrs('[data-testid=version]'), classic: attrs('[data-testid=classic-link]') };
         })()`);
+        const site = await b.evaluate(`(() => { const e = document.querySelector('.rab-n-topbar [data-testid=site]');
+            return e && { text: e.textContent, href: e.getAttribute('href'), center: Math.round(e.getBoundingClientRect().left + e.getBoundingClientRect().width / 2),
+                bar: Math.round(document.querySelector('.rab-n-topbar').getBoundingClientRect().left + document.querySelector('.rab-n-topbar').getBoundingClientRect().width / 2) }; })()`);
+        c.check(`the header shows the product's base URL in the middle, without the protocol (${site && site.text})`,
+            !!site && site.text.length > 0 && !/^[a-z]+:\/\//i.test(site.text) && /^https?:\/\//.test(site.href)
+            && site.href.replace(/^https?:\/\//, '').replace(/\/$/, '') === site.text && Math.abs(site.center - site.bar) <= 2, site);
         c.check('the header links the brand to GitHub, the version to its releases, and the classic UI',
             !!header.brand && /^https:\/\/github\.com\/[^/]+\/[^/]+$/.test(header.brand.href) && header.brand.target === '_blank'
             && !!header.version && /^v\d/.test(header.version.text) && /\/releases$/.test(header.version.href) && header.version.target === '_blank'
@@ -79,13 +95,22 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         c.check('resting on the brand shows the tooltip about the project', about,
             await b.evaluate(`(document.querySelector('[data-testid=about]') || {}).textContent || 'none'`));
         await b.shot(path.join(SHOTS, `${PRODUCT}-next-6-about.png`));
+        const aboutShown = `(() => { const e = document.querySelector('[data-testid=about]'); return !!e && getComputedStyle(e).visibility === 'visible'; })()`;
+        await pressAltP();
         await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: brand.x + 700, y: brand.y + 300 });
+        await sleep(500);
+        const aboutPinned = await b.evaluate(aboutShown);
+        await clickAt(brand.x + 700, brand.y + 300);
+        await sleep(400);
+        const aboutGone = !await b.evaluate(aboutShown);
+        c.check('Alt+P pins the tooltip about the project; a click outside hides it', aboutPinned && aboutGone, { aboutPinned, aboutGone });
 
         // the page is the app: no product footer, nothing to scroll
-        const page = await b.evaluate(`(() => { const f = document.querySelector('#footer');
-            return { footer: f ? getComputedStyle(f).display : 'absent', overflow: document.documentElement.scrollHeight - innerHeight }; })()`);
-        c.check(`the product's footer is hidden and the page does not scroll (${page.overflow} px more)`,
-            (page.footer === 'none' || page.footer === 'absent') && page.overflow <= 4, page);
+        const page = await b.evaluate(`(() => { const shown = sel => { const e = document.querySelector(sel); return e ? getComputedStyle(e).display : 'absent'; };
+            return { header: shown('#header'), footer: shown('#footer'), overflow: document.documentElement.scrollHeight - innerHeight,
+                appTop: Math.round(document.querySelector('.rab-n').getBoundingClientRect().top) }; })()`);
+        c.check(`the product's header and footer are hidden and the page does not scroll (${page.overflow} px more)`,
+            ['none', 'absent'].includes(page.header) && ['none', 'absent'].includes(page.footer) && page.overflow <= 4, page);
 
         // search: a flat, ranked list
         const searchStart = Date.now();
@@ -108,7 +133,14 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         c.check('resting on a row opens its card with the app and the access', carded,
             await b.evaluate(`(document.querySelector('[data-testid=row-card]') || {}).textContent || 'no card'`));
         await b.shot(path.join(SHOTS, `${PRODUCT}-next-3-card.png`));
-        await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x + 1200, y: rect.y });
+        await pressAltP();
+        await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x + 1200, y: rect.y + 300 });
+        await sleep(500);
+        const cardPinned = await b.evaluate(`!!document.querySelector('[data-testid=row-card].pinned')`);
+        await clickAt(rect.x + 1200, rect.y + 300);
+        await sleep(300);
+        const cardGone = await b.evaluate(`!document.querySelector('[data-testid=row-card]')`);
+        c.check('Alt+P pins a row\'s card; a click outside hides it', cardPinned && cardGone, { cardPinned, cardGone });
         console.log(`Search answered in ${Date.now() - searchStart} ms (including the poll)`);
 
         // the operation: form, live URL, send, response
@@ -123,6 +155,13 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         c.check(`Send shows the product's answer (status ${(await text('[data-testid=response-status]')).trim()})`, answered,
             (await text('[data-testid=response]')).slice(0, 200));
         await b.shot(path.join(SHOTS, `${PRODUCT}-next-2-response.png`));
+        const numbers = await b.evaluate(`document.querySelectorAll('[data-testid=response] .rab-n-gutter').length`);
+        await b.evaluate(`([...document.querySelectorAll('[data-testid=response] [role=tab]')].find(t => /^Headers/.test(t.textContent)) || {}).click?.(), true`);
+        await b.waitFor(`!!document.querySelector('[data-testid=request-header]')`, 3000);
+        const sentHeaders = await b.evaluate(`[...document.querySelectorAll('[data-testid=request-header]')].map(e => e.textContent)`);
+        c.check('Pretty shows no line numbers; Headers lists the request\'s headers before the response\'s',
+            numbers === 0 && sentHeaders.some(h => /^accept:/i.test(h)), { numbers, sentHeaders });
+        await b.evaluate(`([...document.querySelectorAll('[data-testid=response] [role=tab]')].find(t => /^Pretty/.test(t.textContent)) || {}).click?.(), true`);
         c.check('the History tab lists the request', await b.waitFor(`/History \\([1-9]/.test(document.body.textContent)`, 5000));
 
         // a path parameter's value is URL-encoded; the request is a GET of something that cannot exist
@@ -161,6 +200,20 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
                 c.check('the GET with the odd value gets an answer', st,
                     (await text('[data-testid=response-status]')).trim() || (await text('.rab-n-response')).slice(0, 200));
             }
+            // undo, redo and reset: the steps are the path value, then the query value (when the form has one)
+            const val = n => b.evaluate(`(document.querySelector('input[name=${n}]') || {}).value`);
+            const form = async () => ({ param: await val(P.param), expand: colors.query ? await val('expand') : undefined });
+            const tool = async id => { await click(`[data-testid=form-${id}]`); await sleep(150); return form(); };
+            const steps = {};
+            if (colors.query) steps.undoQuery = await tool('undo');
+            steps.undoPath = await tool('undo');
+            steps.redo = await tool('redo');
+            steps.reset = await tool('reset');
+            steps.undoReset = await tool('undo');
+            c.check('undo, redo and reset change the form step by step',
+                (!colors.query || (steps.undoQuery.expand === '' && steps.undoQuery.param === ODD))
+                && steps.undoPath.param === '' && steps.redo.param === ODD && steps.reset.param === '' && (!colors.query || steps.reset.expand === '')
+                && steps.undoReset.param === ODD, steps);
         } else {
             console.log(`SKIP the path parameter: ${P.templated} is not in the list`);
         }

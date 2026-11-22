@@ -99,7 +99,7 @@ export function ResponseView({ result, running, onCancel }: {
         tabs={[
           { id: 'pretty', label: 'Pretty' },
           { id: 'raw', label: 'Raw' },
-          { id: 'headers', label: `Headers (${result.headers.length})` },
+          { id: 'headers', label: `Headers (${(result.requestHeaders?.length ?? 0) + result.headers.length})` },
         ]}
       />
       {result.truncated && (
@@ -107,8 +107,18 @@ export function ResponseView({ result, running, onCancel }: {
       )}
       {view === 'headers' ? (
         <div class="rab-n-headers" data-testid="response-headers">
+          <div class="rab-n-headers-title" data-testid="request-headers-title">
+            Request <span class="rab-n-headers-count">{result.requestHeaders?.length ?? 0}</span>
+            <span class="rab-n-headers-note">set by the browser too: cookies, User-Agent, Origin…</span>
+          </div>
+          {(result.requestHeaders ?? []).map(([k, v], i) => (
+            <div class="rab-n-header-row" key={'q' + i} data-testid="request-header"><span class="rab-n-header-name">{k}:</span> {v}</div>
+          ))}
+          <div class="rab-n-headers-title">
+            Response <span class="rab-n-headers-count">{result.headers.length}</span>
+          </div>
           {result.headers.map(([k, v], i) => (
-            <div class="rab-n-header-row" key={i}><span class="rab-n-header-name">{k}:</span> {v}</div>
+            <div class="rab-n-header-row" key={'r' + i}><span class="rab-n-header-name">{k}:</span> {v}</div>
           ))}
         </div>
       ) : result.kind === 'binary' ? (
@@ -215,7 +225,7 @@ function JsonView({ model }: { model: LineModel }) {
     <div class="rab-n-code-wrap">
       <FindBox onFind={onFind} onStep={onStep} count={matches.length} index={current} />
       <VirtualList
-        className="rab-n-code"
+        className="rab-n-code rab-n-code-pretty"
         count={visible.length}
         rowHeight={LINE}
         activeIndex={activeRow >= 0 ? activeRow : undefined}
@@ -228,7 +238,6 @@ function JsonView({ model }: { model: LineModel }) {
           const text = line.text.trimStart();
           return (
             <div class={'rab-n-line' + (matchSet.has(i) ? ' match' : '') + (i === activeLine ? ' current' : '')}>
-              <span class="rab-n-gutter">{i + 1}</span>
               <span class="rab-n-fold">
                 {foldable && (
                   <button class="rab-n-fold-btn" onClick={() => toggle(i)} aria-label={folded ? 'Expand' : 'Collapse'}>

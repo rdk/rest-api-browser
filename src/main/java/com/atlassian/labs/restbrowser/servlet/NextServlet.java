@@ -42,6 +42,7 @@ public class NextServlet extends RequiresLoginServlet {
     protected Map<String, Object> getContext(HttpServletRequest request) {
         Map<String, Object> context = new HashMap<>();
         context.put("baseUrl", applicationProperties.getBaseUrl(UrlMode.RELATIVE));
+        context.put("siteUrl", applicationProperties.getBaseUrl(UrlMode.CANONICAL));
         context.put("productName", applicationProperties.getDisplayName());
         context.put("pluginVersion", pluginVersion());
         return context;

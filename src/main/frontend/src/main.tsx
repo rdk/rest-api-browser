@@ -13,6 +13,7 @@ function mount() {
         classicUrl={root.dataset.classicUrl ?? ''}
         product={root.dataset.product ?? ''}
         version={root.dataset.version ?? ''}
+        siteUrl={root.dataset.siteUrl ?? ''}
       />,
       root,
     );

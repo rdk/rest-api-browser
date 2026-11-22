@@ -9,6 +9,8 @@ export interface RunResult {
   statusText: string;
   ok: boolean;
   headers: [string, string][];
+  /** The headers the app set on the request; the browser adds its own (cookies, User-Agent, …). */
+  requestHeaders: [string, string][];
   contentType: string;
   durationMs: number;
   size: number;
@@ -105,7 +107,7 @@ export class RequestRunner {
     const controller = new AbortController();
     this.controller = controller;
     const start = now();
-    const base = { method: req.method, url: req.url };
+    const base = { method: req.method, url: req.url, requestHeaders: Object.entries(req.headers) };
     try {
       const res = await this.fetchFn(req.url, {
         method: req.method,

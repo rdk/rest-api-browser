@@ -25,6 +25,59 @@ export function PathText({ path, prefix, words, rank }: { path: string; prefix?:
   );
 }
 
+/** The key that pins a rich tooltip: Alt+P (by key position, so Option+P on a Mac works too). */
+export const isPinKey = (e: KeyboardEvent) => e.altKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyP';
+
+/**
+ * Pinning of a rich tooltip (the list's hover card, the header's about): Alt+P while it shows pins it, so it stays
+ * and takes the pointer (its text can be selected, its links clicked); a click outside `box`, Escape or Alt+P again
+ * lets it go, and `onRelease` hides it.
+ */
+export function usePin(shown: () => boolean, box: { current: HTMLElement | null }, onRelease?: () => void): boolean {
+  const [pinned, setPinned] = useState(false);
+  const latest = useRef({ shown, onRelease });
+  latest.current = { shown, onRelease };
+  useEffect(() => {
+    const release = () => {
+      setPinned(false);
+      latest.current.onRelease?.();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (isPinKey(e) && (pinned || latest.current.shown())) {
+        e.preventDefault();
+        if (pinned) release();
+        else setPinned(true);
+      } else if (pinned && e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation(); // Escape would also cancel a running request
+        release();
+      }
+    };
+    const onDown = (e: PointerEvent) => {
+      if (pinned && !box.current?.contains(e.target as Node)) release();
+    };
+    document.addEventListener('keydown', onKey, true);
+    document.addEventListener('pointerdown', onDown, true);
+    return () => {
+      document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('pointerdown', onDown, true);
+    };
+  }, [pinned]);
+  return pinned;
+}
+
+/** The last line of a rich tooltip: how to pin it, or how to let it go. */
+export function PinHint({ pinned }: { pinned: boolean }) {
+  return (
+    <div class={'rab-n-pin-hint' + (pinned ? ' pinned' : '')} data-testid="pin-hint">
+      <svg class="rab-n-svg" width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="M6 2.5h4M7 2.5v4L4.5 9h7L9 6.5v-4M8 9v4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      {pinned ? <span>Pinned: <kbd>Esc</kbd> or a click outside closes it</span> : <span><kbd>Alt</kbd>+<kbd>P</kbd> pins it</span>}
+    </div>
+  );
+}
+
 export function WarnGlyph({ size = 13 }: { size?: number }) {
   return (
     <svg class="rab-n-svg" width={size} height={size} viewBox="0 0 16 16" fill="none" aria-hidden="true">
