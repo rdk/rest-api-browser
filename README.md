@@ -70,7 +70,15 @@ which stays as it is.
 It works differently: the server builds a catalog of the product's REST API from Jersey's runtime model (served at
 `/rest/restbrowser/1/catalog`), so the browser fetches and parses no WADL. That is why it works on Confluence 10, where
 the classic page's public list is empty. It adds search, a history of sent requests, **Copy as curl** and deep links
-that prefill a request without sending it. Plan and status: [docs/NEW-UI-PLAN.md](docs/NEW-UI-PLAN.md).
+that prefill a request without sending it. System administrators also get a **Java** tab per operation: the method
+that handles it and its class (annotations included), the OSGi bundle and its package wiring, the plugin and the REST
+module (`/rest/restbrowser/1/catalog/details`). Plan and status: [docs/NEW-UI-PLAN.md](docs/NEW-UI-PLAN.md).
+
+## Open work
+
+[TODO.md](TODO.md) is the short list of open work; each item has its own file in [docs/todo/](docs/todo/), and
+[docs/todo/README.md](docs/todo/README.md) has the conventions. The rest of `docs/` is listed in
+[docs/README.md](docs/README.md).
 
 ## Build
 
