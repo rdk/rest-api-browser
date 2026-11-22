@@ -253,8 +253,10 @@ def new_ui(j, a, P):
     check('the new page has id="rab-next" and data-base-url', 'id="rab-next"' in page and 'data-base-url' in page,
           page[:300])
     assets = sorted(set(html.unescape(u) for u in re.findall(r'(?:src|href)="([^"]*:next-assets[^"]*)"', page)))
-    check('the new page loads the web resource next-assets (next.js and next.css)',
-          any('next.js' in u for u in assets) and any('next.css' in u for u in assets), assets or page[:300])
+    # dev mode serves next.js and next.css one by one; outside dev mode the product batches them (next-assets.js/.css)
+    check('the new page loads the web resource next-assets (its script and its stylesheet)',
+          any(re.search(r'next(-assets)?\.js', u) for u in assets) and any(re.search(r'next(-assets)?\.css', u) for u in assets),
+          assets or page[:300])
     bad = []
     for u in assets:
         s, body, _ = j.call('GET', urllib.parse.urljoin(j.url + '/', u), auth=False)

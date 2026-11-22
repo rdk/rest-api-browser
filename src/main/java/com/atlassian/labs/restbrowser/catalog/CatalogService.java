@@ -268,6 +268,10 @@ public class CatalogService implements InitializingBean, DisposableBean {
     /** Asks the sources in order; the first that describes the module wins, failures fall through to the next. */
     private Built describe(RestModule module) {
         String origin = product.origin(module.plugin());
+        if (product.excluded(module)) {
+            return failed(module, origin, "excluded",
+                    "Not described: an API for applications with Crowd application credentials, not for users");
+        }
         AtomicBoolean previous = stuck.get(module.id());
         if (previous != null) {
             if (previous.get()) {

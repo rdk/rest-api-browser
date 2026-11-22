@@ -27,6 +27,7 @@ public class ProductAdapter {
 
     private final String productId;
     private final List<Pattern> supported;
+    private final List<Pattern> excluded = rules("excluded");
     private final Supplier<PluginMetadataManager> metadata;
     /** Set on the first failure: an optional service that is not there would otherwise time out on every call. */
     private volatile boolean metadataUnavailable;
@@ -63,6 +64,16 @@ public class ProductAdapter {
             return "user";
         }
         return plugin.isSystemPlugin() ? "product" : "bundled";
+    }
+
+    /** Whether the catalog lists the module without describing it (Crowd's application APIs). */
+    public boolean excluded(RestModule module) {
+        for (Pattern p : excluded) {
+            if (p.matcher(module.path()).find()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** supported (the product's public API), app (from a user-installed app), or internal. */

@@ -6,6 +6,8 @@ import com.atlassian.plugin.metadata.PluginMetadataManager;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -33,6 +35,17 @@ public class ProductAdapterTest {
         assertEquals("internal", stability("jira", "api/2.0", "product"));
         assertEquals("internal", stability("jira", "api/latest", "product"));
         assertEquals("internal", stability("jira", "api/3", "product"));
+    }
+
+    @Test
+    public void crowdApplicationApisAreExcludedInEveryProduct() {
+        for (String product : new String[]{"jira", "conf", "unknown"}) {
+            ProductAdapter adapter = new ProductAdapter(product, () -> null);
+            assertTrue(adapter.excluded(module("usermanagement/1")));
+            assertTrue(adapter.excluded(module("appmanagement/1")));
+            assertFalse(adapter.excluded(module("api/2")));
+            assertFalse(adapter.excluded(module("myusermanagement/1")));
+        }
     }
 
     @Test

@@ -98,12 +98,13 @@ public class JerseyModelSource implements SpecSource {
             throw new SpecException("container-unavailable", "Couldn't reach the Jersey container: " + e, e);
         }
         Object handler = applicationHandlerOrNull(container);
+        String tried = "";
         if (handler == null) {
-            initialize(module);
+            tried = initialize(module);
             handler = applicationHandlerOrNull(container);
         }
         if (handler == null) {
-            throw new SpecException("not-started", "The module's Jersey application is not initialized", null);
+            throw new SpecException("not-started", "The module's Jersey application is not initialized; " + tried, null);
         }
         return handler;
     }
@@ -117,11 +118,12 @@ public class JerseyModelSource implements SpecSource {
     }
 
     /** Lets the ServletModuleManager initialize the filters of the module's path, as the first request would. */
-    private void initialize(RestModule module) {
+    /** @return what was tried, for the module's error details (admins see them) */
+    private String initialize(RestModule module) {
         ServletModuleManager manager = servletModuleManager.get();
         ServletContext context = servletContext.get();
         if (manager == null || context == null) {
-            return;
+            return "no ServletModuleManager or ServletContext to initialize it with";
         }
         FilterConfig config = new FilterConfig() {
             @Override
@@ -145,13 +147,20 @@ public class JerseyModelSource implements SpecSource {
             }
         };
         String path = "/rest/" + module.path() + "/";
-        try {
-            for (FilterLocation location : FilterLocation.values()) {
-                manager.getFilters(location, path, config, DispatcherType.REQUEST).forEach(f -> { });
+        StringBuilder tried = new StringBuilder("filters for ").append(path).append(':');
+        for (FilterLocation location : FilterLocation.values()) {
+            try {
+                int[] count = {0};
+                manager.getFilters(location, path, config, DispatcherType.REQUEST).forEach(f -> count[0]++);
+                if (count[0] > 0) {
+                    tried.append(' ').append(location).append('=').append(count[0]);
+                }
+            } catch (RuntimeException | LinkageError e) {
+                LOGGER.debug("Couldn't initialize the filters of {}", path, e);
+                tried.append(' ').append(location).append(" failed: ").append(e);
             }
-        } catch (RuntimeException | LinkageError e) {
-            LOGGER.debug("Couldn't initialize the filters of {}", path, e);
         }
+        return tried.toString();
     }
 
     /** What a sub-resource locator passes down to the operations below it. */
