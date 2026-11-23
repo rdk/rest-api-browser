@@ -10,8 +10,8 @@ export type CardTarget = { kind: 'op'; op: Operation; module?: Module } | { kind
  * The hover card of a list row: everything the row's ticks stand for, spelled out, with the app's full name and
  * what else helps to pick an operation. It sits beside the list, aligned with the row, and never takes the pointer.
  */
-export function RowCard({ target, baseUrl, left, top, rowHeight, pinned, boxRef }: {
-  target: CardTarget; baseUrl: string; left: number; top: number; rowHeight: number; pinned: boolean;
+export function RowCard({ target, left, top, rowHeight, pinned, boxRef }: {
+  target: CardTarget; left: number; top: number; rowHeight: number; pinned: boolean;
   boxRef: { current: HTMLDivElement | null };
 }) {
   const ref = boxRef;
@@ -27,13 +27,13 @@ export function RowCard({ target, baseUrl, left, top, rowHeight, pinned, boxRef 
   return (
     <div ref={ref} class={'rab-n-card' + (pinned ? ' pinned' : '')} role="tooltip" data-testid="row-card"
          style={{ left: left + 'px', top: top + 'px' }}>
-      {target.kind === 'op' ? <OpFacts op={target.op} m={target.module} baseUrl={baseUrl} /> : <ModuleFacts m={target.module} count={target.count} />}
+      {target.kind === 'op' ? <OpFacts op={target.op} m={target.module} /> : <ModuleFacts m={target.module} count={target.count} />}
       <PinHint pinned={pinned} />
     </div>
   );
 }
 
-function OpFacts({ op, m, baseUrl }: { op: Operation; m?: Module; baseUrl: string }) {
+function OpFacts({ op, m }: { op: Operation; m?: Module }) {
   const access = accessFact(op.access);
   return (
     <>
@@ -41,7 +41,6 @@ function OpFacts({ op, m, baseUrl }: { op: Operation; m?: Module; baseUrl: strin
         <MethodBadge method={op.method} />
         <span class="rab-n-card-path"><PathText path={(m ? m.path + '/' : '') + op.path} prefix={m?.path.length} /></span>
       </div>
-      {m && <div class="rab-n-card-url">{baseUrl}/rest/{m.path}/{op.path}</div>}
       <dl class="rab-n-card-facts">
         {m && <Row name="API"><Dot fact={moduleFact(m)} />{stabilityLabel(m)}</Row>}
         <Row name="Access">

@@ -305,7 +305,7 @@ export function Sidebar(p: SidebarProps) {
         />
         </div>
       )}
-      {card && <RowCard target={card.target} baseUrl={s?.baseUrl ?? ''} left={card.left} top={card.top} rowHeight={ROW}
+      {card && <RowCard target={card.target} left={card.left} top={card.top} rowHeight={ROW}
                         pinned={pinned} boxRef={cardBox} />}
     </div>
   );

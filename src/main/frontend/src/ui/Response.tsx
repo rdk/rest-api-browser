@@ -69,7 +69,6 @@ export function ResponseView({ result, running, onCancel, maximized, onMaximize,
     );
   }
   const statusClass = result.status >= 500 ? 'err' : result.status >= 400 ? 'warn' : result.status >= 300 ? 'info' : 'ok';
-  const fileName = 'response' + (result.kind === 'json' ? '.json' : result.kind === 'xml' ? '.xml' : result.kind === 'html' ? '.html' : '');
   const id = idOf(result);
   return (
     <div class="rab-n-response" data-testid="response">
@@ -85,20 +84,7 @@ export function ResponseView({ result, running, onCancel, maximized, onMaximize,
         <span class="rab-n-metric">{formatBytes(result.size)}{result.truncated ? ' (truncated)' : ''}</span>
         <span class="rab-n-subtle rab-n-status-url">{result.method} {result.url}</span>
         <span class="rab-n-spacer" />
-        {result.size > 0 && (
-          <button
-            class="rab-n-button"
-            onClick={() => {
-              const blob = downloadBlob(result);
-              if (blob) download(blob, fileName);
-            }}
-          >
-            <svg class="rab-n-svg" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path d="M8 2.5v7.5M5 7.5L8 10.5l3-3M3 13h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            Download
-          </button>
-        )}
+        <MaximizeButton on={maximized} onToggle={onMaximize} what="response" testId="max-bottom" />
       </div>
       <div class="rab-n-tabbar rab-n-tabbar-response">
         <Tabs<View>
@@ -117,11 +103,11 @@ export function ResponseView({ result, running, onCancel, maximized, onMaximize,
         )}
         <span class="rab-n-spacer" />
         <div class="rab-n-form-tools">
-          <MaximizeButton on={maximized} onToggle={onMaximize} what="response" testId="max-bottom" />
+          <DownloadButton view={view} result={result} baseUrl={baseUrl} />
         </div>
       </div>
       {result.truncated && (
-        <div class="rab-n-banner">The response is larger than the limit; only its start was read. Download saves that part.</div>
+        <div class="rab-n-banner">The response is larger than the limit; only its start was read. Downloading saves that part.</div>
       )}
       {view === 'headers' ? (
         <div class="rab-n-headers" data-testid="response-headers">
@@ -132,7 +118,7 @@ export function ResponseView({ result, running, onCancel, maximized, onMaximize,
       ) : view === 'sent' ? (
         <RequestHeaders key={'sent' + id} result={result} baseUrl={baseUrl} />
       ) : result.kind === 'binary' ? (
-        <div class="rab-n-response-state rab-n-subtle">Binary content ({result.contentType || 'no content type'}). Use Download.</div>
+        <div class="rab-n-response-state rab-n-subtle">Binary content ({result.contentType || 'no content type'}). Download it with the button at the right.</div>
       ) : result.kind === 'empty' ? (
         <div class="rab-n-response-state rab-n-subtle">No content.</div>
       ) : view === 'pretty' && model ? (
@@ -146,6 +132,57 @@ export function ResponseView({ result, running, onCancel, maximized, onMaximize,
         </>
       )}
     </div>
+  );
+}
+
+const EXTENSIONS: Record<string, string> = { json: '.json', xml: '.xml', html: '.html', text: '.txt' };
+
+/**
+ * What the open tab downloads: Pretty the body formatted (JSON indented), Raw the body as received, the headers tabs
+ * their headers as text. Null when there is nothing to save (an empty body).
+ */
+async function downloadOf(view: View, result: RunResult, baseUrl: string): Promise<{ blob: Blob; name: string } | null> {
+  const ext = EXTENSIONS[result.kind] ?? '';
+  const lines = (pairs: [string, string][]) => pairs.map(([k, v]) => `${k}: ${v}`).join('\n');
+  if (view === 'headers') {
+    const text = `HTTP ${result.status} ${result.statusText}\n${lines(result.headers)}\n`;
+    return { blob: new Blob([text], { type: 'text/plain' }), name: 'response-headers.txt' };
+  }
+  if (view === 'sent') {
+    const own = result.requestHeaders ?? [];
+    const ownNames = new Set(own.map(([k]) => k.toLowerCase()));
+    const added = (await fetchEcho(baseUrl, result).catch(() => [] as [string, string][])).filter(([k]) => !ownNames.has(k.toLowerCase()));
+    const text = `${result.method} ${result.url}\n${lines(own)}\n${lines(added)}\n`;
+    return { blob: new Blob([text], { type: 'text/plain' }), name: 'request-headers.txt' };
+  }
+  if (view === 'pretty' && result.kind === 'json' && result.text && !result.truncated) {
+    try {
+      const text = JSON.stringify(JSON.parse(result.text), null, 2) + '\n';
+      return { blob: new Blob([text], { type: 'application/json' }), name: 'response.json' };
+    } catch {
+      // not valid JSON after all: saved as received
+    }
+  }
+  const blob = downloadBlob(result);
+  return blob && result.size > 0 ? { blob, name: 'response' + ext } : null;
+}
+
+/** One quiet icon at the end of the tab bar: downloads what the open tab shows. */
+function DownloadButton({ view, result, baseUrl }: { view: View; result: RunResult; baseUrl: string }) {
+  const empty = (view === 'pretty' || view === 'raw') && result.size === 0;
+  const what = view === 'headers' ? 'the response\'s headers' : view === 'sent' ? 'the request\'s headers'
+    : view === 'pretty' && result.kind === 'json' ? 'the body, formatted' : 'the body as received';
+  const label = empty ? 'Nothing to download: the body is empty' : 'Download ' + what;
+  return (
+    <button class="rab-n-tool" disabled={empty} title={label} aria-label={label} data-testid="download"
+            onClick={async () => {
+              const file = await downloadOf(view, result, baseUrl);
+              if (file) download(file.blob, file.name);
+            }}>
+      <svg class="rab-n-svg" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="M8 2.5v7.5M5 7.5L8 10.5l3-3M3 13h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </button>
   );
 }
 

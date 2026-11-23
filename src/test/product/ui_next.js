@@ -8,6 +8,8 @@
 //
 // Needs Node 22+ and Edge or Chrome. Exit code: 0 all passed, 1 a check failed, 2 not run.
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 const { launch, checker, sleep } = require('./cdp');
 
 // per product: a public resource to search for, open and send, its answer, and a resource with a path parameter,
@@ -138,8 +140,9 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x, y: rect.y });
         const carded = await b.waitFor(`/App/.test((document.querySelector('[data-testid=row-card]') || {}).textContent || '')
             && /Access/.test(document.querySelector('[data-testid=row-card]').textContent)`, 3000);
-        c.check('resting on a row opens its card with the app and the access', carded,
-            await b.evaluate(`(document.querySelector('[data-testid=row-card]') || {}).textContent || 'no card'`));
+        const cardText = await b.evaluate(`(document.querySelector('[data-testid=row-card]') || {}).textContent || 'no card'`);
+        c.check('resting on a row opens its card with the app and the access, the path named once', carded
+            && cardText.split(P.title).length === 2, cardText);
         await b.shot(path.join(SHOTS, `${PRODUCT}-next-3-card.png`));
         await pressAltP();
         await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x + 1200, y: rect.y + 300 });
@@ -177,6 +180,32 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
             numbers === 0 && received && sentHeaders.some(h => /^accept:/i.test(h)) && browserHeaders.some(h => /^user-agent:/i.test(h))
             && cookies.every(h => !/=(?!…)[^;\s]{8,}/.test(h)),
             { numbers, received, sentHeaders, browserHeaders: browserHeaders.map(h => h.slice(0, 80)) });
+        const downloads = fs.mkdtempSync(path.join(os.tmpdir(), 'rab-downloads-'));
+        await b.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: downloads });
+        const saved = async (name, ms = 5000) => {
+            const file = path.join(downloads, name);
+            for (const end = Date.now() + ms; Date.now() < end; await sleep(150)) {
+                if (fs.existsSync(file) && fs.statSync(file).size > 0) return fs.readFileSync(file, 'utf8');
+            }
+            return null;
+        };
+        await click('[data-testid=download]');
+        const requestFile = await saved('request-headers.txt');
+        await responseTab('Response headers');
+        await click('[data-testid=download]');
+        const headersFile = await saved('response-headers.txt');
+        await responseTab('Pretty');
+        await click('[data-testid=download]');
+        const bodyFile = await saved('response.json');
+        let formatted = false;
+        try { formatted = !!bodyFile && /\n  "/.test(bodyFile) && !!JSON.parse(bodyFile); } catch (e) { /* not JSON */ }
+        const places = await b.evaluate(`({ download: !!document.querySelector('[data-testid=response] .rab-n-tabbar [data-testid=download]'),
+            maximize: !!document.querySelector('[data-testid=response] .rab-n-statusline [data-testid=max-bottom]') })`);
+        c.check('Download, in the tab bar, saves what the open tab shows: the formatted body, the response\'s or the request\'s headers',
+            places.download && places.maximize && formatted && /^HTTP \d{3}/.test(headersFile || '') && /^GET \//.test(requestFile || '')
+            && /accept: /i.test(requestFile || ''),
+            { places, formatted, headers: (headersFile || '').slice(0, 60), request: (requestFile || '').slice(0, 60) });
+        fs.rmSync(downloads, { recursive: true, force: true });
         await b.evaluate(`([...document.querySelectorAll('[data-testid=response] [role=tab]')].find(t => /^Pretty/.test(t.textContent)) || {}).click?.(), true`);
         // the find box sits in the response's tab bar, right after the tabs, and finds as you type
         const findBox = await b.evaluate(`(() => { const bar = document.querySelector('[data-testid=response] .rab-n-tabbar');

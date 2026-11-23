@@ -1147,7 +1147,6 @@
 @keyframes rab-n-card-in { from { opacity: 0; transform: translateX(-4px); } }
 .rab-n-card-head { display: flex; align-items: flex-start; gap: 7px; }
 .rab-n-card-path { font: 700 12.5px/16px var(--rab-mono); color: var(--rab-text); overflow-wrap: anywhere; }
-.rab-n-card-url { margin-top: 3px; font: 11px/1.4 var(--rab-mono); color: var(--rab-subtlest); overflow-wrap: anywhere; }
 .rab-n-card-facts {
   display: grid;
   grid-template-columns: auto 1fr;
