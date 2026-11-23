@@ -1,5 +1,6 @@
 import { maskJson } from '../core/jsonlines';
-import type { RequestValues } from '../core/request';
+import { urlParts, type RequestValues } from '../core/request';
+import type { Operation, Summary } from '../core/types';
 
 export interface HistoryEntry {
   id: string;
@@ -44,7 +45,7 @@ const SECRET_WORDS = new Set([
   'secret', 'secrets', 'password', 'passwords', 'passwd', 'pwd', 'session', 'sessions', 'sessionid', 'api-key', 'api-keys',
   'apikey', 'apikeys', 'token', 'tokens', 'credential', 'credentials', 'jwt', 'assertion', 'assertions', 'signature',
   'signatures', 'auth', 'authorization', 'authn', 'cert', 'certs', 'certificate', 'certificates', 'oidc', 'sso', 'saml',
-  'principal',
+  'principal', 'jsessionid', 'oauth', 'csrf', 'xsrf', 'cookie2',
 ]);
 
 /**
@@ -56,8 +57,16 @@ export function isCredentialHeader(name: string): boolean {
   if (n === 'x-atlassian-token') return false;
   if (n === 'cookie' || n === 'set-cookie') return true;
   const words = n.split('-');
-  return words.some((w, i) => SECRET_WORDS.has(w) || (i + 1 < words.length && SECRET_WORDS.has(w + '-' + words[i + 1])));
+  return words.some((w, i) => SECRET_WORDS.has(w) || (i + 1 < words.length && SECRET_WORDS.has(w + '-' + words[i + 1]))
+    || SECRET_ENDINGS.some((e) => w.length > e.length && w.endsWith(e)));
 }
+
+/**
+ * Endings that make a run-together word a secret too (the echo's SECRET_ENDINGS): HTTP/2 lowercases header names, so
+ * X-AccessToken arrives as x-accesstoken, one word.
+ */
+const SECRET_ENDINGS = ['token', 'tokens', 'secret', 'secrets', 'password', 'passwords', 'passwd', 'apikey', 'apikeys',
+  'credential', 'credentials', 'sessionid', 'signature'];
 
 // Compared without case and separators: api_key, api-key and apiKey are one name.
 const SECRET_PARAMS = new Set([
@@ -75,9 +84,52 @@ export function isCredentialParam(name: string): boolean {
   return SECRET_PARAMS.has(n) || n.endsWith('password') || n.endsWith('secret');
 }
 
-// The members of a JSON body whose values are hidden: the credential parameter names, and any with password, secret
-// or token in it.
+// The members of a JSON body whose string values are hidden: the credential parameter names, and any with password,
+// secret or token in it. Any value (a number, an object) only when the name ends with one: "tokenCount": 5 stays.
 const isSecretMember = (name: string) => isCredentialParam(name) || /password|passwd|secret|token/i.test(name);
+const isSecretAny = (name: string) => isCredentialParam(name) || /(password|passwd|secret|secrets|token|tokens)$/i.test(name);
+
+/** Words that make a body that is not JSON (or not valid JSON) too risky to keep: it is left out instead. */
+const SECRET_TEXT = /pass(word|wd)?\b|passwd|secret|token|api[-_]?key|credential|authorization/i;
+
+/**
+ * A body as history may keep it: JSON with its secret values hidden; a form body (x-www-form-urlencoded) without its
+ * secret fields' values; any other text whole, unless it looks like it carries a secret, then not at all.
+ */
+function cleanBody(body: string, contentType: string | undefined): { body: string | undefined; redacted: boolean } {
+  const masked = maskJson(body, isSecretMember, HIDDEN, isSecretAny);
+  if (masked) return masked.masked ? { body: masked.text, redacted: true } : { body, redacted: false };
+  if (/x-www-form-urlencoded/i.test(contentType ?? '')) {
+    let redacted = false;
+    const decode = (s: string) => {
+      try {
+        return decodeURIComponent(s.replace(/\+/g, ' '));
+      } catch {
+        return s;   // keep it raw
+      }
+    };
+    const pairs = body.split('&').map((pair) => {
+      const eq = pair.indexOf('=');
+      const n = decode(eq < 0 ? pair : pair.slice(0, eq));
+      // an empty value, or only spaces, has nothing to hide
+      if (eq < 0 || !isSecretMember(n) || !decode(pair.slice(eq + 1)).trim()) return pair;
+      redacted = true;
+      return pair.slice(0, eq + 1) + encodeURIComponent('(hidden)');
+    });
+    return { body: pairs.join('&'), redacted };
+  }
+  return SECRET_TEXT.test(body) ? { body: undefined, redacted: true } : { body, redacted: false };
+}
+
+/**
+ * The URL as history keeps it, built from the operation's template: a credential path value stays its {template}
+ * (it is not stored), every other part as sent. Built rather than searched for, so a value that also appears as a
+ * literal part of the path ("rest") does not touch that part.
+ */
+export function historyUrl(summary: Summary, op: Operation, values: RequestValues): string {
+  const path = Object.fromEntries(Object.entries(values.path ?? {}).map(([k, v]) => [k, isCredentialParam(k) ? '' : v]));
+  return urlParts(summary, op, { ...values, path }).parts.map((p) => p.text).join('');
+}
 
 const filled = (v: unknown): boolean => (Array.isArray(v) ? v.some(filled) : typeof v === 'string' && v.trim() !== '');
 
@@ -98,9 +150,9 @@ function cleanValues(values: RequestValues): { values: RequestValues; redacted: 
     path: keep(values.path, isCredentialParam),
   };
   if (values.body) {
-    const masked = maskJson(values.body, isSecretMember, HIDDEN);
-    if (masked?.masked) {
-      out.body = masked.text;
+    const clean = cleanBody(values.body, values.contentType);
+    if (clean.redacted) {
+      out.body = clean.body;
       redacted = true;
     }
   }
@@ -108,31 +160,13 @@ function cleanValues(values: RequestValues): { values: RequestValues; redacted: 
 }
 
 /**
- * The path with a value replaced by `mark`: where it is whole segments, or, when it is nowhere whole (a value that is
- * part of a segment, "{token}.json"), wherever it is.
+ * Removes credentials from a URL: query parameters and matrix parameters (";token=...") by name. Credential path
+ * values are not searched for here: the caller builds the URL with historyUrl, which leaves them out.
  */
-function replaceValue(path: string, value: string, mark: string): string {
-  const at: number[] = [];
-  for (let i = path.indexOf(value); i >= 0; i = path.indexOf(value, i + value.length)) at.push(i);
-  const whole = (i: number) => path[i - 1] === '/' && (i + value.length === path.length || '/;'.includes(path[i + value.length]));
-  const hits = at.some(whole) ? at.filter(whole) : at;
-  let out = '';
-  let last = 0;
-  for (const i of hits) {
-    out += path.slice(last, i) + mark;
-    last = i + value.length;
-  }
-  return out + path.slice(last);
-}
-
-/**
- * Removes credentials from a URL: query parameters and matrix parameters (";token=...") by name, and the values of
- * credential path parameters (`secrets`), which become their {template}.
- */
-function cleanUrl(url: string, secrets: [string, string][]): { url: string; redacted: boolean } {
+function cleanUrl(url: string): { url: string; redacted: boolean } {
   const q0 = url.search(/[?#]/);
   const path = q0 < 0 ? url : url.slice(0, q0);
-  let cleanPath = path.replace(/;([^;/?#=]*)(=[^;/?#]*)?/g, (m, name: string) => {
+  const cleanPath = path.replace(/;([^;/?#=]*)(=[^;/?#]*)?/g, (m, name: string) => {
     let n = name;
     try {
       n = decodeURIComponent(name);
@@ -141,12 +175,6 @@ function cleanUrl(url: string, secrets: [string, string][]): { url: string; reda
     }
     return isCredentialParam(n) ? '' : m;
   });
-  for (const [name, value] of secrets) {
-    // as buildRequest writes it: slashes kept when the template spans segments, else encoded
-    for (const encoded of new Set([value.split('/').map(encodeURIComponent).join('/'), encodeURIComponent(value)])) {
-      cleanPath = replaceValue(cleanPath, encoded, `{${name}}`);
-    }
-  }
   let redacted = cleanPath !== path;
   if (redacted) url = cleanPath + (q0 < 0 ? '' : url.slice(q0));
   const q = url.indexOf('?');
@@ -222,28 +250,30 @@ export class UserStore {
     }
   }
 
-  // On a failed write (quota) the shrunk value gets one retry; otherwise the key lives in memory only.
+  // On a failed write (quota) the value is shrunk and tried again, as long as shrinking makes it smaller; when nothing
+  // fits, the key lives in memory only.
   private write(key: string, value: unknown, shrink?: (v: any) => unknown): void {
     const k = this.prefix + key;
     const raw = JSON.stringify(value);
-    const attempt = (text: string) => {
-      if (!this.storage) throw new Error('no storage');
-      this.storage.setItem(k, text);
-    };
-    try {
-      attempt(raw);
-    } catch {
-      try {
-        if (!shrink) throw new Error('cannot shrink');
-        attempt(JSON.stringify(shrink(value)));
-      } catch {
-        this.memory.set(k, raw);
-        this.memoryOnly.add(k);
-        return;
+    if (this.storage) {
+      let current = value;
+      let text = raw;
+      for (;;) {
+        try {
+          this.storage.setItem(k, text);
+          this.memory.delete(k);
+          this.memoryOnly.delete(k);
+          return;
+        } catch {
+          if (!shrink) break;
+          const smaller = JSON.stringify((current = shrink(current)));
+          if (smaller.length >= text.length) break;
+          text = smaller;
+        }
       }
     }
-    this.memory.delete(k);
-    this.memoryOnly.delete(k);
+    this.memory.set(k, raw);
+    this.memoryOnly.add(k);
   }
 
   private remove(key: string): void {
@@ -269,8 +299,7 @@ export class UserStore {
 
   async addHistory(entry: Omit<HistoryEntry, 'id' | 'at'>): Promise<HistoryEntry> {
     const values = cleanValues(entry.values);
-    const secrets = Object.entries(entry.values.path ?? {}).filter(([name, v]) => isCredentialParam(name) && filled(v));
-    const url = cleanUrl(entry.url, secrets);
+    const url = cleanUrl(entry.url);
     const named = entry.custom?.filter((h) => h.name.trim());
     const saved: HistoryEntry = {
       ...entry,
@@ -303,8 +332,9 @@ export class UserStore {
     return saved;
   }
 
+  // No shrinking here: it would drop other operations' entries to make room for a shorter list.
   async clearHistory(opKey: string): Promise<void> {
-    this.write(this.historyKey, this.all().filter((e) => e.opKey !== opKey), dropOldest);
+    this.write(this.historyKey, this.all().filter((e) => e.opKey !== opKey));
   }
 
   /** The preferences, read at once: the first paint can have the user's skin, colour mode and layout. */

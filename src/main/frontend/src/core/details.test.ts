@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clearDetails, DetailsError, fetchDetails, forgetDetails, isError, shortJava } from './details';
+import { clearDetails, DetailsError, fetchDetails, forgetDetails, isError, shortJava, type BundleInfo } from './details';
 
 const DETAILS = {
   format: 1, key: 'k', method: { error: 'm' }, locators: [], resourceClass: { error: 'c' }, types: [],
@@ -68,5 +68,18 @@ describe('details', () => {
     await fetchDetails('/jira', 'c1', ok);
     await fetchDetails('/jira', 'c2', ok);
     expect(calls).toBe(4);
+  });
+});
+
+describe('details second review', () => {
+  it('leaves char literals and a clipped string as written', () => {
+    expect(shortJava('@x.y.Op(summary = "Uses java.lang.String and…')).toBe('@Op(summary = "Uses java.lang.String and…');
+    expect(shortJava(`@x.y.A(a = '"', b = java.lang.String.class, c = '"')`)).toBe(`@A(a = '"', b = String.class, c = '"')`);
+    expect(shortJava(`@x.y.B(c = 'x', d = java.util.List.class)`)).toBe(`@B(c = 'x', d = List.class)`);
+  });
+
+  it('a bundle may say it has no wiring', () => {
+    const b: BundleInfo = { id: 1, symbolicName: 's', version: '1', state: 'ACTIVE', location: 'l', lastModified: 0, headers: {}, wiring: false };
+    expect(b.wiring).toBe(false);
   });
 });

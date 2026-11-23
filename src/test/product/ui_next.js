@@ -531,6 +531,15 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
             && modes.dark.surface !== modes.light.surface && modes.system.auto
             && [modes.dark, modes.light, modes.system].every(x => x.pressed === 'true'), modes);
 
+        // Escape in the search box clears it (and nothing else)
+        await type('[data-testid=search]', 'no-such-words');
+        await b.evaluate(`document.querySelector('[data-testid=search]').focus()`);
+        await sleep(250);
+        await press('Escape');
+        await sleep(250);
+        const cleared = await b.evaluate(`document.querySelector('[data-testid=search]').value`);
+        c.check('Escape in the search box clears it', cleared === '', cleared);
+
         // supported only narrows the list
         await type('[data-testid=search]', '');
         const before = await b.evaluate(`(document.querySelector('[data-testid=status]') || {}).textContent || ''`);

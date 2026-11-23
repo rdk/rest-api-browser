@@ -65,10 +65,10 @@ public class CatalogResource {
         }
         CatalogSnapshot snapshot = catalog.current(request.getServletContext());
         UserKey user = userManager.getRemoteUserKey(request);
-        boolean admin = user != null && userManager.isAdmin(user);
         boolean sysadmin = user != null && userManager.isSystemAdmin(user);
-        String tag = (admin ? snapshot.adminTag() : snapshot.hash()) + "-" + progress(snapshot)
-                + (admin ? (sysadmin ? "-s" : "-a") : "-u");
+        // a system administrator sees what administrators see, even where the product does not make them one too
+        boolean admin = sysadmin || (user != null && userManager.isAdmin(user));
+        String tag = tag(snapshot, admin, sysadmin);
         String etag = "\"" + tag + "\"";
         if (matches(request.getHeader("If-None-Match"), tag)) {
             return Response.notModified().header("ETag", etag).header("Cache-Control", "private, no-cache").build();
@@ -102,12 +102,15 @@ public class CatalogResource {
     @SystemAdminOnly
     public Response refresh(@QueryParam("module") String module, @Context HttpServletRequest request) {
         UserKey user = userManager.getRemoteUserKey(request);
-        if (user == null || !userManager.isSystemAdmin(user)) {
-            return Response.status(Response.Status.FORBIDDEN).type(JSON)
+        if (user == null) {
+            return unauthorized(); // an expired session logs in again; it is not a missing permission
+        }
+        if (!userManager.isSystemAdmin(user)) {
+            return Response.status(Response.Status.FORBIDDEN).type(JSON).header("Cache-Control", "no-store")
                     .entity("{\"error\":\"system-admin-only\"}").build();
         }
         if (!"no-check".equals(request.getHeader("X-Atlassian-Token"))) {
-            return Response.status(Response.Status.FORBIDDEN).type(JSON)
+            return Response.status(Response.Status.FORBIDDEN).type(JSON).header("Cache-Control", "no-store")
                     .entity("{\"error\":\"xsrf-check-failed\"}").build();
         }
         catalog.current(request.getServletContext());
@@ -125,7 +128,10 @@ public class CatalogResource {
     @SystemAdminOnly
     public Response details(@QueryParam("op") String op, @Context HttpServletRequest request) {
         UserKey user = userManager.getRemoteUserKey(request);
-        if (user == null || !userManager.isSystemAdmin(user)) {
+        if (user == null) {
+            return unauthorized();
+        }
+        if (!userManager.isSystemAdmin(user)) {
             return Response.status(Response.Status.FORBIDDEN).type(JSON).header("Cache-Control", "no-store")
                     .entity("{\"error\":\"system-admin-only\"}").build();
         }
@@ -133,6 +139,16 @@ public class CatalogResource {
         OperationDetails.Result result = details.describe(op);
         return Response.status(result.status()).type(JSON).header("Cache-Control", "no-store")
                 .entity(result.json()).build();
+    }
+
+    /**
+     * The summary's ETag: everything its body depends on. The admin tag covers the error details only admins see;
+     * the last letter tells admins (a), system administrators (s) and other users (u) apart, so no two kinds of
+     * user share a tag.
+     */
+    static String tag(CatalogSnapshot snapshot, boolean admin, boolean sysadmin) {
+        return (admin ? snapshot.adminTag() : snapshot.hash()) + "-" + progress(snapshot) + "-"
+                + (sysadmin ? "s" : admin ? "a" : "u");
     }
 
     /**

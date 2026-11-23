@@ -1,7 +1,7 @@
 /*
  * Lozenges (the small tags: Supported, App, Deprecated, access levels). One family: a soft tint of the kind's color,
  * text in that color, a hairline border of it. The color is one token per kind, so light and dark both follow the
- * product's theme. Loaded after styles.css, so these rules win over its .rab-n-tag rules.
+ * product's theme. The only rules for .rab-n-tag (styles.css has none).
  */
 .rab-n .rab-n-tag {
   --tag: var(--ds-text-subtle, #44546f);

@@ -177,3 +177,25 @@ describe('request review fixes', () => {
     expect(r.headers).toEqual({ Accept: 'application/json' });
   });
 });
+
+describe('request second review', () => {
+  it('gives an operation on the module root no trailing slash, and its matrix params the module segment', () => {
+    const o = op('jira:api2', 'GET', '', { params: [param('m', 'matrix'), param('q', 'query')] });
+    expect(buildRequest(s, o, empty).url).toBe('/jira/rest/api/2');
+    expect(buildRequest(s, o, vals({ matrix: { m: '1' }, query: { q: ['2'] } })).url).toBe('/jira/rest/api/2;m=1?q=2');
+    expect(urlParts(s, o, empty).parts.map((p) => p.text).join('')).toBe('/jira/rest/api/2');
+  });
+
+  it('keeps one of two declared headers that differ only in case', () => {
+    const o = op('jira:api2', 'GET', 'a', { params: [param('X-A', 'header'), param('x-a', 'header')] });
+    const h = buildRequest(s, o, vals({ header: { 'X-A': '1', 'x-a': '2' } })).headers;
+    expect(Object.keys(h).filter((k) => k.toLowerCase() === 'x-a')).toHaveLength(1);
+  });
+
+  it('falls back to the default types for a blank Accept or Content-Type choice', () => {
+    const o = op('jira:api2', 'POST', 'a', { consumes: ['application/xml'], produces: ['text/plain'] });
+    const r = buildRequest(s, o, vals({ body: '<a/>', accept: ' ', contentType: '' }), { accept: '' });
+    expect(r.headers.Accept).toBe('text/plain');
+    expect(r.headers['Content-Type']).toBe('application/xml');
+  });
+});

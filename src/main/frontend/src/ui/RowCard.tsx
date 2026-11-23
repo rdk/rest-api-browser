@@ -10,8 +10,8 @@ export type CardTarget = { kind: 'op'; op: Operation; module?: Module } | { kind
  * The hover card of a list row: everything the row's ticks stand for, spelled out, with the app's full name and
  * what else helps to pick an operation. It sits beside the list, aligned with the row, and never takes the pointer.
  */
-export function RowCard({ target, left, top, rowHeight, pinned, boxRef }: {
-  target: CardTarget; left: number; top: number; rowHeight: number; pinned: boolean;
+export function RowCard({ id, target, left, top, rowHeight, pinned, boxRef }: {
+  id?: string; target: CardTarget; left: number; top: number; rowHeight: number; pinned: boolean;
   boxRef: { current: HTMLDivElement | null };
 }) {
   const ref = boxRef;
@@ -21,6 +21,9 @@ export function RowCard({ target, left, top, rowHeight, pinned, boxRef }: {
     const el = ref.current;
     const root = el?.offsetParent as HTMLElement | null;
     if (!el || !root) return;
+    // taller than the app: its content scrolls inside (the card keeps 6 px from each edge, plus its own padding)
+    const body = el.firstElementChild as HTMLElement | null;
+    if (body) body.style.maxHeight = Math.max(80, root.clientHeight - 12 - (el.offsetHeight - body.offsetHeight)) + 'px';
     const y = Math.max(6, Math.min(top - 8, root.clientHeight - el.offsetHeight - 6));
     const x = Math.max(6, Math.min(left, root.clientWidth - el.offsetWidth - 6));
     el.style.top = y + 'px';
@@ -29,10 +32,13 @@ export function RowCard({ target, left, top, rowHeight, pinned, boxRef }: {
     el.style.setProperty('--arrow', Math.round(Math.min(Math.max(top - y + rowHeight / 2, 12), el.offsetHeight - 12)) + 'px');
   });
   return (
-    <div ref={ref} class={'rab-n-card' + (pinned ? ' pinned' : '')} role="tooltip" data-testid="row-card"
+    <div ref={ref} id={id} class={'rab-n-card' + (pinned ? ' pinned' : '')} role="tooltip" data-testid="row-card"
          style={{ left: left + 'px', top: top + 'px' }}>
-      {target.kind === 'op' ? <OpFacts op={target.op} m={target.module} /> : <ModuleFacts m={target.module} count={target.count} />}
-      <PinHint pinned={pinned} />
+      {/* the content scrolls when the card is taller than the app; the card itself keeps its arrow and accent */}
+      <div class="rab-n-card-body">
+        {target.kind === 'op' ? <OpFacts op={target.op} m={target.module} /> : <ModuleFacts m={target.module} count={target.count} />}
+        <PinHint pinned={pinned} />
+      </div>
     </div>
   );
 }

@@ -3,15 +3,15 @@ import { downloadBlob, fetchEcho, type RunResult } from './runner';
 import { buildLines, find, formatJson, visibleLines, type LineModel } from '../core/jsonlines';
 import { findRows, rowEnd, wrapRows } from '../core/textrows';
 import { VirtualList } from './VirtualList';
-import { MaximizeButton, Tabs, copyText, download, formatBytes, tabId, useFlash } from './bits';
+import { MaximizeButton, Tabs, copyText, download, formatBytes, plural, tabId, useFlash } from './bits';
 
 const LINE = 20;
 /** Pretty cuts a longer line (one DOM text node of megabytes freezes the tab); up to this, it scrolls sideways. */
 const PRETTY_LINE = 10_000;
 /** Pretty formats bodies up to this size; a larger one (millions of lines) is shown as received, in Raw's view. */
 const PRETTY_MAX = 5 * 1024 * 1024;
-/** Raw's gutter (the line numbers) and its margins, in pixels: the rest of the width is for the text. */
-const GUTTER_PX = 60;
+/** Raw's gutter around its digits (padding, border, margin), in pixels: the rest of the width is for the text. */
+const GUTTER_EXTRA_PX = 18;
 
 type View = 'pretty' | 'raw' | 'headers' | 'sent';
 /** A request to move to the next (dir 1) or previous (dir -1) match; n counts the requests. */
@@ -35,7 +35,7 @@ export function ResponseView({ result, running, onCancel, maximized, onMaximize,
   const [found, setFound] = useState({ count: 0, index: 0 });
   const onFound = useCallback((count: number, index: number) => setFound({ count, index }), []);
   // parsed once per response, kept across tab switches
-  const tooLarge = !!result && result.kind === 'json' && (result.text?.length ?? 0) > PRETTY_MAX;
+  const tooLarge = !!result && result.kind === 'json' && !result.truncated && (result.text?.length ?? 0) > PRETTY_MAX;
   const model = useMemo(
     () => (result && result.kind === 'json' && !result.truncated && result.text && !tooLarge ? buildLines(result.text) : null),
     [result, tooLarge],
@@ -43,8 +43,9 @@ export function ResponseView({ result, running, onCancel, maximized, onMaximize,
   if (running) {
     return (
       <div class="rab-n-response rab-n-response-state" data-testid="response-running">
-        <div class="rab-n-response-state-inner" role="status">
-          <span class="rab-n-spinner" /> Sending… <button class="rab-n-link" onClick={onCancel}>Cancel (Esc)</button>
+        <div class="rab-n-response-state-inner">
+          <span role="status"><span class="rab-n-spinner" aria-hidden="true" /> Sending…</span>
+          <button class="rab-n-link" onClick={onCancel} title="Cancel the request (Esc)">Cancel</button>
         </div>
       </div>
     );
@@ -64,7 +65,7 @@ export function ResponseView({ result, running, onCancel, maximized, onMaximize,
   if (result.error) {
     return (
       <div class="rab-n-response rab-n-response-state" data-testid="response-error">
-        <div class="rab-n-response-state-inner is-error" role="status">
+        <div class="rab-n-response-state-inner is-error" role="alert">
           <svg class="rab-n-svg rab-n-error" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5" />
             <path d="M8 5v3.5M8 10.7v.4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
@@ -82,15 +83,17 @@ export function ResponseView({ result, running, onCancel, maximized, onMaximize,
         <div class="rab-n-banner" data-testid="session-expired">
           {result.kind === 'html'
             ? 'Your session has expired, so the product answered with its login page.'
-            : `The product answered ${result.status || ''} ${result.status === 401 ? 'Unauthorized' : ''}: you may not be logged in any more.`.replace(/\s+/g, ' ')}{' '}
+            : `The product answered ${[result.status || '', result.statusText || (result.status === 401 ? 'Unauthorized' : '')].filter(Boolean).join(' ')}: you may not be logged in any more.`}{' '}
           <button class="rab-n-link" onClick={() => location.reload()}>Reload to log in again</button>
         </div>
       )}
-      <div class={'rab-n-statusline is-' + statusClass} role="status">
-        <span class={'rab-n-status-code ' + statusClass} data-testid="response-status">{result.status} {result.statusText}</span>
-        <span class="rab-n-metric">{Math.round(result.durationMs)} ms</span>
-        <span class="rab-n-metric">{formatBytes(result.size)}{result.truncated ? ' (truncated)' : ''}</span>
-        <span class="rab-n-subtle rab-n-status-url">{result.method} {result.url}</span>
+      <div class="rab-n-statusline">
+        <span class="rab-n-status-text" role="status">
+          <span class={'rab-n-status-code ' + statusClass} data-testid="response-status">{result.status} {result.statusText}</span>
+          <span class="rab-n-metric">{Math.round(result.durationMs)} ms</span>
+          <span class="rab-n-metric">{formatBytes(result.size)}{result.truncated ? ' (truncated)' : ''}</span>
+          <span class="rab-n-subtle rab-n-status-url">{result.method} {result.url}</span>
+        </span>
         <span class="rab-n-spacer" />
         <MaximizeButton on={maximized} onToggle={onMaximize} what="response" testId="max-bottom" />
       </div>
@@ -110,7 +113,7 @@ export function ResponseView({ result, running, onCancel, maximized, onMaximize,
         <span class="rab-n-spacer" />
         {(view === 'pretty' || view === 'raw') && result.kind !== 'binary' && result.kind !== 'empty' && (
           <FindBox initial={needle} onFind={setNeedle} onStep={(dir) => setStep((st) => ({ n: st.n + 1, dir }))}
-                   count={found.count} index={found.index} />
+                   count={found.count} index={found.index} unit={view === 'pretty' && model ? 'line' : 'row'} />
         )}
         <div class="rab-n-form-tools">
           <CopyContentButton key={view + id} view={view} result={result} baseUrl={baseUrl} formatted={view === 'pretty' && !!model} />
@@ -123,9 +126,13 @@ export function ResponseView({ result, running, onCancel, maximized, onMaximize,
       {tooLarge && view === 'pretty' && (
         <div class="rab-n-banner">The body is too large to format (over {formatBytes(PRETTY_MAX)}): it is shown as received.</div>
       )}
+      {result.kind === 'html' && view === 'pretty' && (
+        <div class="rab-n-banner">The server answered with an HTML page; its source is shown.</div>
+      )}
       <div class="rab-n-response-pane" id="rab-n-response-pane" role="tabpanel" aria-labelledby={tabId('rab-n-response-pane', view)}>
       {view === 'headers' ? (
-        <div class="rab-n-headers" data-testid="response-headers">
+        <div class="rab-n-headers" data-testid="response-headers" tabIndex={0}>
+          {result.headers.length === 0 && <div class="rab-n-subtle">No response headers.</div>}
           {result.headers.map(([k, v], i) => (
             <div class="rab-n-header-row" key={i}><span class="rab-n-header-name">{k}:</span> {v}</div>
           ))}
@@ -139,12 +146,7 @@ export function ResponseView({ result, running, onCancel, maximized, onMaximize,
       ) : view === 'pretty' && model ? (
         <JsonView key={'json' + id} model={model} needle={needle} step={step} onFound={onFound} />
       ) : (
-        <>
-          {result.kind === 'html' && view === 'pretty' && (
-            <div class="rab-n-banner">The server answered with an HTML page; its source is shown.</div>
-          )}
-          <TextView key={'text' + id} text={result.text ?? ''} needle={needle} step={step} onFound={onFound} />
-        </>
+        <TextView key={'text' + id} text={result.text ?? ''} needle={needle} step={step} onFound={onFound} />
       )}
       </div>
     </div>
@@ -159,10 +161,14 @@ const EXTENSIONS: Record<string, string> = { json: '.json', xml: '.xml', html: '
  */
 function addedHeaders(result: RunResult, echo: [string, string][]): [string, string][] {
   const ownNames = new Set((result.requestHeaders ?? []).map(([k]) => k.toLowerCase()));
-  return echo
+  const added = echo
     .filter(([k]) => !ownNames.has(k.toLowerCase()))
     .map(([k, v]): [string, string] =>
       k.toLowerCase() === 'content-length' && result.requestBodyBytes ? [k, String(result.requestBodyBytes)] : [k, v]);
+  if (result.requestBodyBytes && !ownNames.has('content-length') && !added.some(([k]) => k.toLowerCase() === 'content-length')) {
+    added.push(['content-length', String(result.requestBodyBytes)]);
+  }
+  return added;
 }
 
 /**
@@ -245,6 +251,8 @@ function CopyContentButton({ view, result, baseUrl, formatted }: { view: View; r
 /** One quiet icon at the end of the tab bar: downloads what the open tab shows. */
 function DownloadButton({ view, result, baseUrl, formatted }: { view: View; result: RunResult; baseUrl: string; formatted: boolean }) {
   const empty = (view === 'pretty' || view === 'raw') && result.size === 0;
+  const current = useRef({ view, result });
+  current.current = { view, result };
   const what = view === 'headers' ? 'the response\'s headers' : view === 'sent' ? 'the request\'s headers'
     : formatted ? 'the body, formatted' : 'the body as received';
   const label = empty ? 'Nothing to download: the body is empty' : 'Download ' + what;
@@ -252,7 +260,7 @@ function DownloadButton({ view, result, baseUrl, formatted }: { view: View; resu
     <button class="rab-n-tool" disabled={empty} title={label} aria-label={label} data-testid="download"
             onClick={async () => {
               const file = await downloadOf(view, result, baseUrl);
-              if (file) download(file.blob, file.name);
+              if (file && current.current.view === view && current.current.result === result) download(file.blob, file.name);
             }}>
       <svg class="rab-n-svg" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
         <path d="M8 2.5v7.5M5 7.5L8 10.5l3-3M3 13h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -284,7 +292,7 @@ function RequestHeaders({ result, baseUrl }: { result: RunResult; baseUrl: strin
   const own = result.requestHeaders ?? [];
   const added = addedHeaders(result, echo ?? []);
   return (
-    <div class="rab-n-headers" data-testid="request-headers">
+    <div class="rab-n-headers" data-testid="request-headers" tabIndex={0}>
       <div class="rab-n-headers-group">Set by the app <span class="rab-n-headers-count">{own.length}</span></div>
       {own.map(([k, v], i) => (
         <div class="rab-n-header-row" key={'a' + i} data-testid="request-header"><span class="rab-n-header-name">{k}:</span> {v}</div>
@@ -313,8 +321,10 @@ function RequestHeaders({ result, baseUrl }: { result: RunResult; baseUrl: strin
 }
 
 /** Find as you type, 150 ms after the last key; Enter and Shift+Enter step through the matches. */
-function FindBox({ initial, onFind, onStep, count, index }: {
+function FindBox({ initial, onFind, onStep, count, index, unit }: {
   initial: string; onFind: (needle: string) => void; onStep: (step: number) => void; count: number; index: number;
+  /** What a match counts: Pretty's lines or Raw's rows (several hits on one line are one). */
+  unit: 'line' | 'row';
 }) {
   const [needle, setNeedle] = useState(initial);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -340,8 +350,19 @@ function FindBox({ initial, onFind, onStep, count, index }: {
             }, 150);
           }}
           onKeyDown={(e) => {
+            if (e.key === 'Escape' && needle) {
+              // clears the box (whatever the browser does on its own), and does nothing else
+              e.preventDefault();
+              e.stopPropagation();
+              clearTimeout(timer.current);
+              timer.current = undefined;
+              setNeedle('');
+              onFind('');
+              return;
+            }
             // Ctrl+Enter sends the request (Operation), it does not step through the matches
             if (e.key !== 'Enter' || e.ctrlKey || e.metaKey || e.altKey) return;
+            e.preventDefault();
             if (timer.current !== undefined) {
               // typed less than 150 ms ago: search now instead of stepping through the old matches
               clearTimeout(timer.current);
@@ -356,7 +377,7 @@ function FindBox({ initial, onFind, onStep, count, index }: {
       </div>
       {needle && (
         <span class="rab-n-subtle rab-n-find-count" data-testid="find-count" aria-live="polite">
-          {needle !== initial ? '…' : count ? `${index + 1} of ${count}` : 'no match'}
+          {needle !== initial ? '…' : count ? `${index + 1} of ${plural(count, unit)}` : 'no match'}
         </span>
       )}
     </div>
@@ -373,11 +394,19 @@ function useFind(needle: string, step: Step, onFound: (count: number, index: num
   const [current, setCurrent] = useState(0);
   const searchRef = useRef(search);
   searchRef.current = search;
-  // searched again when the rows change too (Raw wraps again when its pane is resized)
   useEffect(() => {
     setMatches(needle ? searchRef.current(needle) : []);
     setCurrent(0);
-  }, [needle, rows]);
+  }, [needle]);
+  // the rows changed (Raw wrapped again for a new width): the same needle, searched again, at about the same place
+  const firstRows = useRef(rows);
+  useEffect(() => {
+    if (firstRows.current === rows) return;
+    firstRows.current = rows;
+    const found = needle ? searchRef.current(needle) : [];
+    setMatches(found);
+    setCurrent((c) => Math.max(0, Math.min(c, found.length - 1)));
+  }, [rows]);
   const seen = useRef(step.n);
   useEffect(() => {
     if (step.n === seen.current) return; // a step made before this view opened
@@ -420,10 +449,17 @@ function JsonView({ model, needle, step, onFound }: {
     setCollapsed(next);
   };
   const activeRow = activeLine >= 0 ? indexIn(visible, activeLine) : -1;
-  // a step onto a match inside a block folded since the search unfolds the blocks, so the match can be seen
+  // a step onto a match inside a block folded since the search unfolds the blocks, so the match can be seen; folding
+  // a block by hand keeps it folded (only a step or a new search reveals)
   useEffect(() => {
     if (activeLine >= 0 && activeRow < 0 && collapsed.size) setCollapsed(new Set());
-  }, [activeLine, activeRow]);
+  }, [activeLine, step.n]);
+  // the horizontal extent of the longest line, so the sideways scroll does not change as rows come and go
+  const widest = useMemo(() => {
+    let max = 0;
+    for (const l of model.lines) max = Math.max(max, l.depth * 2 + Math.min(l.text.trimStart().length, PRETTY_LINE + 60));
+    return max;
+  }, [model]);
   return (
     <div class="rab-n-code-wrap">
       <VirtualList
@@ -432,6 +468,8 @@ function JsonView({ model, needle, step, onFound }: {
         rowHeight={LINE}
         activeIndex={activeRow >= 0 ? activeRow : undefined}
         revealKey={step.n}
+        innerMinWidth={`calc(${widest + 20}ch + 40px)`}
+        focusable
         renderRow={(row) => {
           const i = visible[row];
           const line = model.lines[i];
@@ -451,7 +489,7 @@ function JsonView({ model, needle, step, onFound }: {
               <span class="rab-n-code-text" style={{ paddingLeft: line.depth * 2 + 'ch' }}>
                 {text.length > PRETTY_LINE ? text.slice(0, PRETTY_LINE) : text}
                 {text.length > PRETTY_LINE && <span class="rab-n-folded"> … {(text.length - PRETTY_LINE).toLocaleString()} more characters (see Raw or Download)</span>}
-                {folded && <span class="rab-n-folded"> … {line.foldEnd! - i - 1} lines {closing}</span>}
+                {folded && <span class="rab-n-folded"> … {plural(line.foldEnd! - i - 1, 'line')} {closing}</span>}
               </span>
             </div>
           );
@@ -461,22 +499,30 @@ function JsonView({ model, needle, step, onFound }: {
   );
 }
 
-/** How many characters of the code font fit in the element's width; measured again when it is resized. */
-function useColumns(ref: { current: HTMLElement | null }): number {
+/**
+ * How many characters of the code font fit in the list's width, after a gutter of `digits` characters; measured again
+ * when it is resized, and only once it has a width (a pane behind a box on the whole screen has none). 0 until then.
+ */
+function useColumns(ref: { current: HTMLElement | null }, digits: number): number {
   const [cols, setCols] = useState(0);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const probe = document.createElement('span');
-    probe.className = 'rab-n-code rab-n-code-probe';
-    probe.textContent = '0'.repeat(100);
-    el.appendChild(probe);
-    const ch = probe.getBoundingClientRect().width / 100 || 7.5;
-    probe.remove();
+    let ch = 0;
     const measure = () => {
       const list = el.querySelector('.rab-n-vlist') as HTMLElement | null;
       const width = (list ?? el).clientWidth;
-      if (width) setCols(Math.max(20, Math.floor((width - GUTTER_PX) / ch) - 1));
+      if (!width) return;
+      if (!ch) {
+        const probe = document.createElement('span');
+        probe.className = 'rab-n-code rab-n-code-probe';
+        probe.textContent = '0'.repeat(100);
+        el.appendChild(probe);
+        ch = probe.getBoundingClientRect().width / 100;
+        probe.remove();
+        if (!ch) return;
+      }
+      setCols(Math.max(20, Math.floor((width - GUTTER_EXTRA_PX) / ch) - digits - 1));
     };
     measure();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -485,32 +531,44 @@ function useColumns(ref: { current: HTMLElement | null }): number {
       timer = setTimeout(measure, 120); // once the resizing stops: wrapping megabytes again takes a moment
     });
     observer?.observe(el);
+    const list = el.querySelector('.rab-n-vlist');
+    if (list) observer?.observe(list); // its scrollbar appearing narrows it without resizing the wrapper
     return () => {
       observer?.disconnect();
       clearTimeout(timer);
     };
-  }, []);
+  }, [digits]);
   return cols;
 }
+
+const NO_ROWS = wrapRows('', 1);
 
 /** Raw text, wrapped at the pane's width: every character can be seen (minified JSON is one line of megabytes). */
 function TextView({ text, needle, step, onFound }: {
   text: string; needle: string; step: Step; onFound: (count: number, index: number) => void;
 }) {
   const wrap = useRef<HTMLDivElement>(null);
-  const cols = useColumns(wrap);
-  const rows = useMemo(() => wrapRows(text, cols || 2000), [text, cols]);
+  // the gutter fits the last line's number (a 20 MB body can have millions of lines)
+  const digits = useMemo(() => {
+    let lines = 1;
+    for (let i = text.indexOf('\n'); i >= 0; i = text.indexOf('\n', i + 1)) lines++;
+    return Math.max(3, String(lines).length);
+  }, [text]);
+  const cols = useColumns(wrap, digits);
+  // nothing is wrapped before the width is known: wrapping megabytes twice on every mount is noticeable
+  const rows = useMemo(() => (cols ? wrapRows(text, cols) : NO_ROWS), [text, cols]);
   const { matches, current } = useFind(needle, step, onFound, (n) => findRows(text, rows, n), rows);
   const matchSet = useMemo(() => new Set(matches), [matches]);
   const activeRow = matches.length ? matches[current] : -1;
   return (
-    <div class="rab-n-code-wrap" ref={wrap}>
+    <div class="rab-n-code-wrap" ref={wrap} style={{ '--rab-gutter-digits': digits } as any}>
       <VirtualList
         className="rab-n-code rab-n-code-raw"
-        count={rows.count}
+        count={rows === NO_ROWS ? 0 : rows.count}
         rowHeight={LINE}
         activeIndex={activeRow >= 0 ? activeRow : undefined}
         revealKey={step.n}
+        focusable
         renderRow={(i) => {
           const first = i === 0 || rows.lines[i - 1] !== rows.lines[i];
           return (

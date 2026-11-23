@@ -8,6 +8,8 @@ import { isSkipped, moduleFact, rowTicks, type Fact } from './facts';
 import { RowCard, type CardTarget } from './RowCard';
 
 const ROW = 24;
+/** The hover card's id: the row it describes points to it (aria-describedby). */
+const CARD_ID = 'rab-n-row-card';
 /** How long the pointer rests on a row before its card opens; moving on to the next row while one shows is instant. */
 const CARD_DELAY = 450;
 
@@ -32,20 +34,43 @@ export function Sidebar(p: SidebarProps) {
   const [typed, setTyped] = useState(p.query);
   const typing = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(typing.current), []);
+  // a query set from outside (not typed here) shows in the box too
+  const sent = useRef(p.query);
+  useEffect(() => {
+    if (p.query === sent.current) return;
+    sent.current = p.query;
+    clearTimeout(typing.current);
+    typing.current = undefined;
+    setTyped(p.query);
+  }, [p.query]);
+  const query = (v: string) => {
+    sent.current = v;
+    p.onQuery(v);
+  };
   const onType = (v: string) => {
     setTyped(v);
     clearTimeout(typing.current);
     typing.current = setTimeout(() => {
       typing.current = undefined;
-      p.onQuery(v);
+      query(v);
     }, 120);
+  };
+  // Escape in the box clears it (whatever the browser does on its own), and does nothing else
+  const onSearchKey = (e: KeyboardEvent) => {
+    if (e.key !== 'Escape' || !typed) return;
+    e.preventDefault();
+    e.stopPropagation();
+    clearTimeout(typing.current);
+    typing.current = undefined;
+    setTyped('');
+    query('');
   };
   // a key that acts on the list must not act on the results of the previous query: search now, act on the next key
   const flushQuery = () => {
     if (typing.current === undefined) return false;
     clearTimeout(typing.current);
     typing.current = undefined;
-    p.onQuery(typed);
+    query(typed);
     return true;
   };
   const searching = p.query.trim().length > 0;
@@ -87,6 +112,14 @@ export function Sidebar(p: SidebarProps) {
   }, [listKey]);
   const idOf = (l: Line) => (l.kind === 'op' ? l.op.key : 'module:' + l.module.id);
   const active = useMemo(() => (activeId ? lines.findIndex((l) => idOf(l) === activeId) : -1), [lines, activeId]);
+  const reveal = useRef({ id: activeId, shown: false, seq: 0 });
+  if (reveal.current.id !== activeId || reveal.current.shown !== active >= 0) {
+    reveal.current = { id: activeId, shown: active >= 0, seq: reveal.current.seq + 1 };
+  }
+  // the list's one tab stop: the keyboard's row, else the first (kept rendered while the list scrolls)
+  const tabStop = active >= 0 ? active : lines.length ? 0 : -1;
+  const focusFrame = useRef(0);
+  useEffect(() => () => cancelAnimationFrame(focusFrame.current), []);
   const setActive = (i: number) => {
     const l = lines[i];
     if (l) setActiveId(idOf(l));
@@ -128,7 +161,12 @@ export function Sidebar(p: SidebarProps) {
     if (!pinnedRef.current) forceHide();
   };
   useEffect(() => () => clearTimeout(cardTimer.current), []);
-  useEffect(() => hideCard(), [lines]);
+  useEffect(() => {
+    if (pinnedRef.current) return;
+    const keep = cardFor.current;
+    forceHide();
+    if (keep && lines.some((l) => idOf(l) === keep)) cardFor.current = keep;
+  }, [lines]);
   // a box on the whole screen covers the list: its card goes too, and stays away
   const covered = () => !!input.current?.closest('[inert]');
   // Escape hides a card that is not pinned (the pinned one has its own Escape), and only that; not a covered one
@@ -211,18 +249,21 @@ export function Sidebar(p: SidebarProps) {
         // keep the keyboard focus on the highlighted row; a row out of the rendered window appears only after the
         // list has scrolled to it, a frame or two later
         const list = target.closest('.rab-n-vlist');
+        cancelAnimationFrame(focusFrame.current);
         const focus = (tries: number) => {
-          const row = list?.querySelector('.rab-n-op.active, .rab-n-module.active') as HTMLElement | null;
+          // only while the focus is still in the list: a click or Tab elsewhere in between wins
+          if (!list?.contains(document.activeElement)) return;
+          const row = list.querySelector('.rab-n-op.active, .rab-n-module.active') as HTMLElement | null;
           if (row) row.focus();
-          else if (tries > 0) requestAnimationFrame(() => focus(tries - 1));
+          else if (tries > 0) focusFrame.current = requestAnimationFrame(() => focus(tries - 1));
         };
-        requestAnimationFrame(() => focus(5));
+        focusFrame.current = requestAnimationFrame(() => focus(5));
       }
     } else if (e.key === 'Enter' && inSearch && active >= 0 && active < lines.length) {
       e.preventDefault();
       const l = lines[active];
       if (l.kind === 'op') p.onSelect(l.op);
-      else toggle(l.module.id);
+      else if (foldable(l.module)) toggle(l.module.id);
     } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && inList && active >= 0 && active < lines.length) {
       const l = lines[active];
       if (l.kind === 'module' && foldable(l.module) && p.collapsed.has(l.module.id) === (e.key === 'ArrowRight')) toggle(l.module.id);
@@ -246,13 +287,14 @@ export function Sidebar(p: SidebarProps) {
             placeholder="Search: method, path or app"
             value={typed}
             onInput={(e) => onType((e.target as HTMLInputElement).value)}
+            onKeyDown={onSearchKey}
             aria-label="Search operations"
             data-testid="search"
           />
           {!typed && <kbd class="rab-n-search-kbd" aria-hidden="true">/</kbd>}
         </div>
         <div class="rab-n-status">
-          <span class="rab-n-status-text" data-testid="status">
+          <span class="rab-n-status-text" data-testid="status" role="status">
             {p.loadError ? (
               <span class="rab-n-error">{p.loadError}</span>
             ) : !s ? (
@@ -264,12 +306,12 @@ export function Sidebar(p: SidebarProps) {
                 <span class="rab-n-spinner" aria-hidden="true" /> Indexing {s.progress.done} of {s.progress.total} modules… {total.toLocaleString()} operations so far
               </>
             ) : searching || p.supportedOnly ? (
-              <>{hits.length.toLocaleString()} of {total.toLocaleString()} operations</>
+              <>{hits.length.toLocaleString()} of {plural(total, 'operation')}</>
             ) : (
               <>{plural(total, 'operation')} in {plural(s.modules.length, 'module')}</>
             )}
           </span>
-          {!searching && s && lines.length > 0 && (
+          {!searching && s && lines.some((l) => l.kind === 'module' && foldable(l.module)) && (
             <button
               class="rab-n-mini"
               onClick={toggleAll}
@@ -321,6 +363,10 @@ export function Sidebar(p: SidebarProps) {
           count={lines.length}
           rowHeight={ROW}
           activeIndex={active}
+          followIndex={false}
+          revealKey={reveal.current.seq}
+          keepIndex={tabStop}
+          keyOf={(i) => idOf(lines[i])}
           resetKey={listKey}
           ariaLabel="Operations"
           renderRow={(i) => {
@@ -333,10 +379,11 @@ export function Sidebar(p: SidebarProps) {
                   count={l.count}
                   collapsed={p.collapsed.has(l.module.id)}
                   active={i === active}
-                  tabStop={i === active || (active < 0 && i === 0)}
+                  tabStop={i === tabStop}
+                  described={card?.id === idOf(l)}
                   onClick={() => {
                     setActive(i);
-                    toggle(l.module.id);
+                    if (foldable(l.module)) toggle(l.module.id);
                   }}
                 />
               );
@@ -346,8 +393,9 @@ export function Sidebar(p: SidebarProps) {
             return (
               <button
                 class={'rab-n-op' + (l.op.key === p.selectedKey ? ' selected' : '') + (i === active ? ' active' : '') + (searching ? '' : ' indented')}
-                tabIndex={i === active || (active < 0 && i === 0) ? 0 : -1}
+                tabIndex={i === tabStop ? 0 : -1}
                 aria-current={l.op.key === p.selectedKey ? 'true' : undefined}
+                aria-describedby={card?.id === l.op.key ? CARD_ID : undefined}
                 onClick={() => {
                   setActive(i);
                   p.onSelect(l.op);
@@ -369,14 +417,15 @@ export function Sidebar(p: SidebarProps) {
         />
         </div>
       )}
-      {card && <RowCard target={card.target} left={card.left} top={card.top} rowHeight={ROW}
+      {card && <RowCard id={CARD_ID} target={card.target} left={card.left} top={card.top} rowHeight={ROW}
                         pinned={pinned} boxRef={cardBox} />}
     </div>
   );
 }
 
-function ModuleRow({ index, module, count, collapsed, active, tabStop, onClick }: {
-  index: number; module: Module; count: number; collapsed: boolean; active: boolean; tabStop: boolean; onClick: () => void;
+function ModuleRow({ index, module, count, collapsed, active, tabStop, described, onClick }: {
+  index: number; module: Module; count: number; collapsed: boolean; active: boolean; tabStop: boolean; described: boolean;
+  onClick: () => void;
 }) {
   const kind = moduleFact(module);
   // a pending or failed module has no operations to fold: no chevron, no expanded state
@@ -394,6 +443,7 @@ function ModuleRow({ index, module, count, collapsed, active, tabStop, onClick }
       onClick={onClick}
       tabIndex={tabStop ? 0 : -1}
       aria-expanded={foldable ? !collapsed : undefined}
+      aria-describedby={described ? CARD_ID : undefined}
       data-testid="module"
       data-i={index}
       data-id={'module:' + module.id}

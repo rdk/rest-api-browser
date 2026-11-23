@@ -77,3 +77,18 @@ describe('form history review fixes', () => {
     expect(record(NO_HISTORY, one, form(), 0)).not.toBeNull();
   });
 });
+
+describe('form history second review', () => {
+  it('drops the step when typing goes back to its value, and the next key makes a new one', () => {
+    let h: FormHistory = record(NO_HISTORY, form({ b: '1' }), form({ b: '2' }), 0, true)!;   // an older step
+    h = record(h, form({ b: '2' }), form({ b: '2', a: 'x' }), 100)!;
+    expect(h.undo).toEqual([form({ b: '1' }), form({ b: '2' })]);
+    h = record(h, form({ b: '2', a: 'x' }), form({ b: '2', a: '' }), 400)!;   // back to blank within a second
+    expect(h.undo).toEqual([form({ b: '1' })]);
+    h = record(h, form({ b: '2', a: '' }), form({ b: '2', a: 'y' }), 500)!;
+    expect(h.undo).toEqual([form({ b: '1' }), form({ b: '2', a: '' })]);
+    // after a pause it is a step of its own, kept
+    const later = record(h, form({ b: '2', a: 'y' }), form({ b: '2', a: '' }), 5000)!;
+    expect(later.undo.length).toBe(3);
+  });
+});

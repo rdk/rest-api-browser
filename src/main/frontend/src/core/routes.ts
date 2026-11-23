@@ -1,4 +1,4 @@
-import { findTemplates, splitSegments } from './template';
+import { findTemplates, spansSegments, splitSegments, trimModulePath, trimOpPath } from './template';
 import type { Index, Operation, Summary } from './types';
 
 export interface RouteMatch {
@@ -18,8 +18,7 @@ interface TemplateSeg {
 }
 
 interface RestSeg {
-  re: RegExp;            // tested against the whole remaining path
-  name: string;
+  seg: TemplateSeg;      // tested against the whole remaining path
   ops: Operation[];
 }
 
@@ -58,6 +57,9 @@ function tryRegExp(source: string): RegExp | null {
   }
 }
 
+// A plain {name} takes any text: match() decodes a segment first, so "a%2Fb" arrives as "a/b".
+const ANY = '[\\s\\S]+';
+
 function compileTemplate(src: string): TemplateSeg {
   const templates = findTemplates(src);
   const names = templates.map((t) => t.name);
@@ -68,7 +70,7 @@ function compileTemplate(src: string): TemplateSeg {
     templates.forEach((t, i) => {
       source += escapeRegExp(src.slice(last, t.start));
       const valid = withRegex && t.regex && tryRegExp(`^(?:${t.regex})$`) ? t.regex : null;
-      source += `(?<p${i}>${valid ?? '[^/]+'})`;
+      source += `(?<p${i}>${valid ?? ANY})`;
       if (valid) restricted = true;
       last = t.end;
     });
@@ -77,11 +79,11 @@ function compileTemplate(src: string): TemplateSeg {
   // If the combined regex does not compile, fall back to plain segments; it keeps the named groups match() reads.
   const full = build(true);
   if (full.re) return { re: full.re, names, restricted: full.restricted };
-  return { re: build(false).re ?? /^[^/]+$/, names, restricted: false };
+  return { re: build(false).re ?? new RegExp(`^${ANY}$`), names, restricted: false };
 }
 
 function insert(root: Node, op: Operation): void {
-  const segs = splitSegments(op.path);
+  const segs = splitSegments(trimOpPath(op.path));
   let node = root;
   for (let i = 0; i < segs.length; i++) {
     const seg = segs[i];
@@ -92,16 +94,12 @@ function insert(root: Node, op: Operation): void {
       node = next;
       continue;
     }
-    const only = templates.length === 1 && templates[0].start === 0 && templates[0].end === seg.length ? templates[0] : null;
-    if (only && i === segs.length - 1 && (only.regex === '.+' || only.regex === '.*')) {
-      const key = only.name + only.regex;
-      let rest = node.rests.get(key);
-      const re = tryRegExp(`^${only.regex}$`);
-      if (!rest && re) node.rests.set(key, (rest = { re, name: only.name, ops: [] }));
-      if (rest) {
-        rest.ops.push(op);
-        return;
-      }
+    // a last segment whose template may span segments (as request.ts sends it) matches the rest of the path
+    if (i === segs.length - 1 && templates.some((t) => spansSegments(t.regex))) {
+      let rest = node.rests.get(seg);
+      if (!rest) node.rests.set(seg, (rest = { seg: compileTemplate(seg), ops: [] }));
+      rest.ops.push(op);
+      return;
     }
     let next = node.templates.get(seg);
     if (!next) node.templates.set(seg, (next = { seg: compileTemplate(seg), node: newNode() }));
@@ -135,7 +133,11 @@ function walk(node: Node, segs: string[], i: number, values: Record<string, stri
   }
   const remainder = segs.slice(i).join('/');
   for (const rest of node.rests.values()) {
-    if (rest.re.test(remainder)) return { ops: rest.ops, values: Object.assign(dict<string>(), values, { [rest.name]: remainder }) };
+    const m = rest.seg.re.exec(remainder);
+    if (!m) continue;
+    const v = Object.assign(dict<string>(), values);
+    rest.seg.names.forEach((n, k) => (v[n] = m.groups?.[`p${k}`] ?? ''));
+    return { ops: rest.ops, values: v };
   }
   return null;
 }
@@ -191,18 +193,18 @@ function restPath(baseUrl: string, path: string): string | null {
 export function createMatcher(summary: Summary, index: Index): Matcher {
   let tries: { path: string; root: Node }[] | null = null;
 
+  // One trie per module path, not per module: two modules on "api/2" share it, so a literal route of one beats a
+  // template of the other, and the method preference works across them.
   function build() {
+    const paths = new Map(summary.modules.map((m) => [m.id, trimModulePath(m.path)]));
     const roots = new Map<string, Node>();
-    for (const m of summary.modules) roots.set(m.id, newNode());
-    const paths = new Map(summary.modules.map((m) => [m.id, m.path.replace(/^\/+|\/+$/g, '')]));
+    for (const path of paths.values()) if (!roots.has(path)) roots.set(path, newNode());
     for (const op of index.operations) {
-      const root = roots.get(op.module);
-      if (root) insert(root, op);
+      const path = paths.get(op.module);
+      if (path !== undefined) insert(roots.get(path)!, op);
     }
     // Longest module path first, so "api/2/foo" is tried before "api".
-    return [...roots.entries()]
-      .map(([id, root]) => ({ path: paths.get(id)!, root }))
-      .sort((a, b) => b.path.length - a.path.length);
+    return [...roots.entries()].map(([path, root]) => ({ path, root })).sort((a, b) => b.path.length - a.path.length);
   }
 
   return {

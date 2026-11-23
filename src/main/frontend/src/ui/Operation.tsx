@@ -6,7 +6,7 @@ import { checkValue, type Check } from '../core/validate';
 import { changedField, NO_HISTORY, record, redo as redoStep, undo as undoStep, type FormHistory, type FormState } from '../core/formhistory';
 import { formatJson } from '../core/jsonlines';
 import type { RequestRunner, RunResult } from './runner';
-import type { HistoryEntry, UserStore } from './userstore';
+import { historyUrl, type HistoryEntry, type UserStore } from './userstore';
 import { CheckMark, CopyButton, MaximizeButton, MethodBadge, PathText, Tabs, WarnGlyph, WRITE_METHODS, formatBytes, tabId } from './bits';
 import { ResponseView } from './Response';
 import { JavaTab } from './JavaTab';
@@ -84,11 +84,14 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
   const hasBody = method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE';
   const fullPath = (module ? module.path + '/' : '') + op.path;
 
+  // bumped by every change of the history here, so a first read that answers late does not overwrite it
+  const historyGen = useRef(0);
   useEffect(() => {
     setTab('params');
+    const gen = historyGen.current;
     userStore.history(op.key).then(
-      (h) => mounted.current && setHistory(h),
-      () => mounted.current && setHistory([]),
+      (h) => mounted.current && gen === historyGen.current && setHistory(h),
+      () => mounted.current && gen === historyGen.current && setHistory([]),
     );
   }, [op.key]);
 
@@ -107,18 +110,23 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
     // keep what was typed while the request ran; only the result is new
     setDraft({ ...latest.current, result });
     if (!result.error) {
-      const entry = await userStore.addHistory({
-        opKey: op.key,
-        method,
-        url: request.url,
-        values: sent.values,
-        custom: sent.custom,
-        noXsrfHeader: sent.noXsrfHeader,
-        status: result.status,
-        durationMs: Math.round(result.durationMs),
-        size: result.size,
-      });
-      if (mounted.current) setHistory((h) => [entry, ...h].slice(0, 20));
+      historyGen.current++;
+      try {
+        const entry = await userStore.addHistory({
+          opKey: op.key,
+          method,
+          url: historyUrl(summary, op, sent.values),
+          values: sent.values,
+          custom: sent.custom,
+          noXsrfHeader: sent.noXsrfHeader,
+          status: result.status,
+          durationMs: Math.round(result.durationMs),
+          size: result.size,
+        });
+        if (mounted.current) setHistory((h) => [entry, ...h].slice(0, 20));
+      } catch {
+        // the browser's storage refused it (full, private mode): the request still ran, its history is just not kept
+      }
     }
   };
   const cancel = () => runner.abort();
@@ -166,9 +174,12 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
   useEffect(() => {
     // Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y outside a text field (a field keeps its own undo of what is typed into it)
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
-      const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || maxRef.current === 'bottom') return;
+      // a text field keeps its own undo; a select or a checkbox has none, so the form's applies there too
+      const t = e.target as HTMLInputElement | null;
+      const text = t && (t.tagName === 'TEXTAREA' || t.isContentEditable
+        || (t.tagName === 'INPUT' && !['checkbox', 'radio', 'button', 'submit', 'reset'].includes(t.type)));
+      if (text) return;
       const k = e.key.toLowerCase();
       if (k === 'z' || k === 'y') {
         e.preventDefault();
@@ -178,7 +189,8 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, []);
-  const setValues = (values: RequestValues) => editForm({ ...formOf(latest.current), values });
+  // separate: a step of its own (a button such as Format), never merged with the typing just before
+  const setValues = (values: RequestValues, separate = false) => editForm({ ...formOf(latest.current), values }, separate);
   const visibleParams = withTemplateParams(op).filter((p) => p.in !== 'form');
   const formParams = op.params.filter((p) => p.in === 'form');
   const regexes = useMemo(() => templateRegexes(op.path), [op.path]);
@@ -202,7 +214,16 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
       for (const el of covered) el.removeAttribute('inert');
     };
   }, [max]);
-  const hasBadges = module?.stability === 'supported' || module?.stability === 'app' || !!op.access || !!op.deprecated;
+  // an app: by its stability, or installed by an admin (the list's tick says the same, facts.moduleFact)
+  const isApp = module?.stability === 'app' || module?.origin === 'user';
+  const hasBadges = module?.stability === 'supported' || isApp || !!op.access || !!op.deprecated;
+  // the response's restore button gets the focus when the response takes the screen from the outcome beside Send
+  const focusRestore = useRef(false);
+  useEffect(() => {
+    if (max !== 'bottom' || !focusRestore.current) return;
+    focusRestore.current = false;
+    (rootRef.current?.querySelector('[data-testid=max-bottom]') as HTMLElement | null)?.focus();
+  }, [max]);
 
   return (
     <div ref={rootRef} class={'rab-n-operation' + (max ? ' max-' + max : '')} data-testid="operation">
@@ -213,7 +234,7 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
           {hasBadges && (
             <span class="rab-n-op-badges">
               {module?.stability === 'supported' && <span class="rab-n-tag rab-n-tag-supported">Supported</span>}
-              {module?.stability === 'app' && <span class="rab-n-tag rab-n-tag-app">App: {module.plugin.name}</span>}
+              {isApp && module && <span class="rab-n-tag rab-n-tag-app">App: {module.plugin.name}</span>}
               {op.access && <span class={'rab-n-tag rab-n-tag-access rab-n-tag-access-' + op.access.toLowerCase()} title="Access annotation of the handler">{op.access}</span>}
               {op.deprecated && <span class="rab-n-tag rab-n-tag-deprecated">Deprecated</span>}
             </span>
@@ -252,8 +273,15 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
           )}
           {/* the response is hidden while the request has the whole screen: its outcome shows here */}
           {max === 'top' && (running || draft.result) && (
-            <button class="rab-n-max-status" onClick={() => setMax('bottom')} title="Show the response on the whole screen"
-                    data-testid="max-status" aria-live="polite">
+            <button class="rab-n-max-status" data-testid="max-status" aria-live="polite"
+                    title={compact || running ? 'Show the request and the response again' : 'Show the response on the whole screen'}
+                    onClick={() => {
+                      if (compact || running) setMax(null);
+                      else {
+                        focusRestore.current = true;
+                        setMax('bottom');
+                      }
+                    }}>
               {running ? <><span class="rab-n-spinner" aria-hidden="true" /> Sending…</>
                 : draft.result!.error ? (draft.result!.error === 'aborted' ? 'Cancelled' : 'Failed')
                 : <>{draft.result!.status} · {Math.round(draft.result!.durationMs)} ms · {formatBytes(draft.result!.size)}</>}
@@ -301,14 +329,19 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
               <ParamsTab params={visibleParams} formParams={formParams} values={draft.values} onValues={setValues} regexes={regexes} />
             )}
             {tab === 'body' && <BodyTab op={op} values={draft.values} onValues={setValues} />}
-            {tab === 'java' && <JavaTab baseUrl={summary.baseUrl} opKey={op.key} />}
+            {tab === 'java' && <JavaTab baseUrl={summary.baseUrl} opKey={op.key} revision={summary.hash} />}
             {tab === 'headers' && <HeadersTab op={op} draft={draft} onDraft={(d) => editForm(formOf(d))} write={write} />}
             {tab === 'history' && (
               <HistoryTab
                 entries={history}
                 onRestore={(e) => editForm({ values: e.values, custom: e.custom ?? [], noXsrfHeader: !!e.noXsrfHeader }, true)}
                 onClear={async () => {
-                  await userStore.clearHistory(op.key);
+                  historyGen.current++;
+                  try {
+                    await userStore.clearHistory(op.key);
+                  } catch {
+                    // nothing kept to clear
+                  }
                   if (mounted.current) setHistory([]);
                 }}
               />
@@ -360,7 +393,7 @@ function withTemplateParams(op: Operation): Param[] {
 }
 
 /** The template's regex applies to the path parameter of that name only, not to a query or header one. */
-const regexOf = (p: Param, regexes: Record<string, string>) => (p.in === 'path' ? regexes[p.name] : undefined);
+const regexOf = (p: Param, regexes: Record<string, string>) => (p.in === 'path' && Object.hasOwn(regexes, p.name) ? regexes[p.name] : undefined);
 
 /** The regex of each path template that has one: "{mode: view|edit}". */
 function templateRegexes(path: string): Record<string, string> {
@@ -369,8 +402,12 @@ function templateRegexes(path: string): Record<string, string> {
   return out;
 }
 
+/** A parameter's values as the form shows them: a query parameter's list (at least one field), else its one value. */
 function valuesOf(p: Param, values: RequestValues): string[] {
-  return p.in === 'query' ? values.query[p.name] ?? [''] : [((values as any)[p.in]?.[p.name] as string | undefined) ?? ''];
+  const map = (values as any)[p.in] as Record<string, unknown> | undefined;
+  const v = map && Object.hasOwn(map, p.name) ? map[p.name] : undefined;
+  if (p.in === 'query') return Array.isArray(v) && v.length ? (v as string[]) : [''];
+  return [typeof v === 'string' ? v : ''];
 }
 
 /** The check of one of a parameter's values; an empty extra value of a repeating one is fine. */
@@ -435,7 +472,8 @@ function ParamsTab({ params, formParams, values, onValues, regexes }: {
                     <ParamInput param={p} value={v} invalid={check?.state === 'warn' && !!v.trim()} onChange={(nv) => set(p, list.map((x, j) => (j === i ? nv : x)))} />
                     <CheckMark check={check} />
                     {p.repeating && list.length > 1 && (
-                      <button class="rab-n-icon" aria-label="Remove value" onClick={() => set(p, list.filter((_, j) => j !== i))}>×</button>
+                      <button class="rab-n-icon" aria-label={`Remove ${p.name} value ${i + 1}`} title="Remove this value"
+                              onClick={() => set(p, list.filter((_, j) => j !== i))}>×</button>
                     )}
                   </div>
                   );
@@ -495,8 +533,9 @@ function ParamInput({ param, value, invalid, onChange }: { param: Param; value: 
   );
 }
 
-function BodyTab({ op, values, onValues }: { op: Operation; values: RequestValues; onValues: (v: RequestValues) => void }) {
+function BodyTab({ op, values, onValues }: { op: Operation; values: RequestValues; onValues: (v: RequestValues, separate?: boolean) => void }) {
   const types = mediaChoices(op.consumes);
+  const [formatNote, setFormatNote] = useState<string | null>(null);
   const contentType = values.contentType ?? types[0];
   const isJson = /json/i.test(contentType);
   const error = useMemo(() => {
@@ -510,7 +549,9 @@ function BodyTab({ op, values, onValues }: { op: Operation; values: RequestValue
   }, [values.body, isJson]);
   const format = () => {
     const formatted = formatJson(values.body ?? '');
-    if (formatted !== null && formatted !== values.body) onValues({ ...values, body: formatted });
+    // valid JSON that formatJson declines is too deep or too large to lay out
+    setFormatNote(formatted === null ? 'Too large or too deeply nested to format' : null);
+    if (formatted !== null && formatted !== values.body) onValues({ ...values, body: formatted }, true);
   };
   return (
     <div class="rab-n-body">
@@ -519,9 +560,12 @@ function BodyTab({ op, values, onValues }: { op: Operation; values: RequestValue
           Content-Type{' '}
           <select class="rab-n-input" value={contentType} onChange={(e) => onValues({ ...values, contentType: (e.target as HTMLSelectElement).value })}>
             {types.map((t) => <option key={t} value={t}>{t}</option>)}
+            {/* a type from the history that the operation no longer lists still shows, as it is sent */}
+            {!types.includes(contentType) && <option value={contentType}>{contentType}</option>}
           </select>
         </label>
         {op.bodyType && <span class="rab-n-subtle">Java type: {op.bodyType}</span>}
+        {formatNote && <span class="rab-n-subtle" role="status">{formatNote}</span>}
         <span class="rab-n-spacer" />
         {isJson && !!values.body?.trim() && (
           <span class={'rab-n-json-check ' + (error ? 'is-warn' : 'is-ok')} data-testid="json-check">
@@ -547,13 +591,17 @@ function BodyTab({ op, values, onValues }: { op: Operation; values: RequestValue
 function HeadersTab({ op, draft, onDraft, write }: { op: Operation; draft: Draft; onDraft: (d: Draft) => void; write: boolean }) {
   const produces = mediaChoices(op.produces);
   const custom = draft.custom.length ? draft.custom : [{ name: '', value: '' }];
-  const setCustom = (list: { name: string; value: string }[]) => onDraft({ ...draft, custom: list });
+  // one row left and empty is the same as none (the empty row shown then)
+  const setCustom = (list: { name: string; value: string }[]) =>
+    onDraft({ ...draft, custom: list.length === 1 && !list[0].name && !list[0].value ? [] : list });
+  const accept = draft.values.accept ?? produces[0];
   return (
     <div class="rab-n-pad">
       <label class="rab-n-row">
         Accept{' '}
-        <select class="rab-n-input" value={draft.values.accept ?? produces[0]} onChange={(e) => onDraft({ ...draft, values: { ...draft.values, accept: (e.target as HTMLSelectElement).value } })}>
+        <select class="rab-n-input" value={accept} onChange={(e) => onDraft({ ...draft, values: { ...draft.values, accept: (e.target as HTMLSelectElement).value } })}>
           {produces.map((t) => <option key={t} value={t}>{t}</option>)}
+          {!produces.includes(accept) && <option value={accept}>{accept}</option>}
         </select>
       </label>
       {write && (
@@ -615,7 +663,7 @@ function historyTitle(e: HistoryEntry): string {
 
 function SplitHandle({ split, onSplit }: { split: number; onSplit: (ratio: number) => void }) {
   const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    if ((e.key !== 'ArrowUp' && e.key !== 'ArrowDown') || e.ctrlKey || e.metaKey || e.altKey) return;
     e.preventDefault();
     onSplit(Math.min(0.8, Math.max(0.15, split + (e.key === 'ArrowDown' ? 0.05 : -0.05))));
   };
@@ -625,9 +673,10 @@ function SplitHandle({ split, onSplit }: { split: number; onSplit: (ratio: numbe
   useEffect(() => () => stop.current?.(), []);
   const onDown = (e: PointerEvent) => {
     const parent = ref.current?.parentElement;
-    if (!parent) return;
+    const rect = parent?.getBoundingClientRect();
+    if (!parent || !rect?.height || e.button !== 0) return;
     e.preventDefault();
-    const rect = parent.getBoundingClientRect();
+    stop.current?.();
     const request = parent.firstElementChild as HTMLElement | null;
     let ratio = 0;
     // resize the element directly while dragging; the state (and a saved preference) follows once, on release

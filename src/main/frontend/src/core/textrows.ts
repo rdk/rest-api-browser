@@ -13,7 +13,11 @@ export function wrapRows(text: string, cols: number): Rows {
   for (let start = 0; ; ) {
     let end = text.indexOf('\n', start);
     if (end < 0) end = text.length;
-    count += Math.max(1, Math.ceil((end - start) / width));
+    for (let s = start; ; ) {
+      count++;
+      s = next(text, s, width, end);
+      if (s >= end) break;
+    }
     if (end >= text.length) break;
     start = end + 1;
   }
@@ -28,12 +32,25 @@ export function wrapRows(text: string, cols: number): Rows {
       starts[r] = s;
       lines[r] = line;
       r++;
-      s += width;
+      s = next(text, s, width, end);
     } while (s < end);
     if (end >= text.length) break;
     start = end + 1;
   }
   return { starts, lines, count };
+}
+
+/**
+ * Where the row after the one starting at `s` starts: `width` characters on, but never between the two halves of a
+ * surrogate pair (an emoji would show as two broken characters).
+ */
+function next(text: string, s: number, width: number, end: number): number {
+  let n = s + width;
+  if (n < end && n > s + 1) {
+    const c = text.charCodeAt(n);
+    if (c >= 0xdc00 && c <= 0xdfff) n--;
+  }
+  return n;
 }
 
 /** Where row i ends in the text: the next row's start, or the newline before it. */

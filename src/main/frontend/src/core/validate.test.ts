@@ -49,3 +49,24 @@ describe('checkValue', () => {
   });
 });
 
+
+describe('checkValue second review', () => {
+  it('reads decimals as numbers are written, with a range only for double, float and number', () => {
+    for (const type of ['double', 'float', 'number', 'BigDecimal']) {
+      expect(checkValue(param({ type }), '0x10')?.state, type).toBe('warn');
+      expect(checkValue(param({ type }), '0b1')?.state, type).toBe('warn');
+      expect(checkValue(param({ type }), 'Infinity')?.state, type).toBe('warn');
+      expect(checkValue(param({ type }), '-1.5e3')?.state, type).toBe('ok');
+    }
+    expect(checkValue(param({ type: 'BigDecimal' }), '1e400')?.state).toBe('ok');
+    expect(checkValue(param({ type: 'double' }), '1e400')?.state).toBe('warn');
+    expect(checkValue(param({ type: 'float' }), '1e39')?.state).toBe('warn');
+    expect(checkValue(param({ type: 'float' }), '3.4e38')?.state).toBe('ok');
+  });
+
+  it('checks BigInteger as a whole number without a range', () => {
+    expect(checkValue(param({ type: 'BigInteger' }), '123456789012345678901234567890')?.state).toBe('ok');
+    expect(checkValue(param({ type: 'BigInteger' }), '1.5')?.message).toBe('Expected a whole number');
+    expect(checkValue(param({ type: 'BigInteger' }), ' 1')?.message).toBe('Leading or trailing spaces');
+  });
+});

@@ -4,7 +4,7 @@ import type { Module, Operation } from '../core/types';
  * What the list shows as small color ticks and the hover card spells out: one place, so the ticks, their colors
  * and the words always agree.
  */
-export type Tone = 'supported' | 'app' | 'bundled' | 'deprecated' | 'open' | 'unlicensed' | 'licensed' | 'admin' | 'sysadmin';
+export type Tone = 'supported' | 'app' | 'bundled' | 'deprecated' | 'open' | 'unlicensed' | 'licensed' | 'admin' | 'sysadmin' | 'other';
 export interface Fact { tone: Tone; label: string; detail?: string; }
 
 const ACCESS: Record<string, Omit<Fact, 'detail'> & { detail: string }> = {
@@ -21,7 +21,8 @@ const ACCESS: Record<string, Omit<Fact, 'detail'> & { detail: string }> = {
 export function accessFact(access: string | undefined): Fact | undefined {
   if (!access) return undefined;
   const known = ACCESS[access.toLowerCase()];
-  if (!known) return { tone: 'licensed', label: access };
+  // an annotation this browser does not know: shown, in a neutral colour of its own (not the default's, LicensedOnly)
+  if (!known) return { tone: 'other', label: access, detail: 'An access annotation this browser does not know' };
   return known;
 }
 

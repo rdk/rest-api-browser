@@ -21,6 +21,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * The headers of a request as the server received them: what the browser added (User-Agent, Accept-Language,
@@ -43,7 +45,16 @@ public class EchoResource {
             "session", "sessions", "sessionid", "api-key", "api-keys", "apikey", "apikeys", "token", "tokens",
             "credential", "credentials", "jwt", "assertion", "assertions", "signature", "signatures", "auth",
             "authorization", "authn", "cert", "certs", "certificate", "certificates", "oidc", "sso", "saml",
-            "principal");
+            "principal", "jsessionid", "oauth", "csrf", "xsrf");
+    /** An authorization scheme as it may be shown (Basic, Bearer, Negotiate, AWS4-HMAC-SHA256), then whitespace. */
+    static final Pattern SCHEME = Pattern.compile("^([A-Za-z][A-Za-z0-9._-]{0,31})\\s");
+    /**
+     * Endings that make a run-together word a secret too: HTTP/2 lowercases header names, so X-AccessToken arrives as
+     * x-accesstoken, one word. A word is secret when it is longer than the ending and ends with it (accesstoken,
+     * apitoken, clientsecret, xapikey).
+     */
+    static final List<String> SECRET_ENDINGS = List.of("token", "tokens", "secret", "secrets", "password", "passwords",
+            "passwd", "apikey", "apikeys", "credential", "credentials", "sessionid", "signature");
     static final int MAX_VALUE = 1000;
 
     private final UserManager userManager;
@@ -117,7 +128,7 @@ public class EchoResource {
         if (value == null) {
             return "";
         }
-        if (n.equals("cookie")) {
+        if (n.equals("cookie") || n.equals("cookie2") || n.equals("set-cookie")) {
             List<String> cookies = new ArrayList<>();
             for (String c : value.split(";")) {
                 String t = c.trim();
@@ -130,13 +141,18 @@ public class EchoResource {
             return String.join("; ", cookies);
         }
         if (n.equals("authorization") || n.equals("proxy-authorization")) {
-            int space = value.indexOf(' ');
-            return (space < 0 ? "" : value.substring(0, space) + " ") + "… (hidden)";
+            // the first word only when it looks like a scheme: a bare token with a space in it stays hidden whole
+            Matcher scheme = SCHEME.matcher(value);
+            return (scheme.find() ? scheme.group(1) + " " : "") + "… (hidden)";
         }
         if (secret(name)) {
             return "… (hidden)";
         }
-        return value.length() <= MAX_VALUE ? value : value.substring(0, MAX_VALUE) + "…";
+        if (value.length() <= MAX_VALUE) {
+            return value;
+        }
+        int end = Character.isHighSurrogate(value.charAt(MAX_VALUE - 1)) ? MAX_VALUE - 1 : MAX_VALUE;
+        return value.substring(0, end) + "…"; // never half of a surrogate pair
     }
 
     /**
@@ -153,6 +169,11 @@ public class EchoResource {
             if (SECRET_WORDS.contains(words[i])
                     || (i + 1 < words.length && SECRET_WORDS.contains(words[i] + "-" + words[i + 1]))) {
                 return true;
+            }
+            for (String ending : SECRET_ENDINGS) {
+                if (words[i].length() > ending.length() && words[i].endsWith(ending)) {
+                    return true;
+                }
             }
         }
         return false;

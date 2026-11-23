@@ -190,3 +190,36 @@ describe('RequestRunner review fixes', () => {
     expect(unknown.text).toBe('é');
   });
 });
+
+describe('RequestRunner second review', () => {
+  const result = (method: string) => ({
+    method, url: '/jira/rest/x', status: 200, statusText: 'OK', ok: true, headers: [], contentType: '', durationMs: 1, size: 0,
+    truncated: false, kind: 'empty' as const, sessionExpired: false, requestHeaders: [] as [string, string][],
+  });
+
+  it('fetchEcho says so when the session expired, and checks the answer', async () => {
+    const login = (async () => new Response('<html>Log in</html>', { status: 200, headers: { 'content-type': 'text/html' } })) as unknown as typeof fetch;
+    await expect(fetchEcho('', result('GET'), login)).rejects.toThrow(/session has expired/);
+    const odd = (async () => new Response('{"headers":{"a":"b"}}', { status: 200 })) as unknown as typeof fetch;
+    await expect(fetchEcho('', result('GET'), odd)).rejects.toThrow(/headers/);
+    const pairs = (async () => new Response('{"headers":[["a"]]}', { status: 200 })) as unknown as typeof fetch;
+    await expect(fetchEcho('', result('GET'), pairs)).rejects.toThrow(/headers/);
+  });
+
+  it('gives an empty body no text, so there is nothing to download', async () => {
+    const r = await new RequestRunner(fakeFetch(() => new Response(null, { status: 204 }))).run(req);
+    expect(r.kind).toBe('empty');
+    expect(r.text).toBeUndefined();
+    expect(downloadBlob(r)).toBeNull();
+  });
+
+  it('does not take a plain 401 for an expired session when the request sent its own Authorization', async () => {
+    const own = { ...req, headers: { ...req.headers, authorization: 'Bearer x' } };
+    const plain = await new RequestRunner(fakeFetch(() => new Response('', { status: 401 }))).run(own);
+    expect(plain.sessionExpired).toBe(false);
+    const seraph = await new RequestRunner(fakeFetch(() =>
+      new Response('', { status: 401, headers: { 'X-Seraph-LoginReason': 'AUTHENTICATED_FAILED' } }))).run(own);
+    expect(seraph.sessionExpired).toBe(true);
+    expect((await new RequestRunner(fakeFetch(() => new Response('', { status: 401 }))).run(req)).sessionExpired).toBe(true);
+  });
+});

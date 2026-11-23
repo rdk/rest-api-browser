@@ -6,6 +6,8 @@ import {
 } from '../core/details';
 import { annotationTokens, toLines, tokenize, type Token } from '../core/javatokens';
 import { CopyButton, plural, safeHref } from './bits';
+import { originLabel } from './facts';
+import type { Module } from '../core/types';
 
 type Page = 'method' | 'class' | 'types' | 'bundle' | 'imports' | 'exports' | 'plugin' | 'modules' | 'rest';
 /** The page last looked at, kept while the page is open: the next operation opens on it too. */
@@ -16,7 +18,8 @@ let lastPage: Page = 'method';
  * signature, the OSGi bundle with its wiring, the plugin and the REST module, one page each, chosen in a menu on the
  * left. Fetched when the tab opens, once per page load.
  */
-export function JavaTab({ baseUrl, opKey }: { baseUrl: string; opKey: string }) {
+/** `revision`: the catalog's hash; a new one (a rebuild, an app upgraded) reads the details again. */
+export function JavaTab({ baseUrl, opKey, revision }: { baseUrl: string; opKey: string; revision?: string }) {
   const [details, setDetails] = useState<OperationDetails | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [full, setFull] = useState(false);
@@ -42,7 +45,7 @@ export function JavaTab({ baseUrl, opKey }: { baseUrl: string; opKey: string }) 
     return () => {
       live = false;
     };
-  }, [baseUrl, opKey, reload]);
+  }, [baseUrl, opKey, reload, revision]);
 
   const again = () => {
     forgetDetails(opKey);
@@ -58,14 +61,14 @@ export function JavaTab({ baseUrl, opKey }: { baseUrl: string; opKey: string }) 
   );
   if (error) {
     return (
-      <div class="rab-n-pad rab-n-java-error" data-testid="java-error">
+      <div class="rab-n-pad rab-n-java-error" data-testid="java-error" role="alert">
         {error} {reloadButton('Try again')}
       </div>
     );
   }
   if (!details) {
     return (
-      <div class="rab-n-pad rab-n-subtle" data-testid="java-loading">
+      <div class="rab-n-pad rab-n-subtle" data-testid="java-loading" role="status">
         <span class="rab-n-spinner" aria-hidden="true" /> Reading the Java behind this operation…
       </div>
     );
@@ -103,6 +106,7 @@ export function JavaTab({ baseUrl, opKey }: { baseUrl: string; opKey: string }) 
     </span>
   );
   const onNavKey = (e: KeyboardEvent) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return; // the browser's shortcuts
     const i = shown.findIndex((p) => p.id === current);
     const next = e.key === 'ArrowDown' ? i + 1 : e.key === 'ArrowUp' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? shown.length - 1 : -2;
     if (next === -2) return;
@@ -122,7 +126,7 @@ export function JavaTab({ baseUrl, opKey }: { baseUrl: string; opKey: string }) 
                   class={'rab-n-java-nav-item' + (p.id === current ? ' on' : '')} onClick={() => setPage(p.id)}
                   data-testid={'java-nav-' + p.id}>
             <span>{p.label}</span>
-            {p.failed ? <span class="rab-n-java-nav-failed" title="Could not be read">!</span>
+            {p.failed ? <span class="rab-n-java-nav-failed" title="Could not be read"><span aria-hidden="true">!</span><span class="rab-n-sr"> (could not be read)</span></span>
               : p.count !== undefined && <span class="rab-n-java-nav-count">{p.count.toLocaleString()}</span>}
           </button>
         ))}
@@ -174,7 +178,7 @@ export function JavaTab({ baseUrl, opKey }: { baseUrl: string; opKey: string }) 
           </Block>
         )}
         {current === 'imports' && bundle?.imports && (
-          <Block title={`Imported packages (${bundle.importCount}) and the bundles that provide them`} testId="java-imports" section={bundle} tools={tools}>
+          <Block title={`Imported packages (${(bundle.importCount ?? 0).toLocaleString()}) and the bundles that provide them`} testId="java-imports" section={bundle} tools={tools}>
             {(b) => (
               <Filtered key="imports" rows={b.imports!} total={b.importCount} text={(i) => `${i.package} ${i.from}`} head={['Package', 'Version', 'From']}
                         row={(i) => [<code>{i.package}</code>, <span class="rab-n-subtle">{i.version}</span>, <span>{i.from}</span>]} />
@@ -182,7 +186,7 @@ export function JavaTab({ baseUrl, opKey }: { baseUrl: string; opKey: string }) 
           </Block>
         )}
         {current === 'exports' && bundle?.exports && (
-          <Block title={`Exported packages (${bundle.exportCount}) and how many bundles use them`} section={bundle} tools={tools}>
+          <Block title={`Exported packages (${(bundle.exportCount ?? 0).toLocaleString()}) and how many bundles use them`} testId="java-exports" section={bundle} tools={tools}>
             {(b) => (
               <Filtered key="exports" rows={b.exports!} total={b.exportCount} text={(e) => e.package} head={['Package', 'Version', 'Used by']}
                         row={(e) => [<code>{e.package}</code>, <span class="rab-n-subtle">{e.version}</span>, <span>{plural(e.users, 'bundle')}</span>]} />
@@ -195,7 +199,7 @@ export function JavaTab({ baseUrl, opKey }: { baseUrl: string; opKey: string }) 
           </Block>
         )}
         {current === 'modules' && plugin && (
-          <Block title={`The plugin's modules (${plugin.moduleCount})`} testId="java-modules" section={plugin} tools={tools}>
+          <Block title={`The plugin's modules (${plugin.moduleCount.toLocaleString()})`} testId="java-modules" section={plugin} tools={tools}>
             {(p) => (
               <Filtered key="modules" rows={p.modules} total={p.moduleCount} text={(m) => `${m.key} ${m.type} ${m.name ?? ''}`} head={['Key', 'Type', 'State']}
                         row={(m) => [<code>{m.key}</code>, <span class="rab-n-subtle">{m.type}</span>,
@@ -282,7 +286,14 @@ function Filtered<T>({ rows, total, text, head, row }: {
     <>
       <div class="rab-n-java-filter">
         <input class="rab-n-input" type="search" placeholder="Filter" value={filter} aria-label="Filter the list"
-               onInput={(e) => setFilter((e.target as HTMLInputElement).value)} />
+               onInput={(e) => setFilter((e.target as HTMLInputElement).value)}
+               onKeyDown={(e) => {
+                 // Escape clears the filter (whatever the browser does on its own), and does nothing else
+                 if (e.key !== 'Escape' || !filter) return;
+                 e.preventDefault();
+                 e.stopPropagation();
+                 setFilter('');
+               }} />
         <span class="rab-n-subtle">
           {shown.length === rows.length ? rows.length.toLocaleString() : `${shown.length.toLocaleString()} of ${rows.length.toLocaleString()}`}
           {total !== undefined && total > rows.length && `, ${(total - rows.length).toLocaleString()} more not listed`}
@@ -374,7 +385,7 @@ function PluginFacts({ p }: { p: PluginInfo }) {
         </Fact>
       )}
       {p.description && <Fact name="Description">{p.description}</Fact>}
-      <Fact name="Origin and state">{originLabel(p.origin)} · {p.state} · plugins framework v{p.pluginsVersion}</Fact>
+      <Fact name="Origin and state">{originLabel({ origin: p.origin } as Module)} · {p.state} · plugins framework v{p.pluginsVersion}</Fact>
       {p.artifact && <Fact name="Artifact"><code class="rab-n-java-wrap">{p.artifact}</code></Fact>}
       {dates.map(([k, d]) => <Fact key={k} name={k}>{new Date(d).toLocaleString()}</Fact>)}
       <Fact name="Modules">{p.moduleCount}</Fact>
@@ -400,6 +411,3 @@ function CodeList({ items }: { items: string[] }) {
   return <ul class="rab-n-java-list">{items.map((s, i) => <li key={i}><code><Code tokens={tokenize(s)} /></code></li>)}</ul>;
 }
 
-function originLabel(origin: string): string {
-  return origin === 'product' ? 'The product' : origin === 'bundled' ? 'Bundled with the product' : 'Installed app';
-}

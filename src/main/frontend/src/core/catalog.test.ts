@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CatalogStore, RETRY_DELAYS_MS, type FetchFn } from './catalog';
+import { CatalogStore, isLoginAnswer, RETRY_DELAYS_MS, type FetchFn } from './catalog';
 import { index, module, summary } from './fixtures';
 import type { Index, Summary } from './types';
 
@@ -296,5 +296,52 @@ describe('CatalogStore', () => {
     expect(polled.error?.name).toBe('SessionExpired');
     expect(onChange).toHaveBeenCalledTimes(2);
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe('CatalogStore second review', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('keeps polling after a transient failure of load() while the catalog is incomplete', async () => {
+    let fail = false;
+    const srv = server({ summary: () => summary(mods, { complete: false }), index: (h) => index([], h) });
+    const store = new CatalogStore('http://host/jira', (url, init) => (fail ? Promise.resolve(new Response('', { status: 500 })) : srv.fetchFn(url, init)));
+    await store.load();
+    fail = true;
+    await expect(store.refreshSoon()).rejects.toThrow('HTTP 500');
+    fail = false;
+    expect(vi.getTimerCount()).toBe(1);
+    const before = srv.calls.length;
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(srv.calls.length).toBeGreaterThan(before);
+    store.stop();
+  });
+
+  it('does not download the index again when load() finds the same hash, and tells only of a changed view', async () => {
+    let n = 0;
+    const srv = server({ summary: () => summary(mods, { complete: n++ > 0 }), index: (h) => index([], h) });
+    const store = new CatalogStore('http://host/jira', srv.fetchFn);
+    const onChange = vi.fn();
+    store.onChange(onChange);
+    await store.load();
+    await store.refreshSoon();   // the same hash, now complete
+    expect(srv.calls.filter((c) => c.includes('/index/'))).toHaveLength(1);
+    expect(store.summary?.complete).toBe(true);
+    expect(onChange).toHaveBeenCalledTimes(2);
+    await store.refreshSoon();   // the same again: nothing to tell
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('takes the AUTHENTICATED_FAILED login reason for an expired session', async () => {
+    const f: FetchFn = () => Promise.resolve(new Response('{}', { status: 200, headers: { 'X-Seraph-LoginReason': 'AUTHENTICATED_FAILED' } }));
+    await expect(new CatalogStore('http://host/jira', f).load()).rejects.toMatchObject({ name: 'SessionExpired' });
+  });
+
+  it('isLoginAnswer: a 401 to a request with its own credentials is those credentials failing', () => {
+    expect(isLoginAnswer(new Response('', { status: 401 }))).toBe(true);
+    expect(isLoginAnswer(new Response('', { status: 401 }), false, true)).toBe(false);
+    expect(isLoginAnswer(new Response('', { status: 401, headers: { 'X-Seraph-LoginReason': 'OUT' } }), false, true)).toBe(true);
   });
 });

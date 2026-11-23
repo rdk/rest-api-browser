@@ -133,6 +133,31 @@ public class CatalogResourceTest {
     }
 
     @Test
+    public void aSystemAdminWhoIsNoAdminSeesTheAdminSummaryUnderTheSystemAdminEtag() {
+        // the product may make a user system administrator without making them administrator
+        when(userManager.getRemoteUserKey(request)).thenReturn(user);
+        when(userManager.isAdmin(user)).thenReturn(false);
+        when(userManager.isSystemAdmin(user)).thenReturn(true);
+        Response r = resource.summary(request);
+        assertEquals("\"" + snapshot.adminTag() + "-c1.1-s\"", r.getHeaderString("ETag"));
+        assertTrue(((String) r.getEntity()).contains("\"admin\":true"));
+        assertTrue(((String) r.getEntity()).contains("\"sysadmin\":true"));
+        when(request.getHeader("If-None-Match")).thenReturn("\"" + snapshot.hash() + "-c1.1-u\"");
+        assertEquals(200, resource.summary(request).getStatus()); // an ordinary user's copy does not match
+    }
+
+    @Test
+    public void theTagComesFromBothFlags() {
+        String u = CatalogResource.tag(snapshot, false, false);
+        String a = CatalogResource.tag(snapshot, true, false);
+        String s = CatalogResource.tag(snapshot, true, true);
+        String sysadminOnly = CatalogResource.tag(snapshot, false, true);
+        assertEquals(4, java.util.Set.of(u, a, s, sysadminOnly).size());
+        assertTrue(u.startsWith(snapshot.hash() + "-c1.1-"));
+        assertTrue(a.startsWith(snapshot.adminTag() + "-"));
+    }
+
+    @Test
     public void matchesAcceptsTheUsualForms() {
         assertTrue(CatalogResource.matches("abc-u", "abc-u"));
         assertTrue(CatalogResource.matches("\"abc-u\"", "abc-u"));
@@ -226,14 +251,21 @@ public class CatalogResourceTest {
     public void refreshIsForbiddenForANonSystemAdmin() {
         login(true, false);
         when(request.getHeader("X-Atlassian-Token")).thenReturn("no-check");
-        assertEquals(403, resource.refresh(null, request).getStatus());
+        Response r = resource.refresh(null, request);
+        assertEquals(403, r.getStatus());
+        assertEquals("no-store", r.getHeaderString("Cache-Control"));
         verify(catalog, never()).refresh(any());
     }
 
     @Test
-    public void refreshIsForbiddenWithoutAUser() {
+    public void refreshWithoutAUserAsksForALogin() {
+        // an expired session: the UI sends the user to log in again instead of saying they lack a permission
         when(request.getHeader("X-Atlassian-Token")).thenReturn("no-check");
-        assertEquals(403, resource.refresh(null, request).getStatus());
+        Response r = resource.refresh(null, request);
+        assertEquals(401, r.getStatus());
+        assertEquals("{\"error\":\"login-required\"}", r.getEntity());
+        assertEquals("no-store", r.getHeaderString("Cache-Control"));
+        verify(catalog, never()).refresh(any());
     }
 
     @Test
@@ -242,6 +274,7 @@ public class CatalogResourceTest {
         Response r = resource.refresh(null, request);
         assertEquals(403, r.getStatus());
         assertTrue(((String) r.getEntity()).contains("xsrf"));
+        assertEquals("no-store", r.getHeaderString("Cache-Control"));
         verify(catalog, never()).refresh(any());
     }
 
@@ -258,6 +291,15 @@ public class CatalogResourceTest {
     public void detailsAreForSystemAdminsOnly() {
         login(true, false);
         assertEquals(403, resource.details("a:b:GET:x", request).getStatus());
+        verify(details, never()).describe(any());
+    }
+
+    @Test
+    public void detailsWithoutAUserAskForALogin() {
+        Response r = resource.details("a:b:GET:x", request);
+        assertEquals(401, r.getStatus());
+        assertEquals("{\"error\":\"login-required\"}", r.getEntity());
+        assertEquals("no-store", r.getHeaderString("Cache-Control"));
         verify(details, never()).describe(any());
     }
 

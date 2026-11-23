@@ -194,16 +194,26 @@ public class OperationDetails {
                 .endObject();
     }
 
-    /** The annotations as source code would write them; one whose class cannot be loaded is reported as such. */
+    /**
+     * The annotations as source code would write them; one that cannot be read is reported as such and the others
+     * stay. When the element's annotations cannot be read at all (a class they name is missing), that is all it says.
+     */
     static List<String> annotations(AnnotatedElement e) {
         List<String> out = new ArrayList<>();
+        Annotation[] all;
         try {
-            for (Annotation a : e.getDeclaredAnnotations()) {
-                String s = annotation(a);
-                out.add(s.length() <= MAX_ANNOTATION ? s : s.substring(0, MAX_ANNOTATION) + "…");
-            }
+            all = e.getDeclaredAnnotations();
         } catch (RuntimeException | LinkageError x) {
             out.add("(unreadable: " + x + ")");
+            return out;
+        }
+        for (Annotation a : all) {
+            try {
+                String s = annotation(a);
+                out.add(s.length() <= MAX_ANNOTATION ? s : cut(s, MAX_ANNOTATION));
+            } catch (RuntimeException | LinkageError x) {
+                out.add("(unreadable: " + x + ")");
+            }
         }
         return out;
     }
@@ -266,7 +276,7 @@ public class OperationDetails {
             return "'" + escape(String.valueOf(c), '\'') + "'";
         }
         if (v instanceof Class<?> c) {
-            return c.getName() + ".class";
+            return c.getTypeName() + ".class"; // String[].class, not [Ljava.lang.String;.class
         }
         if (v instanceof Enum<?> e) {
             return e.getDeclaringClass().getName() + "." + e.name();
@@ -370,7 +380,7 @@ public class OperationDetails {
     private static String codeSource(Class<?> c) {
         try {
             CodeSource cs = c.getProtectionDomain().getCodeSource();
-            return cs == null || cs.getLocation() == null ? null : cs.getLocation().toString();
+            return cs == null || cs.getLocation() == null ? null : clip(cs.getLocation().toString());
         } catch (RuntimeException e) {
             return null;
         }
@@ -409,13 +419,14 @@ public class OperationDetails {
                 .field("lastModified", b.getLastModified())
                 .stringMap("headers", headers);
         BundleWiring wiring = b.adapt(BundleWiring.class);
-        if (wiring == null) {
+        if (wiring == null || !wiring.isInUse()) {
+            // not resolved, or replaced by a refresh while this was read: the bundle's facts stay
             j.field("wiring", false).endObject();
             return;
         }
         // imports: the package, the version the provider offers, and the provider
         List<String[]> imports = new ArrayList<>();
-        for (BundleWire w : wiring.getRequiredWires(BundleRevision.PACKAGE_NAMESPACE)) {
+        for (BundleWire w : orEmpty(wiring.getRequiredWires(BundleRevision.PACKAGE_NAMESPACE))) {
             Map<String, Object> attrs = w.getCapability().getAttributes();
             Bundle provider = w.getProviderWiring() == null ? null : w.getProviderWiring().getBundle();
             imports.add(new String[]{String.valueOf(attrs.get(BundleRevision.PACKAGE_NAMESPACE)), version(attrs),
@@ -430,10 +441,10 @@ public class OperationDetails {
         j.endArray();
         // exports: the package, its version, and how many bundles are wired to it
         Map<BundleCapability, Integer> users = new HashMap<>();
-        for (BundleWire w : wiring.getProvidedWires(BundleRevision.PACKAGE_NAMESPACE)) {
+        for (BundleWire w : orEmpty(wiring.getProvidedWires(BundleRevision.PACKAGE_NAMESPACE))) {
             users.merge(w.getCapability(), 1, Integer::sum);
         }
-        List<BundleCapability> exports = new ArrayList<>(wiring.getCapabilities(BundleRevision.PACKAGE_NAMESPACE));
+        List<BundleCapability> exports = new ArrayList<>(orEmpty(wiring.getCapabilities(BundleRevision.PACKAGE_NAMESPACE)));
         exports.sort(Comparator.comparing(cap -> String.valueOf(cap.getAttributes().get(BundleRevision.PACKAGE_NAMESPACE))));
         j.field("exportCount", exports.size()).name("exports").beginArray();
         for (BundleCapability cap : exports.subList(0, Math.min(exports.size(), MAX_PACKAGES))) {
@@ -444,6 +455,11 @@ public class OperationDetails {
                     .endObject();
         }
         j.endArray().endObject();
+    }
+
+    /** A wiring's list; null once the wiring is no longer in use (a refresh between the check and the call). */
+    private static <T> List<T> orEmpty(List<T> list) {
+        return list == null ? List.of() : list;
     }
 
     /** A package capability's version; empty when it has none (the UI then shows nothing). */
@@ -556,6 +572,12 @@ public class OperationDetails {
     }
 
     static String clip(String s) {
-        return s == null || s.length() <= MAX_TEXT ? s : s.substring(0, MAX_TEXT) + "…";
+        return s == null || s.length() <= MAX_TEXT ? s : cut(s, MAX_TEXT);
+    }
+
+    /** The first max characters of a longer text and "…"; one fewer when the last would split a surrogate pair. */
+    static String cut(String s, int max) {
+        int end = Character.isHighSurrogate(s.charAt(max - 1)) ? max - 1 : max;
+        return s.substring(0, end) + "…";
     }
 }

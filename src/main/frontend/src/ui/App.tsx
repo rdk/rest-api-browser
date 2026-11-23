@@ -118,8 +118,10 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
       setLoadError(store.error ? describeError(store.error) : undefined);
     };
     const off = store.onChange(sync);
-    store.load().then(sync, (e) => setLoadError(describeError(e)));
+    let live = true; // a store replaced before its first load ends must not write over the new one
+    store.load().then(() => live && sync(), (e) => live && setLoadError(describeError(e)));
     return () => {
+      live = false;
       off();
       store.stop();
     };
@@ -148,12 +150,13 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
   // the colour mode: the product's until the user chooses one here; applied before the browser paints
   const [mode, setMode] = useState<Mode | null>(isMode(stored.mode) ? stored.mode : null);
   useLayoutEffect(() => (mode ? applyMode(mode) : undefined), [mode]);
-  // first visit: only the product's supported modules start expanded, decided as soon as the modules are known
-  useEffect(() => {
-    if (collapsed === null && summary) {
-      setCollapsed(new Set(summary.modules.filter((m) => m.stability !== 'supported').map((m) => m.id)));
-    }
-  }, [summary, collapsed]);
+  // first visit: only the product's supported modules start expanded, from the first paint that has the modules
+  // (shownCollapsed) until the user folds or unfolds one (collapsed is set then)
+  const defaultCollapsed = useMemo(
+    () => (summary ? new Set(summary.modules.filter((m) => m.stability !== 'supported').map((m) => m.id)) : NONE),
+    [summary],
+  );
+  const shownCollapsed = collapsed ?? defaultCollapsed;
   const save = useCallback((patch: Parameters<UserStore['setPrefs']>[0]) => void userStore.setPrefs(patch), [userStore]);
   const onSupportedOnly = useCallback((v: boolean) => {
     setSupportedOnly(v);
@@ -177,9 +180,10 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
   useEffect(() => {
     const onPop = () => {
       const state = (routeState.current = parseState(location.search));
-      if (state.op !== selectedRef.current) runner.abort();
-      if (state.op && (Object.keys(state.path).length || Object.keys(state.q).length || Object.keys(state.h).length)) {
-        drafts.current.delete(state.op);
+      const refill = !!state.op && (Object.keys(state.path).length > 0 || Object.keys(state.q).length > 0 || Object.keys(state.h).length > 0);
+      if (state.op !== selectedRef.current || refill) runner.abort();
+      if (refill) {
+        drafts.current.delete(state.op!);
         setRevision((r) => r + 1);
       }
       setSelectedKey(state.op);
@@ -207,6 +211,8 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
         const draft = drafts.current.get(old);
         if (draft) drafts.current.set(old, { ...draft, result: null });
       }
+    } else {
+      withResult.current = withResult.current.filter((k) => k !== key);
     }
   }, []);
 
@@ -275,16 +281,25 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
   const productLabel = summary ? `${summary.product.name} ${summary.product.version}` : product;
   // the header's tooltip about the project: on hover or keyboard focus of the brand, pinned with Alt+P
   const brandWrap = useRef<HTMLSpanElement>(null);
-  const aboutShown = () => !!brandWrap.current && (brandWrap.current.matches(':hover') || brandWrap.current.contains(document.activeElement));
   // Escape hides it even while the pointer rests on it (it comes back when the pointer or the focus comes back)
   const [aboutDismissed, setAboutDismissed] = useState(false);
+  const dismissedRef = useRef(false);
+  dismissedRef.current = aboutDismissed;
+  const aboutShown = () => {
+    const el = brandWrap.current;
+    return !!el && !dismissedRef.current && !el.closest('[inert]') && (el.matches(':hover') || !!el.querySelector(':focus-visible'));
+  };
   const aboutPinned = usePin(aboutShown, brandWrap, () => setAboutDismissed(true));
   useEffect(() => {
+    // in the capture phase, and only when it hides the tooltip: then it is that Escape's only effect
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && aboutShown()) setAboutDismissed(true);
+      if (e.key !== 'Escape' || !aboutShown()) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      setAboutDismissed(true);
     };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
   }, []);
   const site = siteUrl.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').replace(/\/+$/, '');
   const siteHost = site.split('/')[0];
@@ -385,13 +400,15 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
           )}
         </div>
         <div class="rab-n-top-right">
-        <a class="rab-n-top-link" href={classicUrl} title="The original REST API Browser" data-testid="classic-link">
-          <svg class="rab-n-svg" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <rect x="2.5" y="3" width="11" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
-            <path d="M6 3v10" stroke="currentColor" strokeWidth="1.4" />
-          </svg>
-          Classic UI
-        </a>
+        {classicUrl && (
+          <a class="rab-n-top-link" href={classicUrl} title="The original REST API Browser" data-testid="classic-link">
+            <svg class="rab-n-svg" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <rect x="2.5" y="3" width="11" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
+              <path d="M6 3v10" stroke="currentColor" strokeWidth="1.4" />
+            </svg>
+            Classic UI
+          </a>
+        )}
         <Menu label="More actions" items={menu} />
         </div>
       </div>
@@ -406,7 +423,7 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
             onQuery={setQuery}
             supportedOnly={supportedOnly}
             onSupportedOnly={onSupportedOnly}
-            collapsed={collapsed ?? NONE}
+            collapsed={shownCollapsed}
             onCollapsed={onCollapsed}
             loadError={loadError ?? refreshError}
           />
@@ -465,8 +482,12 @@ function About({ version, product, operations, modules, pinned }: {
         installed. Requests run in your browser, with your session.
       </p>
       <dl class="rab-n-card-facts">
-        <dt>Running on</dt>
-        <dd>{product}</dd>
+        {product && (
+          <>
+            <dt>Running on</dt>
+            <dd>{product}</dd>
+          </>
+        )}
         {modules !== undefined && operations > 0 && (
           <>
             <dt>Catalog</dt>
@@ -493,7 +514,7 @@ function About({ version, product, operations, modules, pinned }: {
 function issueBody(version: string, product: string): string {
   return [
     '**What happened?**', '', '', '**What did you expect?**', '', '', '**Steps to reproduce**', '', '', '---',
-    `REST API Browser ${version || '(version unknown)'}, new UI, on ${product}`,
+    `REST API Browser ${version || '(version unknown)'}, new UI, on ${product || '(product unknown)'}`,
   ].join('\n');
 }
 
@@ -590,28 +611,36 @@ function Welcome({ summary, missing, indexing }: { summary: Summary | null; miss
 
 function SideHandle({ width, onWidth, onDone }: { width: number; onWidth: (w: number) => void; onDone: (w: number) => void }) {
   // the keyboard resizes too: Tab to the divider, then the arrow keys
+  const maxOf = (row: HTMLElement | null | undefined) => Math.max(240, row ? row.clientWidth * MAX_SIDEBAR : Infinity);
   const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    if ((e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') || e.ctrlKey || e.metaKey || e.altKey) return;
     e.preventDefault();
-    const row = ref.current?.parentElement;
-    const max = row ? row.clientWidth * MAX_SIDEBAR : Infinity;
-    const next = Math.round(Math.min(max, Math.max(240, width + (e.key === 'ArrowRight' ? 20 : -20))));
+    const next = Math.round(Math.min(maxOf(ref.current?.parentElement), Math.max(240, width + (e.key === 'ArrowRight' ? 20 : -20))));
     onWidth(next);
     onDone(next);
   };
   const ref = useRef<HTMLDivElement>(null);
   const stop = useRef<(() => void) | undefined>(undefined);
   useEffect(() => () => stop.current?.(), []);
+  // the range for assistive technology follows the window's width
+  const [rowWidth, setRowWidth] = useState(0);
+  useLayoutEffect(() => {
+    const measure = () => setRowWidth(ref.current?.parentElement?.clientWidth ?? 0);
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, []);
   const onDown = (e: PointerEvent) => {
     const row = ref.current?.parentElement;
     const side = row?.firstElementChild as HTMLElement | null;
-    if (!row || !side) return;
+    if (!row || !side || e.button !== 0) return;
     e.preventDefault();
+    stop.current?.();
     const left = row.getBoundingClientRect().left;
     let last = 0;
     // resize the element directly while dragging; the state (and a re-render) follows once, on release
     const move = (ev: PointerEvent) => {
-      last = Math.round(Math.min(row.clientWidth * MAX_SIDEBAR, Math.max(240, ev.clientX - left)));
+      last = Math.round(Math.min(maxOf(row), Math.max(240, ev.clientX - left)));
       side.style.width = last + 'px';
     };
     const detach = () => {
@@ -632,10 +661,9 @@ function SideHandle({ width, onWidth, onDone }: { width: number; onWidth: (w: nu
     document.addEventListener('pointerup', up);
     document.addEventListener('pointercancel', up);
   };
-  const rowWidth = ref.current?.parentElement?.clientWidth;
   return (
     <div ref={ref} class="rab-n-vsplit" onPointerDown={onDown} onKeyDown={onKeyDown} tabIndex={0}
          role="separator" aria-orientation="vertical" aria-label="Resize the list" aria-valuenow={width}
-         aria-valuemin={240} aria-valuemax={rowWidth ? Math.round(rowWidth * MAX_SIDEBAR) : undefined} />
+         aria-valuemin={240} aria-valuemax={rowWidth ? Math.round(Math.max(240, rowWidth * MAX_SIDEBAR)) : undefined} />
   );
 }

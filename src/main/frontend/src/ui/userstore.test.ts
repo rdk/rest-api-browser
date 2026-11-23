@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RequestValues } from '../core/request';
-import { UserStore, isCredentialHeader, isCredentialParam } from './userstore';
+import { UserStore, historyUrl, isCredentialHeader, isCredentialParam } from './userstore';
+import { module, op, summary } from '../core/fixtures';
 
 class FakeStorage implements Storage {
   data = new Map<string, string>();
@@ -194,7 +195,9 @@ describe('UserStore second review', () => {
   it('hides header names by their words, as the server echo does', () => {
     const hidden = ['Authorization', 'Proxy-Authorization', 'Cookie', 'Set-Cookie', 'X-Auth-Token', 'X-API_KEY', 'x-apikey', 'X-ApiKey',
       'X-Api Key', 'client_secret', 'X-Passwd', 'X-PWD', 'X-Session-Id', 'X-Auth-User', 'X-Credentials', 'Cf-Access-Jwt-Assertion',
-      'X-Amz-Signature', 'X-Csrf-Token', 'X-Forwarded-Client-Cert', 'OIDC_CLAIM_email', 'X-SSO-User', 'X-Forwarded-Principal', 'SAML-Attr'];
+      'X-Amz-Signature', 'X-Csrf-Token', 'X-Forwarded-Client-Cert', 'OIDC_CLAIM_email', 'X-SSO-User', 'X-Forwarded-Principal', 'SAML-Attr',
+      // run together (HTTP/2 lowercases the names)
+      'X-AccessToken', 'x-accesstoken', 'X-AuthToken', 'X-ApiToken', 'XApiKey', 'X-ClientSecret', 'X-UserPassword'];
     for (const n of hidden) expect(isCredentialHeader(n), n).toBe(true);
     const shown = ['X-Atlassian-Token', 'x_atlassian_token', ' X-Atlassian-Token ', 'X-Processor', 'X-Author-Id', 'AuthX', 'Accept',
       'Content-Type', 'X-Request-Id', 'User-Agent'];
@@ -230,18 +233,21 @@ describe('UserStore second review', () => {
     expect(plain.redacted).toBeUndefined();
   });
 
-  it('scrubs credential-named path values from the values and the url', async () => {
+  it('scrubs credential-named path values from the values, and historyUrl builds the url without them', async () => {
+    const sum = summary([module('m', 'x')]);
+    const o = op('m', 'GET', '{id}/token/{token}/y', { params: [{ name: 'keep', in: 'query', type: 'string', required: false }] });
+    const vals = { ...values(), path: { id: '1', token: 's3cr/t' }, query: { keep: ['1'] } };
+    const url = historyUrl(sum, o, vals);
+    expect(url).toBe('/jira/rest/x/1/token/{token}/y?keep=1');
     const s = new UserStore('u', new FakeStorage());
-    const e = await s.addHistory(entry('a', {
-      url: '/jira/rest/x/1/token/s3cr%2Ft/y?keep=1',
-      values: { ...values(), path: { id: '1', token: 's3cr/t' } },
-    }));
+    const e = await s.addHistory(entry('a', { url, values: vals }));
     expect(e.values.path).toEqual({ id: '1' });
-    expect(e.url).toBe('/jira/rest/x/1/token/{token}/y?keep=1');
+    expect(e.url).toBe(url);
     expect(JSON.stringify(e)).not.toContain('s3cr');
     expect(e.redacted).toBe(true);
-    const spans = await s.addHistory(entry('a', { url: '/jira/rest/f/a/b.txt', values: { ...values(), path: { secret: 'a/b.txt' } } }));
-    expect(spans.url).toBe('/jira/rest/f/{secret}');
+    // a value that is also a literal part of the path: the literal stays, only the template's place is left out
+    const lit = op('m', 'GET', '{token}/x/token-rest');
+    expect(historyUrl(summary([module('m', 'rest')]), lit, { ...values(), path: { token: 'rest' } })).toBe('/jira/rest/rest/{token}/x/token-rest');
   });
 
   it('hides secrets in a JSON body and keeps the rest as written', async () => {
@@ -254,10 +260,30 @@ describe('UserStore second review', () => {
       + '"list":[{"secret":"(hidden)"}]},"tokenCount":5, "pass\\u0077ord" : "(hidden)"}');
     expect(e.redacted).toBe(true);
     expect([...storage.data.values()].join('')).not.toMatch(/hunter2|TOK1|PAGE2|SEC3|PW4/);   // ids are lower case
-    for (const b of ['password=x&user=y', '{"a":1}', '{"password":']) {
+    for (const b of ['{"a":1}', 'plain text', '<x>1</x>']) {
       const kept = await s.addHistory(entry('a', { values: { ...values(), body: b } }));
       expect(kept.values.body).toBe(b);
       expect(kept.redacted).toBeUndefined();
+    }
+  });
+
+  it('hides secrets that are numbers, arrays or objects, but not a count named like a token', async () => {
+    const s = new UserStore('u', new FakeStorage());
+    const body = '{"password":123456,"tokens":["abc","def"],"secret":{"value":"xyz","n":[1]},"tokenCount":5,"apiToken":null,"user":"u"}';
+    const e = await s.addHistory(entry('a', { values: { ...values(), body } }));
+    expect(e.values.body).toBe('{"password":"(hidden)","tokens":"(hidden)","secret":"(hidden)","tokenCount":5,"apiToken":null,"user":"u"}');
+    expect(e.redacted).toBe(true);
+  });
+
+  it('keeps a form body without its secret fields, and leaves out a non-JSON body that looks like it has one', async () => {
+    const s = new UserStore('u', new FakeStorage());
+    const form = await s.addHistory(entry('a', { values: { ...values(), contentType: 'application/x-www-form-urlencoded', body: 'user=u&os_password=pw&x=1' } }));
+    expect(form.values.body).toBe('user=u&os_password=(hidden)&x=1');
+    expect(form.redacted).toBe(true);
+    for (const b of ['password=abc&user=test', '{"password": "unterminated', 'Authorization: Bearer x']) {
+      const left = await s.addHistory(entry('a', { values: { ...values(), body: b } }));
+      expect(left.values.body, b).toBeUndefined();
+      expect(left.redacted, b).toBe(true);
     }
   });
 
@@ -293,5 +319,60 @@ describe('UserStore second review', () => {
     await s.addHistory(entry('b'));
     expect(st.data.get('rab-next:u:history')).not.toContain('old answer');
     expect((await s.history('a'))[0].id).toBe('old');
+  });
+});
+
+describe('UserStore round two', () => {
+  it('clearHistory keeps the other operations\' entries even when storage is nearly full', async () => {
+    const st = new FakeStorage();
+    const s = new UserStore('u', st);
+    for (let i = 0; i < 6; i++) await s.addHistory(entry('op' + i, { url: '/rest/' + 'x'.repeat(40) }));
+    const cleared = JSON.stringify(JSON.parse(st.data.get('rab-next:u:history')!).filter((e: { opKey: string }) => e.opKey !== 'op0'));
+    st.setItem = (k, v) => {
+      if (v.length >= cleared.length) throw new DOMException('full', 'QuotaExceededError');
+      st.data.set(k, v);
+    };
+    await s.clearHistory('op0');
+    expect(await s.history('op0')).toHaveLength(0);
+    for (let i = 1; i < 6; i++) expect(await s.history('op' + i), 'op' + i).toHaveLength(1);
+  });
+
+  it('write() keeps halving the history while that makes it shorter, before keeping it in memory only', async () => {
+    const st = new FakeStorage();
+    const s = new UserStore('u', st);
+    for (let i = 0; i < 8; i++) await s.addHistory(entry('op' + i, { url: '/rest/' + 'x'.repeat(50) }));
+    const limit = (st.data.get('rab-next:u:history') ?? '').length / 3;   // room for about a third: halving once is not enough
+    st.setItem = (k, v) => {
+      if (v.length > limit) throw new DOMException('full', 'QuotaExceededError');
+      st.data.set(k, v);
+    };
+    await s.addHistory(entry('new'));
+    const stored = JSON.parse(st.data.get('rab-next:u:history')!);
+    expect(stored[0].opKey).toBe('new');
+    expect(stored.length).toBeGreaterThan(0);
+    expect(stored.length).toBeLessThanOrEqual(3);
+    // nothing fits: memory only, still read back
+    st.setItem = () => {
+      throw new DOMException('full', 'QuotaExceededError');
+    };
+    await s.addHistory(entry('mem'));
+    expect(await s.history('mem')).toHaveLength(1);
+  });
+
+  it('does not hide or mark a secret that is only spaces', async () => {
+    const s = new UserStore('u', new FakeStorage());
+    const json = await s.addHistory(entry('a', { values: { ...values(), body: '{"user":"u","password":"  ","token":"\\t"}' } }));
+    expect(json.values.body).toBe('{"user":"u","password":"  ","token":"\\t"}');
+    expect(json.redacted).toBeUndefined();
+    const form = await s.addHistory(entry('a', { values: { ...values(), contentType: 'application/x-www-form-urlencoded', body: 'user=u&password=+&os_password=&x=1' } }));
+    expect(form.values.body).toBe('user=u&password=+&os_password=&x=1');
+    expect(form.redacted).toBeUndefined();
+  });
+
+  it('hides the header words the echo added: jsessionid, oauth, csrf, xsrf, cookie2', () => {
+    for (const n of ['JSESSIONID', 'X-JSESSIONID', 'X-OAuth-Scopes', 'oauth_consumer', 'X-CSRF', 'X-XSRF', 'Cookie2']) {
+      expect(isCredentialHeader(n), n).toBe(true);
+    }
+    for (const n of ['X-Processor', 'X-Author-Id', 'X-Cookies-Enabled']) expect(isCredentialHeader(n), n).toBe(false);
   });
 });

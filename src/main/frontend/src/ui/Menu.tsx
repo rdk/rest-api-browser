@@ -40,8 +40,19 @@ export function Menu({ label, items }: { label: string; items: MenuItem[] }) {
       const t = e.target as Node;
       if (!menu.current?.contains(t) && !button.current?.contains(t)) setOpen(false);
     };
+    const onEscape = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopImmediatePropagation(); // it only closes the menu, nothing behind it
+      setOpen(false);
+      button.current?.focus();
+    };
     document.addEventListener('pointerdown', onDown, true);
-    return () => document.removeEventListener('pointerdown', onDown, true);
+    document.addEventListener('keydown', onEscape, true);
+    return () => {
+      document.removeEventListener('pointerdown', onDown, true);
+      document.removeEventListener('keydown', onEscape, true);
+    };
   }, [open]);
 
   const close = () => {
@@ -49,6 +60,7 @@ export function Menu({ label, items }: { label: string; items: MenuItem[] }) {
     button.current?.focus();
   };
   const onKey = (e: KeyboardEvent) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return; // the browser's shortcuts (Alt+Left is Back)
     const list = enabled();
     const i = list.indexOf(document.activeElement as HTMLElement);
     const inRow = !!(document.activeElement as HTMLElement | null)?.closest('.rab-n-menu-choices');
@@ -125,7 +137,7 @@ export function Menu({ label, items }: { label: string; items: MenuItem[] }) {
               ) : it.href ? (
                 <a role="menuitem" class="rab-n-menu-item" href={it.href} tabIndex={-1} data-testid={it.testId}
                    target={it.newTab ? '_blank' : undefined} rel={it.newTab ? 'noopener noreferrer' : undefined}
-                   onClick={() => setOpen(false)}>
+                   onClick={close}>
                   <span class="rab-n-menu-label">{it.label}</span>
                   {it.hint && <span class="rab-n-menu-hint">{it.hint}</span>}
                 </a>

@@ -19,6 +19,8 @@ export interface BundleInfo {
   headers: Record<string, string>;
   importCount?: number; imports?: { package: string; version: string; from: string; fromId: string }[];
   exportCount?: number; exports?: { package: string; version: string; users: number }[];
+  /** false when the bundle has no wiring (not resolved, or no longer in use): its imports and exports are unknown. */
+  wiring?: boolean;
 }
 export interface PluginInfo {
   key: string; name: string; version?: string; vendor?: string; vendorUrl?: string; description?: string;
@@ -53,11 +55,12 @@ export function isError<T>(s: Section<T> | undefined): s is { error: string } {
 
 /**
  * Java names without their packages: "java.util.Map<java.lang.String, x.y.Thread$State>" gives
- * "Map<String, Thread.State>", "@jakarta.ws.rs.PathParam(\"id\")" gives "@PathParam(\"id\")". Text in quotes stays.
+ * "Map<String, Thread.State>", "@jakarta.ws.rs.PathParam(\"id\")" gives "@PathParam(\"id\")". Text in quotes stays:
+ * strings, char literals ('"' is no string), and a string clipped before its closing quote.
  */
 export function shortJava(s: string): string {
   return s
-    .split(/("(?:[^"\\]|\\.)*")/)
+    .split(/("(?:[^"\\]|\\.)*(?:"|\\?$)|'(?:[^'\\]|\\.)*(?:'|\\?$))/)
     .map((part, i) => (i % 2 ? part : part.replace(/\b(?:[a-z_][\w]*\.)+(?=[A-Z_$])/g, '').replace(/(\w)\$(?=[A-Z])/g, '$1.')))
     .join('');
 }

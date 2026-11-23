@@ -9,7 +9,7 @@ export function MethodBadge({ method }: { method: string }) {
   const m = method.toUpperCase();
   const cls = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(m) ? m.toLowerCase() : 'other';
   return m === 'DELETE'
-    ? <span class={'rab-n-method rab-n-method-' + cls} title="DELETE" aria-label="DELETE">DEL</span>
+    ? <span class={'rab-n-method rab-n-method-' + cls} title="DELETE"><span aria-hidden="true">DEL</span><span class="rab-n-sr">DELETE</span></span>
     : <span class={'rab-n-method rab-n-method-' + cls}>{m}</span>;
 }
 
@@ -59,6 +59,10 @@ export function usePin(shown: () => boolean, box: { current: HTMLElement | null 
       latest.current.onRelease?.();
     };
     const onKey = (e: KeyboardEvent) => {
+      if (box.current?.closest('[inert]')) {
+        if (pinned) release(); // hidden behind a box on the whole screen: let go, and leave the key to that box
+        return;
+      }
       if (isPinKey(e) && (pinned || latest.current.shown())) {
         e.preventDefault();
         e.stopImmediatePropagation();
@@ -66,7 +70,7 @@ export function usePin(shown: () => boolean, box: { current: HTMLElement | null 
         else setPinned(true);
       } else if (pinned && e.key === 'Escape') {
         e.preventDefault();
-        e.stopPropagation(); // Escape would also cancel a running request
+        e.stopImmediatePropagation(); // Escape would also cancel a running request
         release();
       }
     };
@@ -135,6 +139,7 @@ export function Tabs<T extends string>({ tabs, value, onChange, label, panelId }
   const at = tabs.findIndex((t) => t.id === value);
   // arrow keys move between tabs; only the selected tab (or the first, when none is) is in the Tab order
   const onKeyDown = (e: KeyboardEvent) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
     const i = Math.max(0, at);
     const next = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : null;
     if (next === null || !tabs.length) return;

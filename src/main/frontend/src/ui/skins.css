@@ -68,9 +68,10 @@ html .rab-n[data-skin="balanced"] {
   --rab-grad-danger-hover: linear-gradient(180deg, color-mix(in srgb, var(--ds-background-accent-red-subtle, #ae2e24) 88%, #fff), var(--ds-background-accent-red-subtle, #ae2e24));
   --rab-grad-discovery: linear-gradient(180deg, var(--ds-background-accent-purple-subtle, #5e4db2), color-mix(in srgb, var(--ds-background-accent-purple-subtle, #5e4db2) 82%, #000));
   --rab-grad-selected: linear-gradient(90deg, color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 30%, transparent), color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 12%, transparent));
-  --rab-grad-bar-v: linear-gradient(180deg, var(--ds-background-accent-blue-subtle, #0055cc), var(--rab-indigo));
-  --rab-grad-tab: linear-gradient(90deg, var(--ds-background-accent-blue-subtle, #0055cc), var(--rab-indigo));
-  --rab-grad-accent: linear-gradient(90deg, var(--ds-background-accent-blue-subtle, #0055cc), var(--rab-indigo));
+  --rab-grad-bar-v: linear-gradient(180deg, var(--rab-brand), color-mix(in srgb, var(--rab-brand) 55%, var(--rab-discovery-bold)));
+  --rab-grad-tab: linear-gradient(90deg, var(--rab-brand), color-mix(in srgb, var(--rab-brand) 55%, var(--rab-discovery-bold)));
+  --rab-grad-accent: linear-gradient(90deg, var(--rab-brand), color-mix(in srgb, var(--rab-brand) 55%, var(--rab-discovery-bold)));
+  --rab-spinner-accent: color-mix(in srgb, var(--rab-brand) 55%, var(--rab-discovery-bold));
   --rab-grad-card-border: linear-gradient(135deg, color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 36%, var(--rab-border)), color-mix(in srgb, var(--rab-indigo) 30%, var(--rab-border)));
   --rab-grad-card-border-hover: linear-gradient(135deg, color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 62%, var(--rab-border)), color-mix(in srgb, var(--rab-indigo) 56%, var(--rab-border)));
   --rab-grad-ophead-bg: linear-gradient(180deg, color-mix(in srgb, var(--rab-bg-info) 34%, var(--rab-raised)), var(--rab-raised) 72%);
@@ -124,6 +125,9 @@ html .rab-n[data-skin="navy"] {
   --rab-topbar-glass-border: color-mix(in srgb, #fff 22%, transparent);
   --rab-spinner-accent: var(--flat-brand);
   --rab-welcome-icon-shadow: none;
+  --rab-grad-side-head: var(--ds-surface-sunken, #f7f8f9);
+  --rab-welcome-card-fill: linear-gradient(var(--ds-surface-raised, #fff), var(--ds-surface-raised, #fff));
+  --rab-welcome-card-fill-hover: linear-gradient(var(--ds-surface-raised-hovered, #f1f2f4), var(--ds-surface-raised-hovered, #f1f2f4));
   /* the list's module headers: the header's navy, as a grey-blue band */
   --rab-group-base: var(--ds-surface, #fff);
   --rab-group-hue: #22345e;
@@ -171,7 +175,6 @@ html .rab-n[data-skin="navy"] .rab-n-status-code.err { background: var(--ds-back
 html .rab-n[data-skin="navy"] :is(.rab-n-tab.on, .rab-n-tab[aria-selected="true"]) { background: none; }
 html .rab-n[data-skin="navy"] :is(.rab-n-tab.on, .rab-n-tab[aria-selected="true"])::after { height: 2px; }
 html .rab-n[data-skin="navy"] :is(.rab-n-tabs, .rab-n-tabbar):not(.rab-n-response *) { background: var(--ds-surface, #fff); }
-html .rab-n[data-skin="navy"] .rab-n-sidebar-head { background: var(--ds-surface-sunken, #f7f8f9); }
 html .rab-n[data-skin="navy"] .rab-n-op.selected::before { width: 2px; }
 html .rab-n[data-skin="navy"] :is(.rab-n-pill.on, .rab-n-pill.on:hover) {
   background: var(--ds-background-selected, #e9f2ff);

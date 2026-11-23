@@ -17,6 +17,12 @@ describe('wrapRows', () => {
   it('splits a line of exactly the width into one row', () => {
     expect(texts('abcdef', 3)).toEqual([[0, 'abc'], [0, 'def']]);
   });
+  it('never cuts an emoji (a surrogate pair) between two rows', () => {
+    const t = 'ab\u{1F600}cd\u{1F600}';
+    const rows = texts(t, 3);
+    expect(rows.map((r) => r[1]).join('')).toBe(t);
+    for (const [, part] of rows) expect(part as string).not.toMatch(/^[\uDC00-\uDFFF]|[\uD800-\uDBFF]$/);
+  });
   it('handles a megabyte line without one string per row', () => {
     const rows = wrapRows('x'.repeat(1_000_000), 100);
     expect(rows.count).toBe(10_000);

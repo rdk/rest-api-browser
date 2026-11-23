@@ -32,8 +32,9 @@ const sameRows = (a: FormState['custom'], b: FormState['custom']) => (noRows(a) 
 // A name's own value: names come from links too, and "constructor" must not read Object.prototype's.
 const own = (map: Record<string, unknown>, name: string) => (Object.prototype.hasOwnProperty.call(map, name) ? map[name] : undefined);
 
-function diff(a: FormState, b: FormState, loose: boolean): string | null {
-  const eq = loose ? looks : same;
+// `blanks`: '' is no value and [] or [''] no query value; `rows`: rows of empty headers are none.
+function diff(a: FormState, b: FormState, blanks: boolean, rows: boolean): string | null {
+  const eq = blanks ? looks : same;
   const keys: string[] = [];
   for (const part of ['path', 'query', 'header', 'matrix'] as const) {
     const x = a.values[part] as Record<string, unknown>, y = b.values[part] as Record<string, unknown>;
@@ -42,7 +43,7 @@ function diff(a: FormState, b: FormState, loose: boolean): string | null {
     }
   }
   for (const k of ['body', 'contentType', 'accept'] as const) if (!eq(a.values[k], b.values[k])) keys.push(k);
-  if (!(loose ? sameRows : same)(a.custom, b.custom)) keys.push('custom');
+  if (!(rows ? sameRows : same)(a.custom, b.custom)) keys.push('custom');
   if (a.noXsrfHeader !== b.noXsrfHeader) keys.push('xsrf');
   return keys.length ? keys.join(',') : null;
 }
@@ -52,19 +53,22 @@ function diff(a: FormState, b: FormState, loose: boolean): string | null {
  * shows them: a field typed into and cleared is the same as one never touched, so Reset does not stay on for it.
  */
 export function changedField(a: FormState, b: FormState): string | null {
-  return diff(a, b, true);
+  return diff(a, b, true, true);
 }
 
 /**
  * The history after the form changes from `cur` to `next`: a new undo step, unless the same field changed less than
- * a second ago (then the step before the typing stays the one to go back to). A change clears the redo steps.
- * `separate` makes a step in any case (a restore from the history, a reset). Null when nothing changed.
+ * a second ago (then the step before the typing stays the one to go back to, or goes when the typing is back at its
+ * value: undoing to it would change nothing). A change clears the redo steps. `separate` makes a step in any case (a
+ * restore from the history, a reset). Null when nothing changed.
  */
 export function record(h: FormHistory, cur: FormState, next: FormState, now: number, separate = false): FormHistory | null {
   // every change counts here, an added empty header row too: the form only shows what is recorded
-  const field = diff(cur, next, false);
+  const field = diff(cur, next, false, false);
   if (field === null) return null;
   const typing = !separate && h.last?.field === field && now - h.last.at < TYPING_MS && h.undo.length > 0;
+  // back where the typing started (as the form shows it, an empty row still a row): the next key starts a new step
+  if (typing && diff(next, h.undo[h.undo.length - 1], true, false) === null) return { undo: h.undo.slice(0, -1), redo: [] };
   return {
     undo: typing ? h.undo : [...h.undo, cur].slice(-UNDO_STEPS),
     redo: [],

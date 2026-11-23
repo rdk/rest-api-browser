@@ -10,6 +10,18 @@ interface Props {
   revealKey?: number;
   /** A change scrolls the list back to its top (a new search). */
   resetKey?: string;
+  /** A row kept rendered when the list scrolls away from it: the one with the list's tab stop, so it keeps the focus.
+   * Only for short lists (not scaled): a kept row far down a scaled list would be placed past its end. */
+  keepIndex?: number;
+  /** A stable key per row (an operation's key): a row whose index changes keeps its element, and the focus. */
+  keyOf?: (index: number) => string | number;
+  /** The rows' common minimum width (a CSS length): the sideways scroll keeps the longest line's extent. */
+  innerMinWidth?: string;
+  /** Focusable itself (tabIndex 0), so the keyboard can scroll it: a view whose rows have nothing to focus. */
+  focusable?: boolean;
+  /** Scroll to activeIndex when it changes (the default); off, only revealKey does it (an index that moves because
+   * rows were added above it is no reason to scroll). */
+  followIndex?: boolean;
   className?: string;
   overscan?: number;
   /** Set for a semantic list (the operations); code lines leave it out. */
@@ -24,7 +36,8 @@ const MAX_HEIGHT = 8_000_000;
  * without measuring, and a million rows cost as much as the 30 on screen. Past MAX_HEIGHT the scrollbar maps
  * proportionally onto the rows, so the end of a 20 MB response stays reachable.
  */
-export function VirtualList({ count, rowHeight, renderRow, activeIndex, revealKey, resetKey, className, overscan = 8, ariaLabel }: Props) {
+export function VirtualList({ count, rowHeight, renderRow, activeIndex, revealKey, resetKey, keepIndex, keyOf, innerMinWidth, focusable,
+                             followIndex = true, className, overscan = 8, ariaLabel }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [first, setFirst] = useState(0);
   const [, setTick] = useState(0);
@@ -64,7 +77,8 @@ export function VirtualList({ count, rowHeight, renderRow, activeIndex, revealKe
 
   useEffect(() => {
     const el = ref.current;
-    // a hidden list (display: none, behind a box on the whole screen) has no height to scroll within
+    // a hidden list (display: none, behind a box on the whole screen) has no height to scroll within; it scrolls
+    // once it is shown again (height is a dependency)
     if (!el || !el.clientHeight || activeIndex === undefined || activeIndex < 0) return;
     // compare in virtual coordinates (the rows'), then convert back to the scaled scroll position
     const vTop = activeIndex * rowHeight;
@@ -72,7 +86,7 @@ export function VirtualList({ count, rowHeight, renderRow, activeIndex, revealKe
     if (vTop < vScroll) el.scrollTop = vTop / scale;
     else if (vTop + rowHeight > vScroll + el.clientHeight) el.scrollTop = (vTop + rowHeight - el.clientHeight) / scale;
     setFirst(firstFor(el.scrollTop));
-  }, [activeIndex, revealKey, rowHeight, scale]);
+  }, [followIndex ? activeIndex : -2, revealKey, rowHeight, scale, height > 0]);
 
   const onScroll = (e: Event) => {
     const f = firstFor((e.currentTarget as HTMLDivElement).scrollTop);
@@ -88,15 +102,15 @@ export function VirtualList({ count, rowHeight, renderRow, activeIndex, revealKe
   const offset = scrollTop * (1 - scale);
   const rows = [];
   const row = (i: number) => (
-    <div key={i} class="rab-n-vrow" role={ariaLabel ? 'listitem' : undefined}
+    <div key={keyOf ? keyOf(i) : i} class="rab-n-vrow" role={ariaLabel ? 'listitem' : undefined}
          aria-setsize={ariaLabel ? count : undefined} aria-posinset={ariaLabel ? i + 1 : undefined}
          style={{ top: offset + i * rowHeight + 'px', height: rowHeight + 'px' }}>
       {renderRow(i)}
     </div>
   );
   for (let i = start; i < end; i++) rows.push(row(i));
-  // the active row stays rendered when the list scrolls away from it, so a row with the keyboard focus keeps it
-  if (activeIndex !== undefined && activeIndex >= 0 && activeIndex < count && (activeIndex < start || activeIndex >= end)) rows.push(row(activeIndex));
+  // the kept row stays rendered when the list scrolls away from it, so a row with the keyboard focus keeps it
+  if (keepIndex !== undefined && keepIndex >= 0 && keepIndex < count && scale === 1 && (keepIndex < start || keepIndex >= end)) rows.push(row(keepIndex));
   return (
     <div
       ref={ref}
@@ -104,8 +118,9 @@ export function VirtualList({ count, rowHeight, renderRow, activeIndex, revealKe
       onScroll={onScroll}
       role={ariaLabel ? 'list' : undefined}
       aria-label={ariaLabel}
+      tabIndex={focusable ? 0 : undefined}
     >
-      <div style={{ height: scrollHeight + 'px', position: 'relative' }} role={ariaLabel ? 'presentation' : undefined}>
+      <div style={{ height: scrollHeight + 'px', position: 'relative', minWidth: innerMinWidth }} role={ariaLabel ? 'presentation' : undefined}>
         {rows}
       </div>
     </div>

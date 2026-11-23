@@ -26,9 +26,12 @@ helper or a CSS token behind it; use those rather than solving the same problem 
 - One owner per key: lists, find boxes and menus leave modified keys (Ctrl, Cmd, Alt) alone unless their shortcut uses
   them. Ctrl+Enter sends the request from anywhere.
 - Escape closes the innermost thing first: an open menu or tooltip, then the text of a search box, then a running
-  request, then a box on the whole screen.
-- What an overlay covers is `inert`. A tooltip can be dismissed with Escape. A list has one tab stop (roving
-  `tabIndex`), and the keyboard's position follows the focus.
+  request, then a box on the whole screen. Whatever handles it stops it (capture phase on `document` for menus and
+  tooltips), and a search box clears itself explicitly; browsers differ there.
+- What an overlay covers is `inert`, and what is covered takes no keys (a pinned tooltip lets go). A tooltip can be
+  dismissed with Escape. A list has one tab stop (roving `tabIndex`, kept rendered while the list scrolls), the
+  keyboard's position follows the focus, and rows have stable keys (`keyOf`), so the focus stays on its row when
+  rows are added above it.
 - Every control has an accessible name: `aria-label` when its label is in another cell. Tabs point to their panel
   (`Tabs` with `panelId`), separators have `aria-valuemin` and `aria-valuemax`, outcomes are in a live region.
 
@@ -40,15 +43,18 @@ helper or a CSS token behind it; use those rather than solving the same problem 
 - Dictionaries built from URL input are null-prototype objects (`?toString=1` must not throw). A URL from a
   plugin descriptor is a link only when it is http(s) (`safeHref`).
 - Validation and request building agree on what is sent (whitespace, required values), and only declared parameters
-  are sent.
+  are sent. A URL kept for later (history) is built from the template (`historyUrl`), never by searching the built
+  URL for a value.
+- Pointer handlers start a drag on the primary button only, and one drag at a time.
 - A failed module and a module left out on purpose (`excluded`, `rest-v1`; `isSkipped`) look different.
 
 ## Secrets
 
-- Header names: one whole-word rule, the same in `EchoResource.secret` and `userstore.isCredentialHeader`. Change both
-  together, with their tests.
+- Header names: one rule of whole words plus run-together endings (HTTP/2 lowercases `X-AccessToken` to one word),
+  the same in `EchoResource.secret` and `userstore.isCredentialHeader`. Change both together, with their tests.
 - Parameter names: a narrow list, so that `pageToken` or `author` are still stored. Request bodies are stored with
-  secret-looking values removed, and history is kept per user.
+  secret values removed (any JSON value, a form field), or not at all when they cannot be read and look secret.
+  History is kept per user.
 
 ## CSS and skins
 
@@ -63,8 +69,9 @@ helper or a CSS token behind it; use those rather than solving the same problem 
   `--rab-grad-side-head`), not an override per skin.
 - Two rules with the same specificity: the later one wins. Prefer a more specific selector to relying on order.
   Delete the rules a restyle replaces (for example `lozenges.css` replaced the old `.rab-n-tag` rules).
-- The same control looks and behaves the same everywhere: all copy buttons show done and failed, every quiet icon is
-  a `.rab-n-tool`, every count goes through `plural()`.
+- The same control looks and behaves the same everywhere: all copy buttons show done and failed, every icon in a
+  toolbar is a `.rab-n-tool`, every count goes through `plural()`. A state class (done, failed, on) beats `:hover`:
+  the pointer is still on the button that was just clicked.
 - Check a visual change in all three skins, in light and dark (`ui_next.js` switches them), at a narrow width.
 
 ## Before a commit

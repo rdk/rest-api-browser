@@ -1,4 +1,4 @@
-import { findTemplates } from './template';
+import { findTemplates, spansSegments, trimModulePath, trimOpPath } from './template';
 import { pathKinds, type PartKind } from './pathparts';
 import type { Operation, ParamIn, Summary } from './types';
 
@@ -24,9 +24,7 @@ export interface BuiltRequest {
   body?: string;
 }
 
-// Slashes stay only for a parameter whose regex lets it span segments: ".*", ".+" or a "/" outside a [^...] class.
-const spansSegments = (regex: string | undefined) => /\.\*|\.\+|\//.test((regex ?? '').replace(/\[\^[^\]]*\]/g, ''));
-
+// Slashes stay only for a parameter whose regex lets it span segments (spansSegments).
 const encodePath = (value: string, spans: boolean) =>
   spans ? value.split('/').map(encodeURIComponent).join('/') : encodeURIComponent(value);
 
@@ -39,6 +37,9 @@ const own = <T>(map: Record<string, T>, name: string): T | undefined =>
 
 // The names of the parameters the operation declares in one place: a draft may hold values for ones it no longer has.
 const declared = (op: Operation, where: ParamIn) => new Set(op.params.filter((p) => p.in === where).map((p) => p.name));
+
+// The first choice that is filled in: a blank Accept or Content-Type choice falls back to the default type.
+const filledIn = (...choices: (string | undefined)[]) => choices.find((c) => !isBlank(c));
 
 const hasHeader = (headers: Record<string, string>, name: string) =>
   Object.keys(headers).some((k) => k.toLowerCase() === name.toLowerCase());
@@ -78,9 +79,11 @@ export interface UrlPart { text: string; kind: UrlKind; }
  */
 export function urlParts(summary: Summary, op: Operation, values: RequestValues): { parts: UrlPart[]; missing: string[]; error?: string } {
   const module = summary.modules.find((m) => m.id === op.module);
-  const modulePath = module ? module.path.replace(/^\/+|\/+$/g, '') : '{module}';
+  const modulePath = module ? trimModulePath(module.path) : '{module}';
+  const opPath = trimOpPath(op.path);
   const head = modulePath ? modulePath + '/' : '';
-  const path = head + op.path;
+  // an operation on the module root ends the path at the module: no slash after it, its matrix params on it
+  const path = opPath ? head + opPath : modulePath;
   const kinds = pathKinds(path, { prefix: modulePath.length });
   const parts: UrlPart[] = [];
   const push = (text: string, kind: UrlKind) => {
@@ -92,7 +95,7 @@ export function urlParts(summary: Summary, op: Operation, values: RequestValues)
   push(`${summary.baseUrl}/rest/`, 'base');
   const missing: string[] = [];
   let i = 0;
-  for (const t of findTemplates(op.path)) {
+  for (const t of findTemplates(opPath)) {
     const start = head.length + t.start;
     for (; i < start; i++) push(path[i], kinds[i]);
     const raw = own(values.path, t.name);
@@ -100,7 +103,7 @@ export function urlParts(summary: Summary, op: Operation, values: RequestValues)
     const param = op.params.find((p) => p.in === 'path' && p.name === t.name);
     if (value === '' && (!param || param.required)) {
       missing.push(t.name);
-      push(op.path.slice(t.start, t.end), 'param');
+      push(opPath.slice(t.start, t.end), 'param');
     } else {
       push(encodePath(value, spansSegments(t.regex)), 'value');
     }
@@ -140,20 +143,20 @@ export function buildRequest(summary: Summary, op: Operation, values: RequestVal
   if (missing.length) throw new Error(`Missing required path parameter: ${missing[0]}`);
   const url = parts.map((p) => p.text).join('');
 
-  // the declared headers that are filled in (names compare case-insensitively)
+  // the declared headers that are filled in (names compare case-insensitively, one of each)
   const headerNames = new Set([...declared(op, 'header')].map((n) => n.toLowerCase()));
   const headers: Record<string, string> = {};
   for (const [name, value] of Object.entries(values.header)) {
-    if (headerNames.has(name.toLowerCase()) && !isBlank(value)) headers[name] = value;
+    if (headerNames.has(name.toLowerCase()) && !isBlank(value)) setHeader(headers, name, value);
   }
   // then the usual ones, unless the user filled in a declared header of the same name: what was typed wins
-  if (!hasHeader(headers, 'Accept')) setHeader(headers, 'Accept', options.accept ?? values.accept ?? defaultType(op.produces));
+  if (!hasHeader(headers, 'Accept')) setHeader(headers, 'Accept', filledIn(options.accept, values.accept) ?? defaultType(op.produces));
 
   const req: BuiltRequest = { method, url, headers };
   const bodyAllowed = method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE';
   if (bodyAllowed && values.body !== undefined && values.body !== '') {
     req.body = values.body;
-    if (!hasHeader(headers, 'Content-Type')) setHeader(headers, 'Content-Type', values.contentType ?? defaultType(op.consumes));
+    if (!hasHeader(headers, 'Content-Type')) setHeader(headers, 'Content-Type', filledIn(values.contentType) ?? defaultType(op.consumes));
   }
   if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && !options.noXsrfHeader && !hasHeader(headers, 'X-Atlassian-Token')) {
     setHeader(headers, 'X-Atlassian-Token', 'no-check');

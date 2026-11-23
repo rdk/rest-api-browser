@@ -16,13 +16,15 @@ function sessionExpired(path: string, status: number): Error {
 }
 
 /**
- * Whether an answer is the product telling that the session expired: a 401, a login reason header saying so, or a
- * redirect to a login page. Where JSON was expected (`jsonExpected`), an HTML page counts too: it is the login page.
+ * Whether an answer is the product telling that the session expired: a 401, a login reason header saying so (OUT,
+ * AUTHENTICATION_DENIED, AUTHENTICATED_FAILED), or a redirect to a login page. Where JSON was expected
+ * (`jsonExpected`), an HTML page counts too: it is the login page. For a request that sent its own credentials
+ * (`ownCredentials`), a 401 alone is those credentials failing, not the session.
  */
-export function isLoginAnswer(res: Response, jsonExpected = false): boolean {
-  if (res.status === 401) return true;
+export function isLoginAnswer(res: Response, jsonExpected = false, ownCredentials = false): boolean {
+  if (res.status === 401 && !ownCredentials) return true;
   const reason = (res.headers.get('x-seraph-loginreason') ?? '').toUpperCase();
-  if (reason.includes('OUT') || reason.includes('AUTHENTICATION')) return true;
+  if (reason.includes('OUT') || reason.includes('AUTHENTICAT')) return true;
   const html = /text\/html/i.test(res.headers.get('content-type') ?? '');
   if (res.redirected && /login/i.test(res.url) && (html || jsonExpected)) return true;
   return jsonExpected && res.ok && html;
@@ -72,9 +74,14 @@ export class CatalogStore {
     try {
       const summary = await this.fetchSummary();
       if (generation !== this.generation) return;
-      await this.refresh(summary, generation);
+      // the index of an unchanged hash is the one we have
+      if (this.index && summary.hash === this.index.hash) this.update(summary);
+      else await this.refresh(summary, generation);
     } catch (e) {
-      if (isSessionExpired(e) && generation === this.generation) this.expire(e as Error);
+      if (generation === this.generation) {
+        if (isSessionExpired(e)) this.expire(e as Error);
+        else this.schedulePoll();   // a transient failure: an incomplete catalog is still polled
+      }
       throw e;
     }
     if (generation !== this.generation) return;
@@ -144,6 +151,13 @@ export class CatalogStore {
     this.listeners.forEach((l) => l());
   }
 
+  // The same operations, but progress, completion or a module's state may have changed: show it if so.
+  private update(summary: Summary): void {
+    const changed = !this.summary || !sameView(this.summary, summary);
+    this.summary = summary;
+    if (changed) this.listeners.forEach((l) => l());
+  }
+
   private schedulePoll(): void {
     if (this.stopped || !this.summary || this.summary.complete) return;
     const delay = POLL_DELAYS_MS[Math.min(this.attempt, POLL_DELAYS_MS.length - 1)];
@@ -177,10 +191,7 @@ export class CatalogStore {
         if (generation !== this.generation) return;
         this.attempt = 0;
       } else {
-        // the same operations, but progress, completion or a module's state may have changed: show it
-        const changed = !this.summary || !sameView(this.summary, summary);
-        this.summary = summary;
-        if (changed) this.listeners.forEach((l) => l());
+        this.update(summary);
       }
     } catch (e) {
       if (generation !== this.generation) return;

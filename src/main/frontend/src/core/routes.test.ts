@@ -118,3 +118,31 @@ describe('routes', () => {
     expect(Object.entries(mm.match('/rest/api/a/x/y')!.values)).toEqual([['__proto__', 'x'], ['constructor', 'y']]);
   });
 });
+
+describe('routes second review', () => {
+  it('matches a value with an encoded slash in a plain template, the fallback too', () => {
+    expect(m.match('/rest/api/2/issue/A%2F1')?.values.issueIdOrKey).toBe('A/1');
+    const mm = createMatcher(summary([module('m', 'api')]), index([op('m', 'GET', 'a/{x: [0-9]+}-{y: (?<p0>z)}')]));
+    expect(mm.match('/rest/api/a/1%2F2-z')?.values).toEqual({ x: '1/2', y: 'z' });
+  });
+
+  it('shares one trie between modules on the same path, so a literal of one beats a template of the other', () => {
+    const mm = createMatcher(summary([module('a', 'api/2'), module('b', '/api/2/')]), index([
+      op('a', 'GET', 'issue/{key}'), op('b', 'GET', 'issue/picker'), op('a', 'POST', 'thing'), op('b', 'GET', 'thing'),
+    ]));
+    expect(mm.match('/rest/api/2/issue/picker')?.op.module).toBe('b');
+    expect(mm.match('/rest/api/2/issue/A-1')?.op.module).toBe('a');
+    expect(mm.match('/rest/api/2/thing')?.op.method).toBe('GET');
+  });
+
+  it('takes a last template whose regex spans segments as the rest of the path, as request.ts does', () => {
+    const mm = createMatcher(summary([module('m', 'api')]), index([
+      op('m', 'GET', 'f/{path: [a-z/]+}'), op('m', 'GET', 'g/{p: (.*)}'), op('m', 'GET', 'h/{id: [^/]+}'),
+    ]));
+    expect(mm.match('/rest/api/f/a/b/c')?.values.path).toBe('a/b/c');
+    expect(mm.match('/rest/api/g/x/y')?.values.p).toBe('x/y');
+    expect(mm.match('/rest/api/g')?.values.p).toBe('');
+    expect(mm.match('/rest/api/h/x')?.values.id).toBe('x');
+    expect(mm.match('/rest/api/h/x/y')).toBeNull();
+  });
+});

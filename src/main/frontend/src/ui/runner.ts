@@ -18,9 +18,9 @@ export interface RunResult {
   durationMs: number;
   size: number;
   truncated: boolean;
-  /** How to show the body; 'binary' is the only kind without text. */
+  /** How to show the body; 'binary' and 'empty' have no text. */
   kind: ResultKind;
-  /** The body as text, in the charset of its Content-Type (UTF-8 when it names none the browser knows); not for binary. */
+  /** The body as text, in the charset of its Content-Type (UTF-8 when it names none the browser knows); not for binary or empty. */
   text?: string;
   /**
    * The body's bytes as received (up to the cap), so a download saves them unchanged: binary and text bodies alike,
@@ -99,6 +99,10 @@ function decode(chunks: Uint8Array[], contentType: string): string {
 const echoes = new WeakMap<RunResult, Promise<[string, string][]>>();
 const ECHO_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
 
+const hasAuthorization = (headers: Iterable<string>) => [...headers].some((k) => k.toLowerCase() === 'authorization');
+
+const isPair = (h: unknown) => Array.isArray(h) && h.length === 2 && typeof h[0] === 'string' && typeof h[1] === 'string';
+
 export function fetchEcho(baseUrl: string, result: RunResult, fetchFn: typeof fetch = (...a) => fetch(...a)): Promise<[string, string][]> {
   let p = echoes.get(result);
   if (!p) {
@@ -109,8 +113,18 @@ export function fetchEcho(baseUrl: string, result: RunResult, fetchFn: typeof fe
         headers: Object.fromEntries(result.requestHeaders.filter(([k]) => k.toLowerCase() !== 'accept').concat([['Accept', 'application/json']])),
         credentials: 'same-origin',
       });
+      // the copy carries the request's headers: a 401 to its own Authorization is not the session
+      if (isLoginAnswer(res, true, hasAuthorization(result.requestHeaders.map(([k]) => k)))) {
+        const e = new Error('Your session has expired: reload the page to log in again.');
+        e.name = 'SessionExpired';
+        throw e;
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return ((await res.json()) as { headers: [string, string][] }).headers;
+      const headers = ((await res.json().catch(() => null)) as { headers?: unknown } | null)?.headers;
+      if (!Array.isArray(headers) || !headers.every(isPair)) {
+        throw new Error('The server answered with something other than the headers it received.');
+      }
+      return headers as [string, string][];
     })();
     p.catch(() => echoes.delete(result));
     echoes.set(result, p);
@@ -179,9 +193,10 @@ export class RequestRunner {
         size,
         truncated,
         kind,
-        text: kind === 'binary' ? undefined : decode(chunks, contentType),
+        text: kind === 'binary' || kind === 'empty' ? undefined : decode(chunks, contentType),
         blob: size > 0 ? new Blob(chunks as BlobPart[], { type: contentType }) : undefined,
-        sessionExpired: isLoginAnswer(res),
+        // a 401 to the request's own Authorization header is those credentials failing, not the session
+        sessionExpired: isLoginAnswer(res, false, hasAuthorization(Object.keys(req.headers))),
       };
     } catch (e) {
       const aborted = controller.signal.aborted;

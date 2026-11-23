@@ -16,8 +16,8 @@ const NUMBER = /-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/y;
  */
 interface Visitor {
   value(key: string | null, raw: string, start: number): void;   // a scalar, or "{}" or "[]"
-  open(key: string | null, bracket: '{' | '['): void;
-  close(bracket: '}' | ']'): void;
+  open(key: string | null, bracket: '{' | '[', start: number): void;   // start: where the bracket is
+  close(bracket: '}' | ']', end: number): void;                         // end: just after the bracket
   comma(): void;
 }
 
@@ -91,7 +91,7 @@ function scan(text: string, visitor: Visitor): boolean {
         i++;
         visitor.value(key, c + close, start);
       } else {
-        visitor.open(key, c);
+        visitor.open(key, c, start);
         arrays.push(c === '[');
         continue;
       }
@@ -115,7 +115,7 @@ function scan(text: string, visitor: Visitor): boolean {
       if (t !== close) return false;
       i++;
       arrays.pop();
-      visitor.close(close);
+      visitor.close(close, i);
     }
   }
 }
@@ -137,29 +137,53 @@ export function buildLines(text: string): LineModel | null {
   return ok ? { lines } : null;
 }
 
+/** formatJson's output budget, in characters: deep nesting multiplies the indentation (1,000 levels of a 2 KB value
+ * is 2 MB per line), and a string of hundreds of megabytes freezes or crashes the tab. */
+export const FORMAT_MAX = 32 * 1024 * 1024;
+
 /**
  * The text pretty-printed as JSON.stringify(JSON.parse(text), null, 2) prints it, but without losing anything:
- * numbers, string escapes, key order and duplicate keys stay as written. Null when the text is not JSON.
+ * numbers, string escapes, key order and duplicate keys stay as written. Null when the text is not JSON, or when the
+ * result would be longer than `max` characters (FORMAT_MAX).
  */
-export function formatJson(text: string): string | null {
+export function formatJson(text: string, max = FORMAT_MAX): string | null {
   const model = buildLines(text);
   if (!model) return null;
+  let size = 0;
+  for (const l of model.lines) if ((size += l.depth * 2 + l.text.length + 1) > max) return null;
   const indents: string[] = [];
   return model.lines.map((l) => (indents[l.depth] ??= '  '.repeat(l.depth)) + l.text).join('\n');
 }
 
 /**
- * The text with the string values of the members `hide` picks replaced by `mask` (a JSON string, quotes included),
- * everything else as written. `hide` gets the member's name decoded. Null when the text is not JSON.
+ * The text with the values of the members `hide` picks replaced by `mask` (a JSON string, quotes included), everything
+ * else as written. A string value is hidden when `hide` picks its name; any other value (a number, an array, an
+ * object, all of it) when `hideAny` does, which can be narrower ("tokenCount": 5 is no secret, "token": 5 is). null,
+ * "" and a string of spaces are left alone: there is nothing to hide. Both get the member's name decoded. Null when
+ * the text is not JSON.
  */
-export function maskJson(text: string, hide: (name: string) => boolean, mask: string): { text: string; masked: number } | null {
+export function maskJson(text: string, hide: (name: string) => boolean, mask: string,
+                         hideAny: (name: string) => boolean = hide): { text: string; masked: number } | null {
   const cuts: [number, number][] = [];
+  let depth = 0;
+  let hidden: { from: number; depth: number } | null = null;   // the container being hidden whole
+  const name = (key: string) => JSON.parse(key) as string;   // a string token as written, decoded
   const ok = scan(text, {
     value: (key, raw, start) => {
-      if (key !== null && raw[0] === '"' && hide(JSON.parse(key) as string)) cuts.push([start, start + raw.length]);
+      if (hidden || key === null || raw === 'null') return;
+      if (raw[0] === '"' ? hide(name(key)) && name(raw).trim() !== '' : hideAny(name(key))) cuts.push([start, start + raw.length]);
     },
-    open: () => undefined,
-    close: () => undefined,
+    open: (key, _bracket, start) => {
+      depth++;
+      if (!hidden && key !== null && hideAny(name(key))) hidden = { from: start, depth };
+    },
+    close: (_bracket, end) => {
+      if (hidden && hidden.depth === depth) {
+        cuts.push([hidden.from, end]);
+        hidden = null;
+      }
+      depth--;
+    },
     comma: () => undefined,
   });
   if (!ok) return null;

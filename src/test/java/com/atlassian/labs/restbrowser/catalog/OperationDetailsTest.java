@@ -22,6 +22,8 @@ import org.osgi.framework.wiring.BundleWiring;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.annotation.Annotation;
+import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.Hashtable;
@@ -218,6 +220,7 @@ public class OperationDetailsTest {
         when(own.getState()).thenReturn(Bundle.ACTIVE);
         when(own.getLocation()).thenReturn("things.jar");
         BundleWiring wiring = mock(BundleWiring.class);
+        when(wiring.isInUse()).thenReturn(true);
         when(own.adapt(BundleWiring.class)).thenReturn(wiring);
         Bundle provider = bundle("org.example", "2.0.0", 7);
         List<BundleWire> required = List.of(wire(capability("org.example.api", null), provider),
@@ -240,6 +243,107 @@ public class OperationDetailsTest {
         assertTrue(json, json.contains("\"exports\":[{\"package\":\"com.example.things.api\",\"version\":\"1.0.0\",\"users\":2},"
                 + "{\"package\":\"com.example.things.internal\",\"version\":\"\",\"users\":0}]"));
         assertFalse(json, json.contains("null"));
+    }
+
+    private static Bundle activeBundle(BundleWiring wiring) {
+        Bundle own = bundle("com.example.things", "1.0.0", 42);
+        when(own.getHeaders()).thenReturn(new Hashtable<>(Map.of("Bundle-Name", "Things")));
+        when(own.getState()).thenReturn(Bundle.ACTIVE);
+        when(own.getLocation()).thenReturn("things.jar");
+        when(own.adapt(BundleWiring.class)).thenReturn(wiring);
+        return own;
+    }
+
+    @Test
+    public void aWiringNoLongerInUseKeepsTheBundlesFacts() throws Exception {
+        // a refresh replaced the wiring while the details were read: its lists are null now
+        BundleWiring stale = mock(BundleWiring.class);
+        when(stale.isInUse()).thenReturn(false);
+        when(stale.getRequiredWires(BundleRevision.PACKAGE_NAMESPACE)).thenReturn(null);
+        Json j = new Json();
+        OperationDetails.bundle(j, new BundleLoader(activeBundle(stale)).copy(Plain.class));
+        assertEquals("{\"id\":42,\"symbolicName\":\"com.example.things\",\"version\":\"1.0.0\",\"state\":\"ACTIVE\","
+                + "\"location\":\"things.jar\",\"lastModified\":0,\"headers\":{\"Bundle-Name\":\"Things\"},\"wiring\":false}", j.toString());
+    }
+
+    @Test
+    public void listsThatTurnNullAreEmpty() throws Exception {
+        // still in use when asked, gone by the time each list is read
+        BundleWiring racing = mock(BundleWiring.class);
+        when(racing.isInUse()).thenReturn(true);
+        when(racing.getRequiredWires(BundleRevision.PACKAGE_NAMESPACE)).thenReturn(null);
+        when(racing.getProvidedWires(BundleRevision.PACKAGE_NAMESPACE)).thenReturn(null);
+        when(racing.getCapabilities(BundleRevision.PACKAGE_NAMESPACE)).thenReturn(null);
+        Json j = new Json();
+        OperationDetails.bundle(j, new BundleLoader(activeBundle(racing)).copy(Plain.class));
+        String json = j.toString();
+        assertTrue(json, json.startsWith("{\"id\":42,\"symbolicName\":\"com.example.things\""));
+        assertTrue(json, json.endsWith("\"importCount\":0,\"imports\":[],\"exportCount\":0,\"exports\":[]}"));
+    }
+
+    /** A class value. */
+    @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.RUNTIME)
+    public @interface Typed {
+        Class<?>[] value();
+    }
+
+    @Typed({String[].class, int[][].class, Map.Entry.class})
+    private static final class WithArrays {
+    }
+
+    @Test
+    public void classValuesAreWrittenAsInSource() {
+        assertEquals("@" + Typed.class.getName() + "({java.lang.String[].class, int[][].class, java.util.Map$Entry.class})",
+                OperationDetails.annotation(WithArrays.class.getAnnotation(Typed.class)));
+    }
+
+    @Test
+    @SuppressWarnings("ClassExplicitlyAnnotation")
+    public void oneUnreadableAnnotationDoesNotLoseTheOthers() {
+        Annotation broken = new Two() {
+            @Override
+            public String a() {
+                return "";
+            }
+
+            @Override
+            public String b() {
+                return "";
+            }
+
+            @Override
+            public Class<? extends Annotation> annotationType() {
+                throw new NoClassDefFoundError("com/example/Gone");
+            }
+        };
+        Annotation path = ThingResource.class.getAnnotation(Path.class);
+        AnnotatedElement element = new AnnotatedElement() {
+            @Override
+            public <T extends Annotation> T getAnnotation(Class<T> type) {
+                return null;
+            }
+
+            @Override
+            public Annotation[] getAnnotations() {
+                return getDeclaredAnnotations();
+            }
+
+            @Override
+            public Annotation[] getDeclaredAnnotations() {
+                return new Annotation[]{broken, path};
+            }
+        };
+        assertEquals(List.of("(unreadable: java.lang.NoClassDefFoundError: com/example/Gone)",
+                "@jakarta.ws.rs.Path(\"/things\")"), OperationDetails.annotations(element));
+    }
+
+    @Test
+    public void textIsCutButNeverInsideASurrogatePair() {
+        String smile = "😀";
+        assertEquals("a".repeat(499) + "…", OperationDetails.clip("a".repeat(499) + smile + "b"));
+        assertEquals("a".repeat(498) + smile + "…", OperationDetails.clip("a".repeat(498) + smile + "bc"));
+        assertEquals("a".repeat(500), OperationDetails.clip("a".repeat(500)));
+        assertNull(OperationDetails.clip(null));
     }
 
     @Test

@@ -135,3 +135,14 @@ describe('search and group review fixes', () => {
     expect(ids(groupRows(sm, rs, new Set(), { supportedOnly: true }))).toEqual(['ok', 'f1']);
   });
 });
+
+describe('buildRows second review', () => {
+  it('joins module and operation paths with one slash, none at the start; a root operation ends in one, as listed', () => {
+    const sm = summary([module('m', '/api/2/')]);
+    const r = buildRows(sm, index([op('m', 'GET', ''), op('m', 'GET', 'issue'), op('m', 'GET', '/project')]));
+    expect(r.map((x) => x.path)).toEqual(['api/2/', 'api/2/issue', 'api/2/project']);
+    // "/" lists every operation, the module's root one included
+    expect(search(r, '/')).toHaveLength(3);
+    expect(search(r, 'api/2/').map((x) => x.path)).toContain('api/2/');
+  });
+});

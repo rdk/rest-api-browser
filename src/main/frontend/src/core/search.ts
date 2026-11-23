@@ -1,10 +1,11 @@
+import { joinPaths, trimOpPath } from './template';
 import type { Index, Module, Operation, Origin, Stability, Summary } from './types';
 
 export interface SearchRow {
   op: Operation;
   module: Module;
   hay: string;        // lowercased: method, full path, plugin name
-  path: string;       // lowercased module path + "/" + op path
+  path: string;       // lowercased module path + "/" + op path (joinPaths: one slash, none at the ends)
   rank: number;       // 0 supported, 1 internal, 2 app
   stability: Stability;
   origin: Origin;
@@ -25,7 +26,8 @@ export function buildRows(summary: Summary, index: Index): SearchRow[] {
   for (const op of index.operations) {
     const module = modules.get(op.module);
     if (!module) continue;
-    const path = `${module.path}/${op.path}`.toLowerCase();
+    // as the list shows it: an operation on the module's root is "api/", so a search for "api/" or "/" finds it too
+    const path = (joinPaths(module.path, op.path) + (trimOpPath(op.path) ? '' : '/')).toLowerCase();
     rows.push({
       op,
       module,

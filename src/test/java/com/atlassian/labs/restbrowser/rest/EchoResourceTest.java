@@ -23,13 +23,25 @@ public class EchoResourceTest {
         assertEquals("JSESSIONID=… (6 characters, hidden); atl.xsrf.token=… (3 characters, hidden); "
                         + "… (a value without a name, 6 characters, hidden)",
                 EchoResource.safe("Cookie", "JSESSIONID=abc123; atl.xsrf.token=xyz; s3cr3t"));
+        assertEquals("$Version=… (3 characters, hidden); sid=… (3 characters, hidden)",
+                EchoResource.safe("Cookie2", "$Version=\"1\"; sid=abc"));
+        assertEquals("sid=… (3 characters, hidden); Path=… (1 characters, hidden); "
+                        + "… (a value without a name, 8 characters, hidden)",
+                EchoResource.safe("Set-Cookie", "sid=abc; Path=/; HttpOnly"));
     }
 
     @Test
     public void credentialsAndSecretsAreHidden() {
         assertEquals("Basic … (hidden)", EchoResource.safe("Authorization", "Basic dXNlcjpwYXNz"));
         assertEquals("Bearer … (hidden)", EchoResource.safe("Proxy-Authorization", "Bearer abc"));
+        assertEquals("AWS4-HMAC-SHA256 … (hidden)",
+                EchoResource.safe("Authorization", "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20260101/x"));
+        assertEquals("Negotiate … (hidden)", EchoResource.safe("Authorization", "Negotiate\tYIIabc"));
         assertEquals("… (hidden)", EchoResource.safe("authorization", "opaque"));
+        // a first word that is no scheme is part of the secret
+        assertEquals("… (hidden)", EchoResource.safe("Authorization", "4f9a:secret rest"));
+        assertEquals("… (hidden)", EchoResource.safe("Authorization", "a".repeat(33) + " rest"));
+        assertEquals("… (hidden)", EchoResource.safe("Authorization", " Basic dXNl"));
         assertEquals("… (hidden)", EchoResource.safe("X-Api-Key", "k"));
         assertEquals("… (hidden)", EchoResource.safe("X-Session-Id", "s"));
         assertEquals("no-check", EchoResource.safe("X-Atlassian-Token", "no-check"));
@@ -44,7 +56,10 @@ public class EchoResourceTest {
                 "Cf-Access-Jwt-Assertion", "X-Jwt", "X-Saml-Assertion", "X-Signature", "X-Hub-Signature-256",
                 "X-Auth", "X-Authn", "X-Forwarded-Authorization", "X-Forwarded-Client-Cert", "X-SSL-Client-Cert",
                 "SSL_CLIENT_CERT", "X-Client-Certificate", "X-Amzn-Oidc-Data", "X-Amzn-Oidc-Accesstoken",
-                "X-SSO-User", "X-Saml-Response", "X-Ms-Client-Principal", "X-MS-CLIENT-PRINCIPAL-NAME")) {
+                "X-SSO-User", "X-Saml-Response", "X-Ms-Client-Principal", "X-MS-CLIENT-PRINCIPAL-NAME",
+                "X-JSESSIONID", "X-OAuth-Scopes", "X-CSRF", "X-XSRF", "X-Xsrf-Header",
+                // run together (HTTP/2 lowercases the names)
+                "X-AccessToken", "x-accesstoken", "X-AuthToken", "X-ApiToken", "XApiKey", "X-ClientSecret", "X-UserPassword")) {
             assertTrue(name, EchoResource.secret(name));
             assertEquals(name, "… (hidden)", EchoResource.safe(name, "v"));
         }
@@ -61,6 +76,14 @@ public class EchoResourceTest {
         }
         assertEquals("XMLHttpRequest", EchoResource.safe("X-Requested-With", "XMLHttpRequest"));
         assertEquals("p-1", EchoResource.safe("X-Processor", "p-1"));
+    }
+
+    @Test
+    public void aLongValueIsCutButNeverInsideASurrogatePair() {
+        String smile = "😀";
+        assertEquals("a".repeat(999) + "…", EchoResource.safe("X-Long", "a".repeat(999) + smile + "b"));
+        assertEquals("a".repeat(998) + smile + "…", EchoResource.safe("X-Long", "a".repeat(998) + smile + "bc"));
+        assertEquals("a".repeat(1000), EchoResource.safe("X-Long", "a".repeat(1000)));
     }
 
     @Test
