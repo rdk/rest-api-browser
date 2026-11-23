@@ -1046,18 +1046,15 @@
 .rab-n-op:hover .rab-n-op-path { color: var(--rab-text); }
 
 /* Module header rows */
-/* The list's module headers stand out as tinted bands, a soft gradient fading to the right; skins set their own */
+/* The list's module headers: a flat, subtle tint of the brand, a little stronger on hover; skins may set their own */
 .rab-n {
-  --rab-group-bg: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--rab-brand) 14%, var(--rab-surface)),
-    color-mix(in srgb, var(--rab-discovery-bold) 6%, var(--rab-surface))
-  );
-  --rab-group-bg-hover: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--rab-brand) 22%, var(--rab-surface)),
-    color-mix(in srgb, var(--rab-discovery-bold) 10%, var(--rab-surface))
-  );
+  --rab-group-bg: color-mix(in srgb, var(--rab-brand) 6%, var(--rab-surface));
+  --rab-group-bg-hover: color-mix(in srgb, var(--rab-brand) 10%, var(--rab-surface));
+  --rab-group-border: color-mix(in srgb, var(--rab-brand) 10%, var(--rab-border-subtle));
+}
+[data-color-mode="dark"] .rab-n {
+  --rab-group-bg: color-mix(in srgb, var(--rab-brand) 12%, var(--rab-surface));
+  --rab-group-bg-hover: color-mix(in srgb, var(--rab-brand) 18%, var(--rab-surface));
   --rab-group-border: color-mix(in srgb, var(--rab-brand) 18%, var(--rab-border-subtle));
 }
 .rab-n-module {
