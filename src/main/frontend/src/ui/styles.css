@@ -1328,6 +1328,21 @@
 }
 .rab-n-tool:hover:not(:disabled) { background: var(--rab-hover); color: var(--rab-text); }
 .rab-n-tool:disabled { color: var(--rab-subtlest); opacity: 0.45; cursor: default; }
+.rab-n-tool.on { color: var(--rab-link); background: var(--rab-selected); }
+.rab-n-tool-sep { width: 1px; height: 16px; margin: 0 4px 0 -4px; background: var(--rab-border); flex: none; }
+
+/* A box on the whole screen: the request with its URL bar, or the response */
+.rab-n-operation.max-top, .rab-n-operation.max-bottom {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  background: var(--rab-surface);
+}
+.rab-n-operation.max-top .rab-n-hsplit, .rab-n-operation.max-top .rab-n-response { display: none; }
+.rab-n-operation.max-top .rab-n-request { flex: 1 1 auto !important; }
+.rab-n-operation.max-bottom .rab-n-op-head,
+.rab-n-operation.max-bottom .rab-n-request,
+.rab-n-operation.max-bottom .rab-n-hsplit { display: none; }
 .rab-n-tab {
   position: relative;
   border: 0;
@@ -1436,14 +1451,68 @@
 .rab-n-json-check.is-ok { color: var(--rab-success); }
 .rab-n-json-check-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Java tab: the method, its class, the bundle, the plugin and the REST module */
-.rab-n-java { padding: 6px 14px 16px; font-size: 12.5px; }
-.rab-n-java-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
-.rab-n-java-toggle { display: inline-flex; align-items: center; gap: 5px; color: var(--rab-subtle); cursor: pointer; }
-.rab-n-java-block { padding: 8px 0 10px; border-top: 1px solid var(--rab-border-subtle); }
-.rab-n-java-block:first-of-type { border-top: 0; }
+/* Java tab: a menu of pages on the left (method, class, types, bundle, imports, exports, plugin, modules, REST
+   module), the page on the right */
+.rab-n-java { display: flex; min-height: 100%; font-size: 12.5px; }
+.rab-n-java-nav {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 150px;
+  padding: 8px 6px;
+  border-right: 1px solid var(--rab-border-subtle);
+  background: color-mix(in srgb, var(--rab-sunken) 60%, var(--rab-surface));
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  min-height: 100%;
+}
+.rab-n-java-nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--rab-radius-sm);
+  background: none;
+  color: var(--rab-subtle);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  position: relative;
+  transition: background var(--rab-ease), color var(--rab-ease);
+}
+.rab-n-java-nav-item:hover { background: var(--rab-hover); color: var(--rab-text); }
+.rab-n-java-nav-item.on { background: var(--rab-grad-selected); color: var(--rab-text); font-weight: 600; }
+.rab-n-java-nav-item.on::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--rab-grad-bar-v);
+}
+.rab-n-java-nav-count {
+  padding: 0 6px;
+  border-radius: var(--rab-radius-pill);
+  background: var(--rab-neutral);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--rab-subtle);
+}
+.rab-n-java-nav-failed { color: var(--rab-danger); font-weight: 700; }
+/* the page's tools, top right: they stay in reach whatever the page */
+.rab-n-java-tools { float: right; display: flex; align-items: center; gap: 6px; margin: 0 0 6px 12px; }
+.rab-n-java-toggle { display: inline-flex; align-items: center; gap: 5px; padding: 2px 4px; color: var(--rab-subtle); cursor: pointer; }
+.rab-n-java-page { flex: 1; min-width: 0; padding: 8px 14px 16px; }
+.rab-n-java-block + .rab-n-java-block { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--rab-border-subtle); }
 .rab-n-java-title {
-  margin: 0 0 6px;
+  margin: 0 0 8px;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -1451,24 +1520,32 @@
   color: var(--rab-subtle);
 }
 .rab-n-java-code {
-  margin: 0 0 8px;
-  padding: 8px 12px;
+  margin: 0 0 10px;
+  padding: 10px 14px;
   border-radius: var(--rab-radius-md);
   border: 1px solid var(--rab-border-subtle);
   background: var(--rab-sunken);
-  font: 12.5px/1.6 var(--rab-mono);
+  font: 12.5px/1.65 var(--rab-mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  tab-size: 4;
 }
-.rab-n-jc-ann { color: var(--rab-warning); }
-.rab-n-jc-kw { color: var(--rab-discovery); font-weight: 600; }
-.rab-n-jc-type { color: var(--rab-sub-color); }
-.rab-n-jc-name { color: var(--rab-text); font-weight: 700; }
-.rab-n-jc-param { padding-left: 2ch; }
+.rab-n-java-code-small { margin: 0; padding: 6px 10px; font-size: 12px; }
+/* Java colours: one per kind of token, from the product's accent tokens (light and dark) */
+.rab-n-jc-ann { color: var(--ds-text-accent-orange, #a54800); font-weight: 600; }
+.rab-n-jc-member { color: var(--ds-text-accent-purple, #5e4db2); }
+.rab-n-jc-str { color: var(--ds-text-accent-green, #216e4e); }
+.rab-n-jc-num { color: var(--ds-text-accent-teal, #206a83); }
+.rab-n-jc-type { color: var(--ds-text-accent-blue, #0055cc); }
+.rab-n-jc-kw { color: var(--ds-text-accent-magenta, #943d73); font-weight: 600; }
+.rab-n-jc-punct { color: var(--rab-subtlest); }
+.rab-n-jc-method { color: var(--rab-text); font-weight: 700; }
+.rab-n-jc-pname { color: var(--rab-text); }
+.rab-n-jc-param { padding-left: 4ch; }
 .rab-n-java-facts {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
-  gap: 3px 14px;
+  gap: 4px 16px;
   margin: 0;
 }
 .rab-n-java-facts dt { color: var(--rab-subtlest); }
@@ -1480,10 +1557,22 @@
 .rab-n-java-ok { color: var(--rab-success); font-weight: 600; }
 .rab-n-java-deprecated { color: var(--rab-danger); font-weight: 600; }
 .rab-n-java-error { color: var(--rab-danger); }
-.rab-n-java-more { margin-top: 8px; }
-.rab-n-java-more > summary { cursor: pointer; color: var(--rab-link); width: fit-content; }
-.rab-n-java-table { width: 100%; margin-top: 4px; border-collapse: collapse; }
+.rab-n-java-filter { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.rab-n-java-filter .rab-n-input { width: 260px; max-width: 50%; }
+.rab-n-java-table { width: 100%; border-collapse: collapse; }
+.rab-n-java-table th {
+  position: sticky;
+  top: 0;
+  padding: 3px 10px 3px 0;
+  border-bottom: 1px solid var(--rab-border);
+  background: var(--rab-surface);
+  color: var(--rab-subtlest);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: left;
+}
 .rab-n-java-table td { padding: 2px 10px 2px 0; border-bottom: 1px solid var(--rab-border-subtle); vertical-align: top; overflow-wrap: anywhere; }
+.rab-n-java-table tbody tr:hover { background: color-mix(in srgb, var(--rab-sunken) 70%, transparent); }
 
 /* Headers tab */
 .rab-n-headers-custom-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; max-width: 680px; }
@@ -1642,25 +1731,7 @@
 }
 .rab-n-header-row:last-child { border-bottom: 0; }
 .rab-n-header-name { color: var(--rab-info); font-weight: 600; margin-right: 4px; }
-.rab-n-headers-title {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  margin: 8px 0 2px;
-  font: 700 11px/1.4 var(--ds-font-family-body, inherit);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--rab-subtle);
-}
-.rab-n-headers-title:first-child { margin-top: 2px; }
-.rab-n-headers-count {
-  padding: 0 6px;
-  border-radius: var(--rab-radius-pill);
-  background: var(--rab-neutral);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0;
-}
-.rab-n-headers-note { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--rab-subtlest); }
+.rab-n-headers-note { margin-top: 8px; font: 12px/1.5 var(--ds-font-family-body, inherit); color: var(--rab-subtlest); }
 
 /* Code viewer and Find bar */
 .rab-n-code-wrap { display: flex; flex-direction: column; flex: 1; min-height: 0; }

@@ -6,7 +6,7 @@ import { checkValue, type Check } from '../core/validate';
 import { changedField, NO_HISTORY, record, redo as redoStep, undo as undoStep, type FormHistory, type FormState } from '../core/formhistory';
 import type { RequestRunner, RunResult } from './runner';
 import type { HistoryEntry, UserStore } from './userstore';
-import { CheckMark, CopyButton, MethodBadge, PathText, Tabs, WarnGlyph, WRITE_METHODS } from './bits';
+import { CheckMark, CopyButton, MaximizeButton, MethodBadge, PathText, Tabs, WarnGlyph, WRITE_METHODS } from './bits';
 import { ResponseView } from './Response';
 import { JavaTab } from './JavaTab';
 
@@ -53,6 +53,10 @@ interface Props {
 
 export function OperationView({ summary, op, module, initialDraft, onDraft, runner, userStore, split, onSplit }: Props) {
   const [tab, setTab] = useState<Tab>('params');
+  // a box on the whole screen: the request (with its URL bar) or the response; Escape gives it back its place
+  const [max, setMax] = useState<'top' | 'bottom' | null>(null);
+  const maxRef = useRef(max);
+  maxRef.current = max;
   const [running, setRunning] = useState(false);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   // the draft lives here, so typing re-renders this view only, not the list or the whole page
@@ -126,6 +130,8 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         sendRef.current();
+      } else if (e.key === 'Escape' && maxRef.current) {
+        setMax(null);
       } else if (e.key === 'Escape' && runner.running) {
         runner.abort();
       }
@@ -178,7 +184,7 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
   const hasBadges = module?.stability === 'supported' || module?.stability === 'app' || !!op.access || !!op.deprecated;
 
   return (
-    <div class="rab-n-operation" data-testid="operation">
+    <div class={'rab-n-operation' + (max ? ' max-' + max : '')} data-testid="operation">
       <div class="rab-n-op-head">
         <div class="rab-n-op-title">
           <MethodBadge method={method} />
@@ -253,6 +259,8 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
           />
             <FormTools canUndo={canUndo} canRedo={canRedo} canReset={canReset}
                        onUndo={() => step('undo')} onRedo={() => step('redo')} onReset={resetForm} />
+            <span class="rab-n-tool-sep" aria-hidden="true" />
+            <MaximizeButton on={max === 'top'} onToggle={() => setMax(max === 'top' ? null : 'top')} what="request" testId="max-top" />
           </div>
           <div class="rab-n-tabpane">
             {tab === 'params' && (
@@ -274,7 +282,8 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
           </div>
         </div>
         {!compact && <SplitHandle split={split} onSplit={onSplit} />}
-        <ResponseView result={draft.result} running={running} onCancel={cancel} />
+        <ResponseView result={draft.result} running={running} onCancel={cancel}
+                      maximized={max === 'bottom'} onMaximize={() => setMax(max === 'bottom' ? null : 'bottom')} />
       </div>
     </div>
   );

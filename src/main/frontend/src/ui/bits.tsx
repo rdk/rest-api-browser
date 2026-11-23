@@ -25,6 +25,20 @@ export function PathText({ path, prefix, words, rank }: { path: string; prefix?:
   );
 }
 
+/** The button that makes a box take the whole screen, and gives it back its place (Escape does too). */
+export function MaximizeButton({ on, onToggle, what, testId }: { on: boolean; onToggle: () => void; what: string; testId: string }) {
+  const label = on ? `Restore the ${what} (Esc)` : `Show the ${what} on the whole screen`;
+  return (
+    <button class={'rab-n-tool' + (on ? ' on' : '')} onClick={onToggle} title={label} aria-label={label} aria-pressed={on}
+            data-testid={testId} data-state={on ? 'max' : 'normal'}>
+      <svg class="rab-n-svg" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d={on ? 'M6 2.5v3.5H2.5M13.5 6H10V2.5M10 13.5V10h3.5M2.5 10H6v3.5' : 'M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10'}
+              stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </button>
+  );
+}
+
 /** The key that pins a rich tooltip: Alt+P (by key position, so Option+P on a Mac works too). */
 export const isPinKey = (e: KeyboardEvent) => e.altKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyP';
 

@@ -242,7 +242,8 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl }: Props) {
         </div>
         <div class="rab-n-top-center">
           {site && (
-            <a class="rab-n-site" href={siteUrl} title={`${product || 'The product'}'s base URL: ${siteUrl}`} data-testid="site">
+            <a class="rab-n-site" href={siteUrl} target="_blank" rel="noopener noreferrer"
+               title={`${product || 'The product'}'s base URL: ${siteUrl} (opens in a new tab)`} data-testid="site">
               <svg class="rab-n-svg" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                 <circle cx="8" cy="8" r="5.8" stroke="currentColor" strokeWidth="1.3" />
                 <path d="M2.4 8h11.2M8 2.2c1.7 1.6 2.5 3.6 2.5 5.8S9.7 12.2 8 13.8M8 2.2C6.3 3.8 5.5 5.8 5.5 8s.8 4.2 2.5 5.8" stroke="currentColor" strokeWidth="1.2" />

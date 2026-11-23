@@ -2,13 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { downloadBlob, type RunResult } from './runner';
 import { buildLines, find, visibleLines, type LineModel } from '../core/jsonlines';
 import { VirtualList } from './VirtualList';
-import { Tabs, download, formatBytes } from './bits';
+import { MaximizeButton, Tabs, download, formatBytes } from './bits';
 
 const LINE = 20;
 /** Longer lines are split into rows (raw text) or cut (JSON): one DOM text node of megabytes freezes the tab. */
 const MAX_LINE = 2000;
 
-type View = 'pretty' | 'raw' | 'headers';
+type View = 'pretty' | 'raw' | 'headers' | 'sent';
 /** A request to move to the next (dir 1) or previous (dir -1) match; n counts the requests. */
 type Step = { n: number; dir: number };
 
@@ -20,8 +20,8 @@ const idOf = (r: RunResult) => {
   return id;
 };
 
-export function ResponseView({ result, running, onCancel }: {
-  result: RunResult | null; running: boolean; onCancel: () => void;
+export function ResponseView({ result, running, onCancel, maximized, onMaximize }: {
+  result: RunResult | null; running: boolean; onCancel: () => void; maximized: boolean; onMaximize: () => void;
 }) {
   const [view, setView] = useState<View>('pretty');
   // the find box sits in the tab bar; Pretty and Raw do the matching and report the count back
@@ -107,32 +107,34 @@ export function ResponseView({ result, running, onCancel }: {
           tabs={[
             { id: 'pretty', label: 'Pretty' },
             { id: 'raw', label: 'Raw' },
-            { id: 'headers', label: `Headers (${(result.requestHeaders?.length ?? 0) + result.headers.length})` },
+            { id: 'headers', label: `Response headers (${result.headers.length})` },
+            { id: 'sent', label: `Request headers (${result.requestHeaders?.length ?? 0})` },
           ]}
         />
-        {view !== 'headers' && result.kind !== 'binary' && result.kind !== 'empty' && (
+        {(view === 'pretty' || view === 'raw') && result.kind !== 'binary' && result.kind !== 'empty' && (
           <FindBox initial={needle} onFind={setNeedle} onStep={(dir) => setStep((st) => ({ n: st.n + 1, dir }))}
                    count={found.count} index={found.index} />
         )}
+        <span class="rab-n-spacer" />
+        <div class="rab-n-form-tools">
+          <MaximizeButton on={maximized} onToggle={onMaximize} what="response" testId="max-bottom" />
+        </div>
       </div>
       {result.truncated && (
         <div class="rab-n-banner">The response is larger than the limit; only its start was read. Download saves that part.</div>
       )}
       {view === 'headers' ? (
         <div class="rab-n-headers" data-testid="response-headers">
-          <div class="rab-n-headers-title" data-testid="request-headers-title">
-            Request <span class="rab-n-headers-count">{result.requestHeaders?.length ?? 0}</span>
-            <span class="rab-n-headers-note">set by the browser too: cookies, User-Agent, Origin…</span>
-          </div>
-          {(result.requestHeaders ?? []).map(([k, v], i) => (
-            <div class="rab-n-header-row" key={'q' + i} data-testid="request-header"><span class="rab-n-header-name">{k}:</span> {v}</div>
-          ))}
-          <div class="rab-n-headers-title">
-            Response <span class="rab-n-headers-count">{result.headers.length}</span>
-          </div>
           {result.headers.map(([k, v], i) => (
-            <div class="rab-n-header-row" key={'r' + i}><span class="rab-n-header-name">{k}:</span> {v}</div>
+            <div class="rab-n-header-row" key={i}><span class="rab-n-header-name">{k}:</span> {v}</div>
           ))}
+        </div>
+      ) : view === 'sent' ? (
+        <div class="rab-n-headers" data-testid="request-headers">
+          {(result.requestHeaders ?? []).map(([k, v], i) => (
+            <div class="rab-n-header-row" key={i} data-testid="request-header"><span class="rab-n-header-name">{k}:</span> {v}</div>
+          ))}
+          <div class="rab-n-headers-note">The headers the app set. The browser adds its own: cookies, User-Agent, Origin…</div>
         </div>
       ) : result.kind === 'binary' ? (
         <div class="rab-n-response-state rab-n-subtle">Binary content ({result.contentType || 'no content type'}). Use Download.</div>

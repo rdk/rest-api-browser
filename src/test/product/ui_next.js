@@ -52,6 +52,13 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         await b.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
         await b.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
     };
+    const KEYS = { '/': [191, 'Slash'], ArrowDown: [40, 'ArrowDown'], ArrowRight: [39, 'ArrowRight'], Enter: [13, 'Enter'], Escape: [27, 'Escape'] };
+    const press = async key => {
+        const [code, name] = KEYS[key];
+        const base = { key, code: name, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code };
+        await b.send('Input.dispatchKeyEvent', { type: key === '/' ? 'keyDown' : 'rawKeyDown', ...base, ...(key === '/' ? { text: '/' } : {}) });
+        await b.send('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
+    };
     const openOp = async (search, title, method = 'GET') => {
         const row = `[data-testid=op][data-method=${method}][data-path=${q(title)}]`;
         await type('[data-testid=search]', search);
@@ -78,11 +85,12 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
             return { brand: attrs('[data-testid=brand]'), version: attrs('[data-testid=version]'), classic: attrs('[data-testid=classic-link]') };
         })()`);
         const site = await b.evaluate(`(() => { const e = document.querySelector('.rab-n-topbar [data-testid=site]');
-            return e && { text: e.textContent, href: e.getAttribute('href'), center: Math.round(e.getBoundingClientRect().left + e.getBoundingClientRect().width / 2),
+            return e && { text: e.textContent, href: e.getAttribute('href'), target: e.target, center: Math.round(e.getBoundingClientRect().left + e.getBoundingClientRect().width / 2),
                 bar: Math.round(document.querySelector('.rab-n-topbar').getBoundingClientRect().left + document.querySelector('.rab-n-topbar').getBoundingClientRect().width / 2) }; })()`);
         c.check(`the header shows the product's base URL in the middle, without the protocol (${site && site.text})`,
             !!site && site.text.length > 0 && !/^[a-z]+:\/\//i.test(site.text) && /^https?:\/\//.test(site.href)
-            && site.href.replace(/^https?:\/\//, '').replace(/\/$/, '') === site.text && Math.abs(site.center - site.bar) <= 2, site);
+            && site.href.replace(/^https?:\/\//, '').replace(/\/$/, '') === site.text && Math.abs(site.center - site.bar) <= 2
+            && site.target === '_blank', site);
         c.check('the header links the brand to GitHub, the version to its releases, and the classic UI',
             !!header.brand && /^https:\/\/github\.com\/[^/]+\/[^/]+$/.test(header.brand.href) && header.brand.target === '_blank'
             && !!header.version && /^v\d/.test(header.version.text) && /\/releases$/.test(header.version.href) && header.version.target === '_blank'
@@ -156,11 +164,14 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
             (await text('[data-testid=response]')).slice(0, 200));
         await b.shot(path.join(SHOTS, `${PRODUCT}-next-2-response.png`));
         const numbers = await b.evaluate(`document.querySelectorAll('[data-testid=response] .rab-n-gutter').length`);
-        await b.evaluate(`([...document.querySelectorAll('[data-testid=response] [role=tab]')].find(t => /^Headers/.test(t.textContent)) || {}).click?.(), true`);
+        const responseTab = name => b.evaluate(`([...document.querySelectorAll('[data-testid=response] [role=tab]')].find(t => t.textContent.startsWith(${q(name)})) || {}).click?.(), true`);
+        await responseTab('Response headers');
+        const received = await b.waitFor(`document.querySelectorAll('[data-testid=response-headers] .rab-n-header-row').length > 0`, 3000);
+        await responseTab('Request headers');
         await b.waitFor(`!!document.querySelector('[data-testid=request-header]')`, 3000);
         const sentHeaders = await b.evaluate(`[...document.querySelectorAll('[data-testid=request-header]')].map(e => e.textContent)`);
-        c.check('Pretty shows no line numbers; Headers lists the request\'s headers before the response\'s',
-            numbers === 0 && sentHeaders.some(h => /^accept:/i.test(h)), { numbers, sentHeaders });
+        c.check('Pretty shows no line numbers; the response\'s and the request\'s headers have a tab each',
+            numbers === 0 && received && sentHeaders.some(h => /^accept:/i.test(h)), { numbers, received, sentHeaders });
         await b.evaluate(`([...document.querySelectorAll('[data-testid=response] [role=tab]')].find(t => /^Pretty/.test(t.textContent)) || {}).click?.(), true`);
         // the find box sits in the response's tab bar, right after the tabs, and finds as you type
         const findBox = await b.evaluate(`(() => { const bar = document.querySelector('[data-testid=response] .rab-n-tabbar');
@@ -177,16 +188,48 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         // the Java behind the operation (system administrators): its method and class, the OSGi bundle, the plugin
         await b.evaluate(`([...document.querySelectorAll('.rab-n-request [role=tab]')].find(t => t.textContent.trim() === 'Java') || {}).click?.(), true`);
         await b.waitFor(`!!document.querySelector('[data-testid=java-signature], [data-testid=java-error]')`, 20000);
-        const java = await b.evaluate(`(() => { const t = sel => (document.querySelector(sel) || {}).textContent || '';
-            return { error: t('[data-testid=java-error]'), signature: t('[data-testid=java-signature]'), cls: t('[data-testid=java-class]'),
-                bundle: t('[data-testid=java-bundle]'), plugin: t('[data-testid=java-plugin]'), key: new URLSearchParams(location.search).get('op') }; })()`);
+        const javaText = sel => b.evaluate(`(document.querySelector(${q(sel)}) || {}).textContent || ''`);
+        const javaPage = async (page, sel) => { await click(`[data-testid=java-nav-${page}]`); await b.waitFor(`!!document.querySelector(${q(sel)})`, 3000); return javaText(sel); };
+        const java = {
+            error: await javaText('[data-testid=java-error]'),
+            signature: await javaText('[data-testid=java-signature]'),
+            colored: await b.evaluate(`!!document.querySelector('[data-testid=java-signature] .rab-n-jc-ann')`),
+            pages: await b.evaluate(`[...document.querySelectorAll('.rab-n-java-nav [role=tab]')].map(e => e.textContent)`),
+            key: await b.evaluate(`new URLSearchParams(location.search).get('op')`),
+        };
+        java.cls = await javaPage('class', '[data-testid=java-class]');
+        java.bundle = await javaPage('bundle', '[data-testid=java-bundle]');
+        java.plugin = await javaPage('plugin', '[data-testid=java-plugin]');
         const unknown = await b.evaluate(`fetch(${q(CONTEXT)} + '/rest/restbrowser/1/catalog/details?op=' + encodeURIComponent('no.such:module:GET:x'),
             { credentials: 'same-origin' }).then(r => r.status)`);
-        c.check('the Java tab shows the method, its class, the OSGi bundle and the plugin',
-            !java.error && java.signature.includes('(') && /Name/.test(java.cls) && /Symbolic name|Not in an OSGi bundle/.test(java.bundle)
+        c.check('the Java tab: a menu of pages (method, class, bundle, plugin, …), the method with coloured annotations',
+            !java.error && java.signature.includes('(') && java.colored && java.pages.length >= 6
+            && /Name/.test(java.cls) && /Symbolic name|Not in an OSGi bundle/.test(java.bundle)
             && java.plugin.includes(java.key.split(':')[0]) && unknown === 404,
             { ...java, signature: java.signature.slice(0, 200), bundle: java.bundle.slice(0, 120), plugin: java.plugin.slice(0, 120), unknown });
+        await click('[data-testid=java-nav-method]');
         await b.shot(path.join(SHOTS, `${PRODUCT}-next-7-java.png`));
+
+        // the request and the response each take the whole screen with their button, and give it back
+        const box = sel => b.evaluate(`(() => { const e = document.querySelector(${q(sel)}); if (!e) return null; const r = e.getBoundingClientRect();
+            return { w: Math.round(r.width), h: Math.round(r.height), top: Math.round(r.top), shown: getComputedStyle(e).display !== 'none' }; })()`);
+        const screen = await b.evaluate(`({ w: innerWidth, h: innerHeight })`);
+        const whole = r => !!r && r.shown && r.top <= 1 && Math.abs(r.w - screen.w) <= 20 && Math.abs(r.h - screen.h) <= 2;
+        await click('[data-testid=max-top]');
+        await sleep(150);
+        const top = { operation: await box('[data-testid=operation]'), response: await box('[data-testid=response]') };
+        await press('Escape');
+        await sleep(150);
+        const topBack = await box('[data-testid=operation]');
+        await click('[data-testid=max-bottom]');
+        await sleep(150);
+        const bottom = { response: await box('[data-testid=response]'), head: await box('.rab-n-op-head') };
+        await click('[data-testid=max-bottom]');
+        await sleep(150);
+        const bottomBack = await box('.rab-n-op-head');
+        c.check('the request and the response each take the whole screen and give it back (button, Escape)',
+            whole(top.operation) && !top.response.shown && !whole(topBack) && whole(bottom.response) && !bottom.head.shown && bottomBack.shown,
+            { screen, top, topBack, bottom, bottomBack });
 
         // a path parameter's value is URL-encoded; the request is a GET of something that cannot exist
         let templatedKey = null;
@@ -243,13 +286,6 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         }
 
         // the keyboard: / focuses the search, arrows move through the results, Enter opens one
-        const KEYS = { '/': [191, 'Slash'], ArrowDown: [40, 'ArrowDown'], ArrowRight: [39, 'ArrowRight'], Enter: [13, 'Enter'], Escape: [27, 'Escape'] };
-        const press = async key => {
-            const [code, name] = KEYS[key];
-            const base = { key, code: name, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code };
-            await b.send('Input.dispatchKeyEvent', { type: key === '/' ? 'keyDown' : 'rawKeyDown', ...base, ...(key === '/' ? { text: '/' } : {}) });
-            await b.send('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
-        };
         await b.evaluate(`document.activeElement && document.activeElement.blur(), true`);
         await press('/');
         const focused = await b.evaluate(`document.activeElement === document.querySelector('[data-testid=search]')`);
