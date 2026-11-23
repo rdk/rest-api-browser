@@ -5,7 +5,7 @@ import {
   type BundleInfo, type JavaClass, type JavaMethod, type OperationDetails, type PluginInfo, type RestModuleInfo, type Section,
 } from '../core/details';
 import { annotationTokens, toLines, tokenize, type Token } from '../core/javatokens';
-import { CopyButton } from './bits';
+import { CopyButton, plural, safeHref } from './bits';
 
 type Page = 'method' | 'class' | 'types' | 'bundle' | 'imports' | 'exports' | 'plugin' | 'modules' | 'rest';
 /** The page last looked at, kept while the page is open: the next operation opens on it too. */
@@ -44,7 +44,25 @@ export function JavaTab({ baseUrl, opKey }: { baseUrl: string; opKey: string }) 
     };
   }, [baseUrl, opKey, reload]);
 
-  if (error) return <div class="rab-n-pad rab-n-java-error" data-testid="java-error">{error}</div>;
+  const again = () => {
+    forgetDetails(opKey);
+    setReload((r) => r + 1);
+  };
+  const reloadButton = (label: string) => (
+    <button class="rab-n-quiet" onClick={again} title="Read it again from the server">
+      <svg class="rab-n-svg" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="M13 8a5 5 0 11-1.5-3.6M13 2.5v3h-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      {label}
+    </button>
+  );
+  if (error) {
+    return (
+      <div class="rab-n-pad rab-n-java-error" data-testid="java-error">
+        {error} {reloadButton('Try again')}
+      </div>
+    );
+  }
   if (!details) {
     return (
       <div class="rab-n-pad rab-n-subtle" data-testid="java-loading">
@@ -55,7 +73,7 @@ export function JavaTab({ baseUrl, opKey }: { baseUrl: string; opKey: string }) 
   const n = (s: string) => (full ? s : shortJava(s));
   const method = isError(details.method) ? null : details.method;
   const cls = isError(details.resourceClass) ? null : details.resourceClass;
-  const bundle = isError(details.bundle) || 'none' in details.bundle ? null : details.bundle;
+  const bundle = !details.bundle || isError(details.bundle) || 'none' in details.bundle ? null : details.bundle;
   const plugin = isError(details.plugin) ? null : details.plugin;
   const pages: { id: Page; label: string; count?: number; failed?: boolean; hidden?: boolean }[] = [
     { id: 'method', label: 'Method', failed: isError(details.method) },
@@ -68,24 +86,22 @@ export function JavaTab({ baseUrl, opKey }: { baseUrl: string; opKey: string }) 
     { id: 'modules', label: 'Modules', count: plugin?.moduleCount, hidden: !plugin },
     { id: 'rest', label: 'REST module', failed: isError(details.module) },
   ];
-  // the page's tools, quiet, at the right of the page's first heading (they scroll with it, never over the content)
-  const tools = (
-    <span class="rab-n-java-tools">
-      <label class="rab-n-java-toggle" title="Show class names with their packages">
-        <input type="checkbox" checked={full} onChange={(e) => setFull((e.target as HTMLInputElement).checked)} /> Full names
-      </label>
-      {cls && <CopyButton quiet label="Copy class" text={() => cls.name} />}
-      {method && <CopyButton quiet label="Copy method" text={() => `${method.class}#${method.name}`} />}
-      <button class="rab-n-quiet" onClick={() => { forgetDetails(opKey); setReload((r) => r + 1); }} title="Read it again from the server">
-        <svg class="rab-n-svg" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <path d="M13 8a5 5 0 11-1.5-3.6M13 2.5v3h-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-        Reload
-      </button>
-    </span>
-  );
   const shown = pages.filter((p) => !p.hidden);
   const current = shown.some((p) => p.id === page) ? page : 'method';
+  // the page's tools, quiet, at the right of the page's first heading (they scroll with it, never over the content);
+  // "Full names" only where class names are shown
+  const tools = (
+    <span class="rab-n-java-tools">
+      {(current === 'method' || current === 'class' || current === 'types') && (
+        <label class="rab-n-java-toggle" title="Show class names with their packages">
+          <input type="checkbox" checked={full} onChange={(e) => setFull((e.target as HTMLInputElement).checked)} /> Full names
+        </label>
+      )}
+      {cls && <CopyButton quiet label="Copy class" text={() => cls.name} />}
+      {method && <CopyButton quiet label="Copy method" text={() => `${method.class}#${method.name}`} />}
+      {reloadButton('Reload')}
+    </span>
+  );
   const onNavKey = (e: KeyboardEvent) => {
     const i = shown.findIndex((p) => p.id === current);
     const next = e.key === 'ArrowDown' ? i + 1 : e.key === 'ArrowUp' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? shown.length - 1 : -2;
@@ -147,7 +163,7 @@ export function JavaTab({ baseUrl, opKey }: { baseUrl: string; opKey: string }) 
         {current === 'types' && (
           <Block title="Types in the signature" testId="java-types" section={details.types} tools={tools}>
             {(types) => (
-              <Filtered rows={types} text={(t) => t.name + ' ' + t.from} head={['Type', 'From']}
+              <Filtered key="types" rows={types} text={(t) => t.name + ' ' + t.from} head={['Type', 'From']}
                         row={(t) => [<code><Code tokens={tokenize(n(t.name))} /></code>, <span class="rab-n-subtle">{t.from}</span>]} />
             )}
           </Block>
@@ -160,7 +176,7 @@ export function JavaTab({ baseUrl, opKey }: { baseUrl: string; opKey: string }) 
         {current === 'imports' && bundle?.imports && (
           <Block title={`Imported packages (${bundle.importCount}) and the bundles that provide them`} testId="java-imports" section={bundle} tools={tools}>
             {(b) => (
-              <Filtered rows={b.imports!} total={b.importCount} text={(i) => `${i.package} ${i.from}`} head={['Package', 'Version', 'From']}
+              <Filtered key="imports" rows={b.imports!} total={b.importCount} text={(i) => `${i.package} ${i.from}`} head={['Package', 'Version', 'From']}
                         row={(i) => [<code>{i.package}</code>, <span class="rab-n-subtle">{i.version}</span>, <span>{i.from}</span>]} />
             )}
           </Block>
@@ -168,8 +184,8 @@ export function JavaTab({ baseUrl, opKey }: { baseUrl: string; opKey: string }) 
         {current === 'exports' && bundle?.exports && (
           <Block title={`Exported packages (${bundle.exportCount}) and how many bundles use them`} section={bundle} tools={tools}>
             {(b) => (
-              <Filtered rows={b.exports!} total={b.exportCount} text={(e) => e.package} head={['Package', 'Version', 'Used by']}
-                        row={(e) => [<code>{e.package}</code>, <span class="rab-n-subtle">{e.version}</span>, <span>{e.users} bundles</span>]} />
+              <Filtered key="exports" rows={b.exports!} total={b.exportCount} text={(e) => e.package} head={['Package', 'Version', 'Used by']}
+                        row={(e) => [<code>{e.package}</code>, <span class="rab-n-subtle">{e.version}</span>, <span>{plural(e.users, 'bundle')}</span>]} />
             )}
           </Block>
         )}
@@ -181,7 +197,7 @@ export function JavaTab({ baseUrl, opKey }: { baseUrl: string; opKey: string }) 
         {current === 'modules' && plugin && (
           <Block title={`The plugin's modules (${plugin.moduleCount})`} testId="java-modules" section={plugin} tools={tools}>
             {(p) => (
-              <Filtered rows={p.modules} total={p.moduleCount} text={(m) => `${m.key} ${m.type} ${m.name ?? ''}`} head={['Key', 'Type', 'State']}
+              <Filtered key="modules" rows={p.modules} total={p.moduleCount} text={(m) => `${m.key} ${m.type} ${m.name ?? ''}`} head={['Key', 'Type', 'State']}
                         row={(m) => [<code>{m.key}</code>, <span class="rab-n-subtle">{m.type}</span>,
                                      <span class={m.enabled ? 'rab-n-java-ok' : 'rab-n-java-deprecated'}>{m.enabled ? 'enabled' : 'disabled'}</span>]} />
             )}
@@ -198,6 +214,8 @@ function describe(e: unknown): string {
     if (e.status === 403) return 'Only system administrators see the Java behind an operation.';
     if (e.reason === 'unknown-operation') return 'This operation is not in the module any more: the catalog may be out of date. Rebuild it from the menu.';
     if (e.reason === 'not-described') return 'This module is not read from Jersey, so its Java is unknown.';
+    if (e.reason === 'session-expired') return 'Your session has expired: reload the page to log in again.';
+    if (e.reason === 'not-details') return 'The server answered with something other than the details (a proxy or login page?).';
     return `The server could not read it (${e.reason}).`;
   }
   return 'The request failed: ' + (e instanceof Error ? e.message : String(e));
@@ -336,7 +354,7 @@ function BundleFacts({ b }: { b: BundleInfo }) {
       <Fact name="Id and state">{b.id} · <span class={b.state === 'ACTIVE' ? 'rab-n-java-ok' : 'rab-n-java-deprecated'}>{b.state}</span></Fact>
       <Fact name="Location"><code class="rab-n-java-wrap">{b.location}</code></Fact>
       {b.lastModified > 0 && <Fact name="Last modified">{new Date(b.lastModified).toLocaleString()}</Fact>}
-      {b.importCount !== undefined && <Fact name="Wiring">{b.importCount} imported packages, {b.exportCount} exported</Fact>}
+      {b.importCount !== undefined && <Fact name="Wiring">{plural(b.importCount, 'imported package')}, {b.exportCount ?? 0} exported</Fact>}
       {Object.entries(b.headers).map(([k, v]) => <Fact key={k} name={k}><span class="rab-n-java-wrap">{v}</span></Fact>)}
     </dl>
   );
@@ -351,7 +369,8 @@ function PluginFacts({ p }: { p: PluginInfo }) {
       {p.version && <Fact name="Version">{p.version}</Fact>}
       {p.vendor && (
         <Fact name="Vendor">
-          {p.vendorUrl ? <a href={p.vendorUrl} target="_blank" rel="noopener noreferrer">{p.vendor}</a> : p.vendor}
+          {/* the descriptor's URL is not trusted: only http(s) becomes a link */}
+          {safeHref(p.vendorUrl) ? <a href={safeHref(p.vendorUrl)} target="_blank" rel="noopener noreferrer">{p.vendor}</a> : p.vendor}
         </Fact>
       )}
       {p.description && <Fact name="Description">{p.description}</Fact>}

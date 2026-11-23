@@ -310,6 +310,7 @@
   flex: none;
 }
 .rab-n-topbar-title {
+  white-space: nowrap;
   font-size: 14px;
   font-weight: 700;
   letter-spacing: -0.015em;
@@ -369,6 +370,8 @@
   background: none;
   border: 1px solid color-mix(in srgb, var(--rab-topbar-fg) 20%, transparent);
   text-decoration: none;
+  white-space: nowrap;
+  flex: none;
   transition: background var(--rab-ease), border-color var(--rab-ease), color var(--rab-ease);
 }
 .rab-n a.rab-n-version:hover {
@@ -388,6 +391,8 @@
   font-weight: 600;
   color: color-mix(in srgb, var(--rab-topbar-fg) 88%, transparent);
   text-decoration: none;
+  white-space: nowrap;
+  flex: none;
   transition: background var(--rab-ease), color var(--rab-ease);
 }
 .rab-n a.rab-n-top-link:hover { color: var(--rab-topbar-fg); background: var(--rab-topbar-glass); text-decoration: none; }
@@ -411,7 +416,7 @@
   color: var(--rab-subtlest);
 }
 .rab-n-pin-hint.pinned { color: var(--rab-link); }
-.rab-n-pin-hint kbd {
+.rab-n .rab-n-pin-hint kbd {
   font: 600 10px/14px var(--rab-mono);
   padding: 0 4px;
   border-radius: 3px;
@@ -450,13 +455,22 @@
   border-radius: var(--rab-radius-md) var(--rab-radius-md) 0 0;
   background: var(--rab-grad-accent);
 }
-.rab-n-brand-wrap.pinned .rab-n-about { visibility: visible; opacity: 1; transform: none; pointer-events: auto; transition: none; }
 .rab-n-brand-wrap:hover .rab-n-about, .rab-n-brand:focus-visible + .rab-n-about {
   visibility: visible;
   opacity: 1;
   transform: none;
   transition: opacity 140ms ease 350ms, transform 140ms ease 350ms, visibility 0s linear 350ms;
 }
+/* pinned: at once, with the ring of a pinned card; dismissed with Escape: hidden even under the pointer */
+.rab-n-brand-wrap.pinned .rab-n-about {
+  visibility: visible;
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+  transition: none;
+  outline: 2px solid color-mix(in srgb, var(--rab-focus) 45%, transparent);
+}
+.rab-n-brand-wrap.dismissed .rab-n-about { visibility: hidden; opacity: 0; transition: none; }
 .rab-n-about-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .rab-n-about-mark {
   display: inline-flex;
@@ -577,7 +591,7 @@
 
 /* Main split layout */
 .rab-n-body-row { display: flex; flex: 1; min-height: 0; }
-.rab-n-side { flex: none; display: flex; min-width: 240px; background: var(--rab-grad-side); }
+.rab-n-side { flex: none; display: flex; min-width: 240px; max-width: 75%; background: var(--rab-grad-side); }
 .rab-n-main { flex: 1; min-width: 0; display: flex; background: var(--rab-surface); }
 
 /* Sleek draggable splitters */
@@ -706,10 +720,15 @@
 .rab-n-button:active:not(:disabled) { transform: translateY(0.5px); }
 .rab-n-button:disabled { opacity: 0.48; cursor: not-allowed; box-shadow: none; }
 
-.rab-n-copy.copied {
+.rab-n-copy.copied, .rab-n-url-group .rab-n-copy.copied {
   background: var(--rab-bg-success);
   border-color: color-mix(in srgb, var(--rab-success) 40%, var(--rab-border));
   color: var(--rab-success);
+}
+.rab-n-copy.failed, .rab-n-url-group .rab-n-copy.failed {
+  background: var(--rab-bg-danger);
+  border-color: color-mix(in srgb, var(--rab-danger) 40%, var(--rab-border));
+  color: var(--rab-danger);
 }
 
 /* Primary and write-method gradient Send button with colored hover glow */
@@ -830,7 +849,7 @@
   height: 13px;
   border: 2px solid color-mix(in srgb, var(--rab-brand) 22%, var(--rab-border));
   border-top-color: var(--rab-brand);
-  border-right-color: var(--rab-discovery-bold);
+  border-right-color: var(--rab-spinner-accent, var(--rab-discovery-bold));
   border-radius: 50%;
   animation: rab-n-spin 0.75s linear infinite;
   vertical-align: -2px;
@@ -862,11 +881,11 @@
 .rab-n-sidebar-head {
   padding: 7px 8px 5px;
   border-bottom: 1px solid var(--rab-border);
-  background: linear-gradient(
+  background: var(--rab-grad-side-head, linear-gradient(
     180deg,
     color-mix(in srgb, var(--rab-bg-info) 34%, var(--rab-surface)),
     color-mix(in srgb, var(--rab-bg-discovery) 16%, transparent)
-  );
+  ));
 }
 
 .rab-n-search-wrap { position: relative; display: flex; align-items: center; }
@@ -985,7 +1004,7 @@
   border-radius: 2px;
 }
 
-/* Virtualized operations list: strict fixed 28px rows, no shadows/filters/gradients on unselected rows */
+/* Virtualized operations list: strict fixed 24px rows, no shadows/filters/gradients on unselected rows */
 .rab-n-list { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .rab-n-vlist { flex: 1; overflow: auto; position: relative; min-height: 0; }
 .rab-n-vrow { position: absolute; left: 0; right: 0; }
@@ -1046,16 +1065,19 @@
 .rab-n-op:hover .rab-n-op-path { color: var(--rab-text); }
 
 /* Module header rows */
-/* The list's module headers: a flat, subtle tint of the brand, a little stronger on hover; skins may set their own */
+/* The list's module headers: a flat band of a cool blue slate, clearly darker than the rows, stronger on hover, no
+   lines; light and dark each mix it from the theme's own surface. Skins set their own hue. */
 .rab-n {
-  --rab-group-bg: color-mix(in srgb, var(--rab-brand) 6%, var(--rab-surface));
-  --rab-group-bg-hover: color-mix(in srgb, var(--rab-brand) 10%, var(--rab-surface));
-  --rab-group-border: color-mix(in srgb, var(--rab-brand) 10%, var(--rab-border-subtle));
+  --rab-group-base: color-mix(in srgb, var(--rab-text) 6%, var(--rab-surface));
+  --rab-group-hue: color-mix(in srgb, var(--rab-brand) 70%, var(--rab-discovery-bold));
+  --rab-group-bg: color-mix(in srgb, var(--rab-group-hue) 16%, var(--rab-group-base));
+  --rab-group-bg-hover: color-mix(in srgb, var(--rab-group-hue) 23%, var(--rab-group-base));
 }
 [data-color-mode="dark"] .rab-n {
-  --rab-group-bg: color-mix(in srgb, var(--rab-brand) 12%, var(--rab-surface));
-  --rab-group-bg-hover: color-mix(in srgb, var(--rab-brand) 18%, var(--rab-surface));
-  --rab-group-border: color-mix(in srgb, var(--rab-brand) 18%, var(--rab-border-subtle));
+  --rab-group-base: color-mix(in srgb, #000 25%, var(--rab-surface));
+  --rab-group-hue: var(--ds-background-accent-blue-subtle, #0055cc);
+  --rab-group-bg: color-mix(in srgb, var(--rab-group-hue) 45%, var(--rab-group-base));
+  --rab-group-bg-hover: color-mix(in srgb, var(--rab-group-hue) 60%, var(--rab-group-base));
 }
 .rab-n-module {
   position: relative;
@@ -1064,11 +1086,11 @@
   letter-spacing: 0.005em;
   color: var(--rab-text);
   background: var(--rab-group-bg);
-  border-top: 1px solid var(--rab-group-border);
-  border-bottom: 1px solid var(--rab-group-border);
 }
 .rab-n .rab-n-module:hover { background: var(--rab-group-bg-hover); }
 .rab-n-module.failed .rab-n-count { color: var(--rab-danger); font-weight: 500; }
+/* left out on purpose (excluded, REST v1): a quiet note, not an error */
+.rab-n-module.skipped .rab-n-count { color: var(--rab-subtlest); font-weight: 400; }
 .rab-n-module.pending { opacity: 0.65; }
 .rab-n-module-path { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .rab-n-module .rab-n-ticks + .rab-n-count { margin-left: 6px; }
@@ -1138,6 +1160,10 @@
 .rab-n-tick.rab-n-tone-sysadmin { box-shadow: 0 0 0 2px color-mix(in srgb, var(--tone) 32%, transparent); margin: 0 2px; }
 .rab-n-tick.rab-n-tone-deprecated { width: 6px; height: 6px; margin: 0 1px; border-radius: 1px; transform: rotate(45deg); }
 .rab-n-card-tick { display: inline-block; margin-right: 7px; vertical-align: middle; position: relative; top: -1px; }
+/* in the hover card every tick keeps the same gap to its text, whatever its shape (the list's own margins differ) */
+.rab-n-tick.rab-n-card-tick { margin: 0 7px 0 0; }
+.rab-n-tick.rab-n-card-tick.rab-n-tone-sysadmin { margin: 0 9px 0 2px; }
+.rab-n-tick.rab-n-card-tick.rab-n-tone-deprecated { margin: 0 8px 0 1px; }
 .rab-n-tone-supported { --tone: var(--ds-icon-success, #22a06b); }
 .rab-n-tone-app { --tone: var(--ds-icon-discovery, #8270db); }
 .rab-n-tone-bundled { --tone: var(--ds-icon-subtlest, #8590a2); }
@@ -1154,7 +1180,9 @@
   z-index: 40;
   width: max-content;
   min-width: 260px;
-  max-width: 400px;
+  max-width: min(400px, calc(100% - 12px));
+  max-height: calc(100% - 12px);
+  overflow-y: auto;
   padding: 11px 13px 10px;
   border-radius: var(--rab-radius-md);
   border: 1px solid var(--rab-border);
@@ -1204,24 +1232,6 @@
 .rab-n-card-mono { font-family: var(--rab-mono); font-size: 11px; }
 .rab-n-card-note { color: var(--rab-subtlest); }
 .rab-n-card-error { color: var(--rab-danger); }
-
-/* Tags / Lozenges */
-.rab-n-tag {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 17px;
-  padding: 0 7px;
-  border-radius: var(--rab-radius-pill);
-  background: var(--rab-neutral);
-  color: var(--rab-subtle);
-  white-space: nowrap;
-}
-.rab-n-tag-supported { background: var(--rab-bg-success); color: var(--rab-success); }
-.rab-n-tag-app { background: var(--rab-bg-discovery); color: var(--rab-discovery); }
-.rab-n-tag-deprecated { background: var(--rab-bg-danger); color: var(--rab-danger); }
 
 /* ---------------- Operation Pane ---------------- */
 .rab-n-operation { display: flex; flex-direction: column; flex: 1; min-width: 0; }
@@ -1374,6 +1384,8 @@
 .rab-n-tool:hover:not(:disabled) { background: var(--rab-hover); color: var(--rab-text); }
 .rab-n-tool:disabled { color: var(--rab-subtlest); opacity: 0.45; cursor: default; }
 .rab-n-tool.on { color: var(--rab-link); background: var(--rab-selected); }
+.rab-n-tool.done { color: var(--rab-success); }
+.rab-n-tool.failed { color: var(--rab-danger); }
 .rab-n-tool-sep { width: 1px; height: 16px; margin: 0 4px 0 -4px; background: var(--rab-border); flex: none; }
 
 /* A box on the whole screen: the request with its URL bar, or the response */
@@ -1777,6 +1789,7 @@
 .rab-n-header-row:last-child { border-bottom: 0; }
 .rab-n-header-name { color: var(--rab-info); font-weight: 600; margin-right: 4px; }
 .rab-n-headers-note { margin-top: 8px; font-size: 12px; line-height: 1.5; color: var(--rab-subtlest); }
+.rab-n-headers-note.is-error { color: var(--rab-danger); }
 .rab-n-headers-group {
   display: flex;
   align-items: baseline;
@@ -1809,67 +1822,37 @@
 }
 
 /* Code viewer and Find bar */
-.rab-n-code-wrap { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-.rab-n-find {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  padding: 4px 10px;
-  background: color-mix(in srgb, var(--rab-bg-info) 24%, var(--rab-sunken));
-  border-bottom: 1px solid var(--rab-border-subtle);
-  flex: none;
-}
-/* in the response's tab bar, right after the tabs */
-.rab-n-tabbar-response > .rab-n-tabs { flex: none; }
-.rab-n-tabbar-response > .rab-n-find {
-  flex: 0 1 auto;
-  min-width: 0;
-  padding: 0 10px 0 6px;
-  background: none;
-  border: 0;
-}
-.rab-n-tabbar-response .rab-n-find input { width: 180px; max-width: 30vw; min-width: 90px; }
-/* quiet in the tab bar: no frame or fill until hovered or used */
-.rab-n-tabbar-response .rab-n-find { padding: 0 2px 0 6px; gap: 6px; }
-.rab-n-tabbar-response .rab-n-find input {
-  border-color: transparent;
+.rab-n-code-wrap { display: flex; flex-direction: column; flex: 1; min-height: 0; position: relative; }
+/* the open tab's content, below the response's header */
+.rab-n-response-pane { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
+/* measures the code font's character width (Raw wraps at the pane's width) */
+.rab-n-code-probe { position: absolute; visibility: hidden; white-space: pre; pointer-events: none; }
+/* the tabs shrink and scroll sideways when the pane is narrow, so the find box and the icons stay reachable */
+.rab-n-tabbar-response > .rab-n-tabs { flex: 0 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.rab-n-tabbar-response .rab-n-tab { flex: none; }
+/* the find box, in the response's tab bar right after the tabs: quiet, no frame or fill until hovered or used */
+.rab-n-find { display: flex; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0; padding: 0 2px 0 6px; }
+.rab-n-find-wrap { position: relative; display: flex; align-items: center; min-width: 0; }
+.rab-n-find-icon { position: absolute; left: 9px; color: var(--rab-subtlest); opacity: 0.8; pointer-events: none; }
+.rab-n-find input {
+  width: 180px;
+  max-width: 30vw;
+  min-width: 60px;
+  border: 1.5px solid transparent;
+  border-radius: var(--rab-radius-md);
+  padding: 1px 8px 1px 26px;
   background: color-mix(in srgb, var(--rab-surface) 55%, transparent);
+  color: var(--rab-text);
+  font: inherit;
   font-size: 12px;
-  padding-top: 1px;
-  padding-bottom: 1px;
+  transition: border-color var(--rab-ease), box-shadow var(--rab-ease);
 }
-.rab-n-tabbar-response .rab-n-find input:hover:not(:focus) { border-color: var(--rab-border); }
-.rab-n-tabbar-response .rab-n-find input:focus {
+.rab-n-find input:hover:not(:focus) { border-color: var(--rab-border); }
+.rab-n .rab-n-find input:focus {
+  outline: 2px solid transparent;
   background: var(--rab-input);
   border-color: var(--ds-border-focused, #388bff);
   box-shadow: 0 0 0 1px var(--ds-border-focused, #388bff);
-}
-.rab-n-tabbar-response .rab-n-find-icon { color: var(--rab-subtlest); opacity: 0.8; }
-.rab-n-tool.done { color: var(--rab-success); }
-.rab-n-find-wrap { position: relative; display: flex; align-items: center; min-width: 0; }
-.rab-n-find-icon { position: absolute; left: 9px; color: var(--rab-subtlest); pointer-events: none; }
-.rab-n-find input {
-  width: 240px;
-  border: 1.5px solid var(--rab-border);
-  border-radius: var(--rab-radius-md);
-  padding: 2px 8px 2px 26px;
-  background: var(--rab-input);
-  color: var(--rab-text);
-  font: inherit;
-  font-size: 12.5px;
-  transition: border-color var(--rab-ease), box-shadow var(--rab-ease);
-}
-.rab-n-find input:hover:not(:focus) {
-  border-color: color-mix(in srgb, var(--rab-brand) 40%, var(--rab-border));
-}
-.rab-n-find input:focus {
-  outline: 2px solid transparent;
-  outline-offset: 2px;
-  border-color: transparent;
-  background:
-    linear-gradient(var(--rab-input), var(--rab-input)) padding-box,
-    var(--rab-grad-brand) border-box;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rab-brand) 22%, transparent);
 }
 .rab-n-find-count {
   flex: none;
@@ -1911,6 +1894,9 @@
 }
 .rab-n-fold-btn:hover { color: var(--rab-text); }
 .rab-n-code-text { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.rab-n-code-pretty .rab-n-vrow { right: auto; min-width: 100%; }
+.rab-n-code-pretty .rab-n-line { width: max-content; min-width: 100%; padding-right: 12px; }
+.rab-n-code-pretty .rab-n-code-text { flex: none; overflow: visible; }
 .rab-n-folded {
   color: var(--rab-subtlest);
   background: var(--rab-neutral);
@@ -1952,9 +1938,9 @@
   border-radius: 11px;
   background: var(--rab-grad-brand);
   color: var(--rab-on-brand);
-  box-shadow:
+  box-shadow: var(--rab-welcome-icon-shadow,
     0 6px 20px color-mix(in srgb, var(--rab-brand) 34%, transparent),
-    inset 0 1px 0 color-mix(in srgb, #fff 24%, transparent);
+    inset 0 1px 0 color-mix(in srgb, #fff 24%, transparent));
   flex: none;
 }
 .rab-n-welcome h2 {
@@ -2049,3 +2035,25 @@ body.rab-next-page #footer {
 }
 /* and the panel around the app is the app: no padding (Confluence's has 20px all round) */
 :has(> #rab-next) { padding: 0 !important; }
+
+/* While the request has the whole screen, the response's outcome sits beside Send; a click shows the response */
+.rab-n-max-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--rab-radius-sm);
+  border: 1px solid var(--rab-border);
+  background: var(--rab-raised);
+  color: var(--rab-subtle);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.rab-n-max-status:hover { background: var(--rab-hover); color: var(--rab-text); }
+/* a history row whose body was cut, or whose secrets were left out, says so */
+.rab-n-history-note { flex: none; font-size: 11px; color: var(--rab-warning, var(--rab-subtlest)); white-space: nowrap; }
+/* keeps the custom header rows aligned when the empty row has no remove button */
+.rab-n-icon-slot { display: inline-block; width: 24px; flex: none; }

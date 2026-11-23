@@ -13,8 +13,11 @@ function decode(s: string): string {
   }
 }
 
+// The names come from the URL, so the maps have no prototype: "constructor" or "__proto__" is a name like any other.
+const dict = <T>(): Record<string, T> => Object.create(null) as Record<string, T>;
+
 export function parseState(search: string): RouteState {
-  const state: RouteState = { path: {}, q: {}, h: {} };
+  const state: RouteState = { path: dict(), q: dict(), h: dict() };
   for (const pair of search.replace(/^\?/, '').split('&')) {
     if (!pair) continue;
     const eq = pair.indexOf('=');

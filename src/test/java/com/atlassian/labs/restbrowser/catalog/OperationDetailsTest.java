@@ -12,13 +12,25 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.QueryParam;
 import org.junit.Test;
+import org.osgi.framework.Bundle;
+import org.osgi.framework.BundleReference;
+import org.osgi.framework.Version;
+import org.osgi.framework.wiring.BundleCapability;
+import org.osgi.framework.wiring.BundleRevision;
+import org.osgi.framework.wiring.BundleWire;
+import org.osgi.framework.wiring.BundleWiring;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.lang.reflect.Method;
+import java.util.HashMap;
+import java.util.Hashtable;
 import java.util.List;
 import java.util.Map;
 
+import static java.util.Objects.requireNonNull;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
@@ -73,6 +85,161 @@ public class OperationDetailsTest {
         assertEquals("@" + Doc.class.getName() + "(paths=@jakarta.ws.rs.Path(\"x\"), state=java.lang.Thread$State.BLOCKED, "
                 + "summary=\"Gets a \\\"thing\\\"\", tags={\"a\", \"b\"})", doc);
         assertEquals("@jakarta.ws.rs.Path(\"/things\")", OperationDetails.annotation(ThingResource.class.getAnnotation(Path.class)));
+    }
+
+    /** Literals that need escapes. */
+    @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.RUNTIME)
+    public @interface Literal {
+        String text() default "";
+        char[] chars() default {};
+    }
+
+    @Literal(text = "a\tb\r\nc\\d\"e'f", chars = {'\'', '\\', '\n', '\r', '\t', '"'})
+    private static final class Escaped {
+    }
+
+    @Test
+    public void stringsAndCharsAreEscapedAsInSource() {
+        assertEquals("@" + Literal.class.getName() + "(chars={'\\'', '\\\\', '\\n', '\\r', '\\t', '\"'}, "
+                        + "text=\"a\\tb\\r\\nc\\\\d\\\"e'f\")",
+                OperationDetails.annotation(Escaped.class.getAnnotation(Literal.class)));
+    }
+
+    /** Two members, so one can fail. */
+    @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.RUNTIME)
+    public @interface Two {
+        String a() default "";
+        String b() default "";
+    }
+
+    @Test
+    @SuppressWarnings("ClassExplicitlyAnnotation")
+    public void aMemberThatCannotBeReadIsAQuestionMarkAndTheOthersStay() {
+        Two broken = new Two() {
+            @Override
+            public String a() {
+                throw new IllegalStateException("gone");
+            }
+
+            @Override
+            public String b() {
+                return "x";
+            }
+
+            @Override
+            public Class<? extends java.lang.annotation.Annotation> annotationType() {
+                return Two.class;
+            }
+        };
+        assertEquals("@" + Two.class.getName() + "(a=?, b=\"x\")", OperationDetails.annotation(broken));
+    }
+
+    /** Type variables, one bounded by itself. */
+    public static class Generic {
+        public <T extends Comparable<T>, E extends Exception> T max(List<? extends T> items) throws E {
+            return null;
+        }
+    }
+
+    @Test
+    public void aTypeVariableGivesItsBoundsOnce() throws Exception {
+        Method max = Generic.class.getMethod("max", List.class);
+        assertEquals(List.of(Comparable.class, List.class, Exception.class), OperationDetails.signatureTypes(max));
+    }
+
+    @Test
+    public void javaxIsTheJdkOnlyWhenTheJdkLoadsIt() throws Exception {
+        assertEquals("JDK", OperationDetails.origin(javax.sql.DataSource.class)); // the platform class loader
+        assertEquals("JDK", OperationDetails.origin(javax.net.ssl.SSLContext.class)); // the boot class loader
+        Class<?> inject = Class.forName("javax.inject.Inject"); // a jar on the class path, as in the product
+        assertTrue(OperationDetails.origin(inject), OperationDetails.origin(inject).startsWith("the product ("));
+    }
+
+    /** A class loader that is a bundle's, as OSGi's are; FrameworkUtil finds the bundle through it. */
+    private static final class BundleLoader extends ClassLoader implements BundleReference {
+        private final Bundle bundle;
+
+        BundleLoader(Bundle bundle) {
+            super(OperationDetailsTest.class.getClassLoader());
+            this.bundle = bundle;
+        }
+
+        @Override
+        public Bundle getBundle() {
+            return bundle;
+        }
+
+        Class<?> copy(Class<?> c) throws IOException {
+            try (InputStream in = c.getClassLoader().getResourceAsStream(c.getName().replace('.', '/') + ".class")) {
+                byte[] b = requireNonNull(in).readAllBytes();
+                return defineClass(c.getName(), b, 0, b.length);
+            }
+        }
+    }
+
+    /** A class for the bundle. */
+    public static final class Plain {
+    }
+
+    private static Bundle bundle(String name, String version, long id) {
+        Bundle b = mock(Bundle.class);
+        when(b.getSymbolicName()).thenReturn(name);
+        when(b.getVersion()).thenReturn(new Version(version));
+        when(b.getBundleId()).thenReturn(id);
+        return b;
+    }
+
+    private static BundleCapability capability(String pkg, Version version) {
+        BundleCapability c = mock(BundleCapability.class);
+        Map<String, Object> attrs = new HashMap<>();
+        attrs.put(BundleRevision.PACKAGE_NAMESPACE, pkg);
+        if (version != null) {
+            attrs.put("version", version);
+        }
+        when(c.getAttributes()).thenReturn(attrs);
+        return c;
+    }
+
+    private static BundleWire wire(BundleCapability capability, Bundle provider) {
+        BundleWire w = mock(BundleWire.class);
+        when(w.getCapability()).thenReturn(capability);
+        if (provider != null) {
+            BundleWiring providerWiring = mock(BundleWiring.class);
+            when(providerWiring.getBundle()).thenReturn(provider);
+            when(w.getProviderWiring()).thenReturn(providerWiring);
+        }
+        return w;
+    }
+
+    @Test
+    public void thePackagesOfABundleWithAndWithoutVersions() throws Exception {
+        Bundle own = bundle("com.example.things", "1.0.0", 42);
+        when(own.getHeaders()).thenReturn(new Hashtable<>(Map.of("Bundle-Name", "Things")));
+        when(own.getState()).thenReturn(Bundle.ACTIVE);
+        when(own.getLocation()).thenReturn("things.jar");
+        BundleWiring wiring = mock(BundleWiring.class);
+        when(own.adapt(BundleWiring.class)).thenReturn(wiring);
+        Bundle provider = bundle("org.example", "2.0.0", 7);
+        List<BundleWire> required = List.of(wire(capability("org.example.api", null), provider),
+                wire(capability("org.example.util", new Version("2.1.0")), provider));
+        when(wiring.getRequiredWires(BundleRevision.PACKAGE_NAMESPACE)).thenReturn(required);
+        BundleCapability api = capability("com.example.things.api", new Version("1.0.0"));
+        BundleCapability internal = capability("com.example.things.internal", null);
+        List<BundleWire> provided = List.of(wire(api, null), wire(api, null)); // two bundles use the api
+        when(wiring.getProvidedWires(BundleRevision.PACKAGE_NAMESPACE)).thenReturn(provided);
+        when(wiring.getCapabilities(BundleRevision.PACKAGE_NAMESPACE)).thenReturn(List.of(internal, api));
+
+        Class<?> c = new BundleLoader(own).copy(Plain.class);
+        assertEquals("com.example.things 1.0.0", OperationDetails.origin(c));
+        Json j = new Json();
+        OperationDetails.bundle(j, c);
+        String json = j.toString();
+        assertTrue(json, json.contains("\"symbolicName\":\"com.example.things\",\"version\":\"1.0.0\",\"state\":\"ACTIVE\""));
+        assertTrue(json, json.contains("\"imports\":[{\"package\":\"org.example.api\",\"version\":\"\",\"from\":\"org.example 2.0.0\",\"fromId\":\"7\"},"
+                + "{\"package\":\"org.example.util\",\"version\":\"2.1.0\""));
+        assertTrue(json, json.contains("\"exports\":[{\"package\":\"com.example.things.api\",\"version\":\"1.0.0\",\"users\":2},"
+                + "{\"package\":\"com.example.things.internal\",\"version\":\"\",\"users\":0}]"));
+        assertFalse(json, json.contains("null"));
     }
 
     @Test

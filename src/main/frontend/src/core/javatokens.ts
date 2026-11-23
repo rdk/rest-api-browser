@@ -2,7 +2,10 @@
 // one member per line. Not a Java parser: it reads what OperationDetails writes (annotations as source would write
 // them, generic type names) and falls back to plain tokens for anything else.
 
-/** ann "@Operation"; member "summary" (before "="); type "String"; kw public, class, true; str "x"; num 5, 1.0f; punct ( ) { } , = < > . */
+/**
+ * ann "@Operation"; member "summary" (before "="); type "String"; kw public, class, true; str "x"; num 5, 1.0f and
+ * constants (MAX_VALUE, Policy.RUNTIME); punct ( ) { } , = < > .
+ */
 export type TokenKind = 'ann' | 'member' | 'type' | 'kw' | 'str' | 'num' | 'punct' | 'name' | 'space';
 export interface Token { text: string; kind: TokenKind; }
 
@@ -13,7 +16,27 @@ const KEYWORDS = new Set([
 ]);
 const TOKEN = /("(?:[^"\\]|\\.)*"?)|('(?:[^'\\]|\\.)*'?)|(@[\w$.]+)|(-?\d[\w.]*)|([A-Za-z_$][\w$]*)|(\s+)|(.)/g;
 
-/** Splits Java text into tokens; an identifier right before "=" is a member, a capitalised one a type. */
+// The token before index k that is not a space, or -1.
+function before(out: Token[], k: number): number {
+  let i = k - 1;
+  while (i >= 0 && out[i].kind === 'space') i--;
+  return i;
+}
+
+/**
+ * Whether an all-caps name is a constant: one with an underscore (MAX_VALUE), or a member of a type
+ * (MediaType.APPLICATION_JSON, RetentionPolicy.RUNTIME). Otherwise it is a type, as URI, URL, UUID or JSON are.
+ */
+function isConstant(text: string, out: Token[]): boolean {
+  if (!/^[A-Z_$][A-Z0-9_$]*$/.test(text) || !/[A-Z]/.test(text)) return false;
+  if (text.includes('_')) return true;
+  const dot = before(out, out.length);
+  if (dot < 0 || out[dot].text !== '.') return false;
+  const owner = before(out, dot);
+  return owner >= 0 && (out[owner].kind === 'type' || out[owner].kind === 'num') && /^[A-Z]/.test(out[owner].text);
+}
+
+/** Splits Java text into tokens; an identifier right before "=" is a member, a capitalised one a type (see isConstant). */
 export function tokenize(s: string): Token[] {
   const out: Token[] = [];
   for (const m of s.matchAll(TOKEN)) {
@@ -24,7 +47,7 @@ export function tokenize(s: string): Token[] {
     else if (ident !== undefined) {
       const rest = s.slice(m.index! + text.length);
       const kind: TokenKind = KEYWORDS.has(text) ? 'kw' : /^\s*=(?!=)/.test(rest) ? 'member'
-        : /^[A-Z]/.test(text) && !/^[A-Z][A-Z0-9_]+$/.test(text) ? 'type' : /^[A-Z0-9_]+$/.test(text) ? 'num' : 'name';
+        : isConstant(text, out) ? 'num' : /^[A-Z]/.test(text) ? 'type' : 'name';
       out.push({ text, kind });
     } else if (space !== undefined) out.push({ text: ' ', kind: 'space' });
     else out.push({ text, kind: 'punct' });

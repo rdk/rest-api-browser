@@ -26,4 +26,12 @@ describe('router', () => {
     expect(parseState('foo=1&op=k')).toEqual({ op: 'k', path: {}, q: {}, h: {} });
     expect(parseState('')).toEqual({ path: {}, q: {}, h: {} });
   });
+
+  it('takes parameter names that Object.prototype also has', () => {
+    const s = parseState('?q.toString=x&q.constructor=1&q.__proto__=y&path.hasOwnProperty=p&h.__proto__=h&q.toString=z');
+    expect(Object.entries(s.q)).toEqual([['toString', ['x', 'z']], ['constructor', ['1']], ['__proto__', ['y']]]);
+    expect(Object.entries(s.path)).toEqual([['hasOwnProperty', 'p']]);
+    expect(Object.entries(s.h)).toEqual([['__proto__', 'h']]);
+    expect(parseState(formatState(s))).toEqual(s);
+  });
 });

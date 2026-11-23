@@ -38,6 +38,9 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// Names from the URL go into maps without a prototype, so "constructor" or "__proto__" is a name like any other.
+const dict = <T>(): Record<string, T> => Object.create(null) as Record<string, T>;
+
 function safeDecode(s: string): string {
   try {
     return decodeURIComponent(s);
@@ -124,7 +127,7 @@ function walk(node: Node, segs: string[], i: number, values: Record<string, stri
     for (const t of templates) {
       const m = t.seg.re.exec(segs[i]);
       if (!m) continue;
-      const v = { ...values };
+      const v = Object.assign(dict<string>(), values);
       t.seg.names.forEach((n, k) => (v[n] = m.groups?.[`p${k}`] ?? ''));
       const r = walk(t.node, segs, i + 1, v);
       if (r) return r;
@@ -132,7 +135,7 @@ function walk(node: Node, segs: string[], i: number, values: Record<string, stri
   }
   const remainder = segs.slice(i).join('/');
   for (const rest of node.rests.values()) {
-    if (rest.re.test(remainder)) return { ops: rest.ops, values: { ...values, [rest.name]: remainder } };
+    if (rest.re.test(remainder)) return { ops: rest.ops, values: Object.assign(dict<string>(), values, { [rest.name]: remainder }) };
   }
   return null;
 }
@@ -146,7 +149,7 @@ function pick(ops: Operation[]): Operation {
 }
 
 function parseQuery(qs: string): Record<string, string[]> {
-  const out: Record<string, string[]> = {};
+  const out = dict<string[]>();
   for (const pair of qs.split('&')) {
     if (!pair) continue;
     const eq = pair.indexOf('=');
@@ -209,7 +212,7 @@ export function createMatcher(summary: Summary, index: Index): Matcher {
       const q = noHash.indexOf('?');
       const rest = restPath(summary.baseUrl, q < 0 ? noHash : noHash.slice(0, q));
       if (rest === null) return null;
-      const query = q < 0 ? {} : parseQuery(noHash.slice(q + 1));
+      const query = q < 0 ? dict<string[]>() : parseQuery(noHash.slice(q + 1));
       const raw = rest.split('/');
       if (raw[raw.length - 1] === '') raw.pop();
       // ";matrix=params" belong to the request, not to the route.
@@ -218,7 +221,7 @@ export function createMatcher(summary: Summary, index: Index): Matcher {
       for (const t of tries) {
         const own = t.path ? t.path.split('/') : [];
         if (own.length > segs.length || own.some((s, i) => s !== segs[i])) continue;
-        const found = walk(t.root, segs.slice(own.length), 0, {});
+        const found = walk(t.root, segs.slice(own.length), 0, dict());
         if (found) return { op: pick(found.ops), values: found.values, query };
       }
       return null;

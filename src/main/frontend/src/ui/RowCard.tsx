@@ -2,7 +2,7 @@ import { useLayoutEffect } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import type { Module, Operation } from '../core/types';
 import { MethodBadge, PathText, PinHint } from './bits';
-import { accessFact, moduleFact, originLabel, paramSummary, sourceLabel, stabilityLabel, type Fact } from './facts';
+import { accessFact, isSkipped, moduleFact, originLabel, paramSummary, sourceLabel, stabilityLabel, type Fact } from './facts';
 
 export type CardTarget = { kind: 'op'; op: Operation; module?: Module } | { kind: 'module'; module: Module; count: number };
 
@@ -15,14 +15,18 @@ export function RowCard({ target, left, top, rowHeight, pinned, boxRef }: {
   boxRef: { current: HTMLDivElement | null };
 }) {
   const ref = boxRef;
-  // keep the card inside the app: it moves up when it would overflow the bottom, the arrow stays at the row
+  // keep the card inside the app: it moves up when it would overflow the bottom and left when it would overflow
+  // the right (a wide list), over the list then, without its arrow; the arrow stays at the row, within the card
   useLayoutEffect(() => {
     const el = ref.current;
     const root = el?.offsetParent as HTMLElement | null;
     if (!el || !root) return;
     const y = Math.max(6, Math.min(top - 8, root.clientHeight - el.offsetHeight - 6));
+    const x = Math.max(6, Math.min(left, root.clientWidth - el.offsetWidth - 6));
     el.style.top = y + 'px';
-    el.style.setProperty('--arrow', Math.round(top - y + rowHeight / 2) + 'px');
+    el.style.left = x + 'px';
+    el.classList.toggle('no-arrow', x < left);
+    el.style.setProperty('--arrow', Math.round(Math.min(Math.max(top - y + rowHeight / 2, 12), el.offsetHeight - 12)) + 'px');
   });
   return (
     <div ref={ref} class={'rab-n-card' + (pinned ? ' pinned' : '')} role="tooltip" data-testid="row-card"
@@ -62,18 +66,18 @@ function ModuleFacts({ m, count }: { m: Module; count: number }) {
   return (
     <>
       <div class="rab-n-card-head">
-        <span class="rab-n-card-path"><PathText path={m.path} /></span>
+        <span class="rab-n-card-path"><PathText path={m.path} rank={false} /></span>
       </div>
       <dl class="rab-n-card-facts">
         <Row name="API"><Dot fact={moduleFact(m)} />{stabilityLabel(m)}</Row>
         <AppRows m={m} />
         <Row name="Operations">
           {m.state === 'ok' ? (count === m.opCount ? m.opCount.toLocaleString() : `${count.toLocaleString()} of ${m.opCount.toLocaleString()} shown`)
-            : m.state === 'pending' ? 'Being read…' : 'Could not be described'}
+            : m.state === 'pending' ? 'Being read…' : isSkipped(m) ? 'Not described (left out on purpose)' : 'Could not be described'}
         </Row>
         {m.state === 'failed' && (
           <Row name="Reason">
-            <span class="rab-n-card-error">{m.reason ?? 'error'}{m.error ? ': ' + clip(m.error, 300) : ''}</span>
+            <span class={isSkipped(m) ? 'rab-n-card-note' : 'rab-n-card-error'}>{m.reason ?? 'error'}{m.error ? ': ' + clip(m.error, 300) : ''}</span>
           </Row>
         )}
         {source && <Row name="Read from">{source}</Row>}

@@ -77,7 +77,8 @@ export function search(rows: SearchRow[], query: string, filters: Filters = {}):
       a.row.rank - b.row.rank ||
       b.seg - a.seg ||
       a.row.path.length - b.row.path.length ||
-      (a.row.path < b.row.path ? -1 : a.row.path > b.row.path ? 1 : 0),
+      (a.row.path < b.row.path ? -1 : a.row.path > b.row.path ? 1 : 0) ||
+      byMethod(a.row.op.method, b.row.op.method),
   );
   return hits.map((h) => h.row);
 }
@@ -89,7 +90,21 @@ function methodOrder(method: string): number {
   return i < 0 ? MAIN_METHODS.length : i;
 }
 
-export function groupRows(summary: Summary, rows: SearchRow[], collapsed: Set<string> = new Set()): GroupRow[] {
+// GET, POST, PUT, PATCH, DELETE, then the others by name.
+function byMethod(a: string, b: string): number {
+  return methodOrder(a) - methodOrder(b) || (a < b ? -1 : a > b ? 1 : 0);
+}
+
+/**
+ * The list in modules: each module's row, then its operations unless it is collapsed. Failed and pending modules
+ * show even without operations, so their state is seen; with `supportedOnly` only the supported ones do.
+ */
+export function groupRows(
+  summary: Summary,
+  rows: SearchRow[],
+  collapsed: Set<string> = new Set(),
+  opts: { supportedOnly?: boolean } = {},
+): GroupRow[] {
   const byModule = new Map<string, SearchRow[]>();
   for (const row of rows) {
     const list = byModule.get(row.module.id);
@@ -97,7 +112,7 @@ export function groupRows(summary: Summary, rows: SearchRow[], collapsed: Set<st
     else byModule.set(row.module.id, [row]);
   }
   const modules = summary.modules
-    .filter((m) => byModule.has(m.id) || m.state !== 'ok')
+    .filter((m) => byModule.has(m.id) || (m.state !== 'ok' && (!opts.supportedOnly || m.stability === 'supported')))
     .sort(
       (a, b) =>
         ORIGIN_ORDER.indexOf(a.origin) - ORIGIN_ORDER.indexOf(b.origin) ||
@@ -112,9 +127,7 @@ export function groupRows(summary: Summary, rows: SearchRow[], collapsed: Set<st
     if (collapsed.has(module.id)) continue;
     const sorted = [...list].sort(
       (a, b) =>
-        (a.op.path < b.op.path ? -1 : a.op.path > b.op.path ? 1 : 0) ||
-        methodOrder(a.op.method) - methodOrder(b.op.method) ||
-        (a.op.method < b.op.method ? -1 : a.op.method > b.op.method ? 1 : 0),
+        (a.op.path < b.op.path ? -1 : a.op.path > b.op.path ? 1 : 0) || byMethod(a.op.method, b.op.method),
     );
     for (const row of sorted) out.push({ kind: 'op', op: row.op });
   }

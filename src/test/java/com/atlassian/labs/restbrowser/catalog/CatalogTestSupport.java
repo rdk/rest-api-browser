@@ -30,6 +30,12 @@ public final class CatalogTestSupport {
         return CatalogSnapshot.of(modules, operations, complete, modules.size(), modules.size(), ownVersion);
     }
 
+    /** A snapshot part way through a build: done of total modules read. */
+    public static CatalogSnapshot snapshot(List<ModuleEntry> modules, List<Operation> operations, boolean complete,
+                                           int done, int total, String ownVersion) {
+        return CatalogSnapshot.of(modules, operations, complete, done, total, ownVersion);
+    }
+
     /** A strict, minimal JSON parser: objects become LinkedHashMap, arrays List, numbers Long. Throws on bad JSON. */
     public static Object parseJson(String json) {
         Parser p = new Parser(json);

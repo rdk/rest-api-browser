@@ -112,3 +112,26 @@ describe('groupRows', () => {
     expect(g).toHaveLength(5);
   });
 });
+
+describe('search and group review fixes', () => {
+  it('orders the operations of one path by method when everything else ties', () => {
+    const sm = summary([module('m', 'x/1')]);
+    const r = buildRows(sm, index(['DELETE', 'OPTIONS', 'PUT', 'HEAD', 'GET', 'PATCH', 'POST'].map((m) => op('m', m, 'thing'))));
+    expect(search(r, 'thing').map((x) => x.op.method)).toEqual(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']);
+  });
+
+  it('leaves out failed and pending modules that are not supported when the list shows supported APIs only', () => {
+    const ms = [
+      module('ok', 'a/1'),
+      module('f1', 'b/1', { state: 'failed' }),
+      module('f2', 'd/1', { state: 'failed', stability: 'internal' }),
+      module('p1', 'c/1', { state: 'pending', stability: 'app' }),
+    ];
+    const sm = summary(ms);
+    const rs = buildRows(sm, index([op('ok', 'GET', 'x')]));
+    const ids = (g: ReturnType<typeof groupRows>) => g.flatMap((x) => (x.kind === 'module' ? [x.module.id] : []));
+    expect(ids(groupRows(sm, rs))).toEqual(['ok', 'f1', 'f2', 'p1']);
+    expect(ids(groupRows(sm, rs, new Set(), {}))).toEqual(['ok', 'f1', 'f2', 'p1']);
+    expect(ids(groupRows(sm, rs, new Set(), { supportedOnly: true }))).toEqual(['ok', 'f1']);
+  });
+});

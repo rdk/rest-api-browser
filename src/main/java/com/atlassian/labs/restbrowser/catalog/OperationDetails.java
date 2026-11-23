@@ -22,6 +22,7 @@ import java.lang.reflect.Modifier;
 import java.lang.reflect.Parameter;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.lang.reflect.TypeVariable;
 import java.lang.reflect.WildcardType;
 import java.security.CodeSource;
 import java.time.format.DateTimeFormatter;
@@ -29,7 +30,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.Dictionary;
-import java.util.IdentityHashMap;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -221,15 +223,15 @@ public class OperationDetails {
                 continue;
             }
             Object v;
+            Object def;
             try {
-                m.setAccessible(true);
-                v = m.invoke(a);
+                v = member(m, a);
+                def = m.getDefaultValue(); // a default whose class is missing throws TypeNotPresentException
             } catch (ReflectiveOperationException | RuntimeException | LinkageError x) {
                 set.add(m.getName() + "=?");
                 onlyValue = false;
                 continue;
             }
-            Object def = m.getDefaultValue();
             if (def != null && java.util.Objects.deepEquals(v, def)) {
                 continue;
             }
@@ -246,12 +248,22 @@ public class OperationDetails {
         return name + "(" + String.join(", ", set) + ")";
     }
 
+    /** A member's value; only an annotation type this code may not see needs setAccessible. */
+    private static Object member(Method m, Annotation a) throws ReflectiveOperationException {
+        try {
+            return m.invoke(a);
+        } catch (IllegalAccessException e) {
+            m.setAccessible(true);
+            return m.invoke(a);
+        }
+    }
+
     private static String annotationValue(Object v) {
         if (v instanceof String s) {
-            return '"' + s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n") + '"';
+            return '"' + escape(s, '"') + '"';
         }
         if (v instanceof Character c) {
-            return "'" + c + "'";
+            return "'" + escape(String.valueOf(c), '\'') + "'";
         }
         if (v instanceof Class<?> c) {
             return c.getName() + ".class";
@@ -279,20 +291,37 @@ public class OperationDetails {
         return String.valueOf(v);
     }
 
+    /** A string or char literal's content as source code writes it; quote is the literal's own quote. */
+    private static String escape(String s, char quote) {
+        StringBuilder b = new StringBuilder(s.length());
+        for (char c : s.toCharArray()) {
+            switch (c) {
+                case '\\' -> b.append("\\\\");
+                case '\n' -> b.append("\\n");
+                case '\r' -> b.append("\\r");
+                case '\t' -> b.append("\\t");
+                default -> b.append(c == quote ? "\\" + c : String.valueOf(c));
+            }
+        }
+        return b.toString();
+    }
+
     /** The classes a method's signature names (return, parameters, type arguments, exceptions), JDK ones included. */
     static List<Class<?>> signatureTypes(Method m) {
         Set<Class<?>> out = new LinkedHashSet<>();
-        collect(m.getGenericReturnType(), out);
+        Set<TypeVariable<?>> seen = new HashSet<>();
+        collect(m.getGenericReturnType(), out, seen);
         for (Type t : m.getGenericParameterTypes()) {
-            collect(t, out);
+            collect(t, out, seen);
         }
         for (Type t : m.getGenericExceptionTypes()) {
-            collect(t, out);
+            collect(t, out, seen);
         }
         return new ArrayList<>(out);
     }
 
-    private static void collect(Type t, Set<Class<?>> out) {
+    /** A type variable stands for its bounds; seen stops {@code <T extends Comparable<T>>} from going round. */
+    private static void collect(Type t, Set<Class<?>> out, Set<TypeVariable<?>> seen) {
         if (t instanceof Class<?> c) {
             Class<?> k = c;
             while (k.isArray()) {
@@ -302,30 +331,37 @@ public class OperationDetails {
                 out.add(k);
             }
         } else if (t instanceof ParameterizedType p) {
-            collect(p.getRawType(), out);
+            collect(p.getRawType(), out, seen);
             for (Type a : p.getActualTypeArguments()) {
-                collect(a, out);
+                collect(a, out, seen);
             }
         } else if (t instanceof GenericArrayType g) {
-            collect(g.getGenericComponentType(), out);
+            collect(g.getGenericComponentType(), out, seen);
         } else if (t instanceof WildcardType w) {
             for (Type b : w.getUpperBounds()) {
-                collect(b, out);
+                collect(b, out, seen);
             }
             for (Type b : w.getLowerBounds()) {
-                collect(b, out);
+                collect(b, out, seen);
+            }
+        } else if (t instanceof TypeVariable<?> v && seen.add(v)) {
+            for (Type b : v.getBounds()) {
+                collect(b, out, seen);
             }
         }
     }
 
-    /** Where a class comes from: its bundle, the JDK, or the product's own class loader. */
+    /**
+     * Where a class comes from: its bundle, the JDK, or the product's own class loader. A javax class is not
+     * always the JDK's: javax.servlet, javax.inject and javax.mail come with the product.
+     */
     static String origin(Class<?> c) {
         Bundle b = bundleOf(c);
         if (b != null) {
             return b.getSymbolicName() + " " + b.getVersion();
         }
         ClassLoader loader = c.getClassLoader();
-        if (loader == null || c.getName().startsWith("java.") || c.getName().startsWith("javax.")) {
+        if (loader == null || loader == ClassLoader.getPlatformClassLoader() || c.getName().startsWith("java.")) {
             return "JDK";
         }
         return "the product (" + loader.getClass().getSimpleName() + ")";
@@ -382,8 +418,7 @@ public class OperationDetails {
         for (BundleWire w : wiring.getRequiredWires(BundleRevision.PACKAGE_NAMESPACE)) {
             Map<String, Object> attrs = w.getCapability().getAttributes();
             Bundle provider = w.getProviderWiring() == null ? null : w.getProviderWiring().getBundle();
-            imports.add(new String[]{String.valueOf(attrs.get(BundleRevision.PACKAGE_NAMESPACE)),
-                    String.valueOf(attrs.get("version")),
+            imports.add(new String[]{String.valueOf(attrs.get(BundleRevision.PACKAGE_NAMESPACE)), version(attrs),
                     provider == null ? "?" : provider.getSymbolicName() + " " + provider.getVersion(),
                     provider == null ? "" : String.valueOf(provider.getBundleId())});
         }
@@ -394,7 +429,7 @@ public class OperationDetails {
         }
         j.endArray();
         // exports: the package, its version, and how many bundles are wired to it
-        Map<BundleCapability, Integer> users = new IdentityHashMap<>();
+        Map<BundleCapability, Integer> users = new HashMap<>();
         for (BundleWire w : wiring.getProvidedWires(BundleRevision.PACKAGE_NAMESPACE)) {
             users.merge(w.getCapability(), 1, Integer::sum);
         }
@@ -404,11 +439,17 @@ public class OperationDetails {
         for (BundleCapability cap : exports.subList(0, Math.min(exports.size(), MAX_PACKAGES))) {
             j.beginObject()
                     .field("package", String.valueOf(cap.getAttributes().get(BundleRevision.PACKAGE_NAMESPACE)))
-                    .field("version", String.valueOf(cap.getAttributes().get("version")))
+                    .field("version", version(cap.getAttributes()))
                     .field("users", users.getOrDefault(cap, 0))
                     .endObject();
         }
         j.endArray().endObject();
+    }
+
+    /** A package capability's version; empty when it has none (the UI then shows nothing). */
+    static String version(Map<String, Object> attributes) {
+        Object v = attributes.get("version");
+        return v == null ? "" : String.valueOf(v);
     }
 
     static String state(int state) {

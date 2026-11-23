@@ -2,9 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { Module, Operation, Summary } from '../core/types';
 import { groupRows, search, type GroupRow, type SearchRow } from '../core/search';
 import { VirtualList } from './VirtualList';
-import { MethodBadge, PathText, usePin } from './bits';
+import { MethodBadge, PathText, plural, usePin } from './bits';
 import { searchWords } from '../core/pathparts';
-import { moduleFact, rowTicks, type Fact } from './facts';
+import { isSkipped, moduleFact, rowTicks, type Fact } from './facts';
 import { RowCard, type CardTarget } from './RowCard';
 
 const ROW = 24;
@@ -35,7 +35,18 @@ export function Sidebar(p: SidebarProps) {
   const onType = (v: string) => {
     setTyped(v);
     clearTimeout(typing.current);
-    typing.current = setTimeout(() => p.onQuery(v), 120);
+    typing.current = setTimeout(() => {
+      typing.current = undefined;
+      p.onQuery(v);
+    }, 120);
+  };
+  // a key that acts on the list must not act on the results of the previous query: search now, act on the next key
+  const flushQuery = () => {
+    if (typing.current === undefined) return false;
+    clearTimeout(typing.current);
+    typing.current = undefined;
+    p.onQuery(typed);
+    return true;
   };
   const searching = p.query.trim().length > 0;
   const words = useMemo(() => searchWords(p.query), [p.query]);
@@ -44,16 +55,19 @@ export function Sidebar(p: SidebarProps) {
   const lines: Line[] = useMemo(() => {
     if (searching) return hits.map((h) => ({ kind: 'op', op: h.op, module: h.module }) as Line);
     if (!p.summary) return [];
-    return groupRows(p.summary, hits, p.collapsed).map((g: GroupRow) =>
+    return groupRows(p.summary, hits, p.collapsed, { supportedOnly: p.supportedOnly }).map((g: GroupRow) =>
       g.kind === 'module' ? g : ({ kind: 'op', op: g.op } as Line),
     );
-  }, [hits, searching, p.summary, p.collapsed]);
-  // one small button folds or unfolds every module: unfold when all the listed ones are folded, else fold them all
+  }, [hits, searching, p.summary, p.collapsed, p.supportedOnly]);
+  // one small button folds or unfolds every module: unfold when all the listed ones are folded, else fold them all;
+  // pending and failed modules have nothing to fold
+  const foldable = (m: Module) => m.state === 'ok';
   const allCollapsed = useMemo(
-    () => !searching && lines.length > 0 && lines.every((l) => l.kind !== 'module' || p.collapsed.has(l.module.id)),
+    () => !searching && lines.some((l) => l.kind === 'module' && foldable(l.module))
+      && lines.every((l) => l.kind !== 'module' || !foldable(l.module) || p.collapsed.has(l.module.id)),
     [lines, searching, p.collapsed],
   );
-  const toggleAll = () => p.onCollapsed(allCollapsed ? new Set() : new Set((p.summary?.modules ?? []).map((m) => m.id)));
+  const toggleAll = () => p.onCollapsed(allCollapsed ? new Set() : new Set((p.summary?.modules ?? []).filter(foldable).map((m) => m.id)));
   const hiddenBySupported = useMemo(
     () => (p.supportedOnly && hits.length === 0 ? search(p.rows, p.query).length : 0),
     [hits, p.rows, p.query, p.supportedOnly],
@@ -63,6 +77,14 @@ export function Sidebar(p: SidebarProps) {
   // does not move it; it follows the selection only when the selection changes
   const [activeId, setActiveId] = useState<string | undefined>(p.selectedKey);
   useEffect(() => setActiveId(p.selectedKey), [p.selectedKey]);
+  // a new search or filter starts at the top of its results, not where the previous list was scrolled
+  const listKey = p.query + '|' + p.supportedOnly;
+  const firstKey = useRef(listKey);
+  useEffect(() => {
+    if (firstKey.current === listKey) return;
+    firstKey.current = listKey;
+    setActiveId(undefined);
+  }, [listKey]);
   const idOf = (l: Line) => (l.kind === 'op' ? l.op.key : 'module:' + l.module.id);
   const active = useMemo(() => (activeId ? lines.findIndex((l) => idOf(l) === activeId) : -1), [lines, activeId]);
   const setActive = (i: number) => {
@@ -75,7 +97,8 @@ export function Sidebar(p: SidebarProps) {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
-      if (e.key === '/' && !typing) {
+      // not with a modifier (Ctrl+/ belongs to the browser), nor into a list hidden behind a box on the whole screen
+      if (e.key === '/' && !typing && !e.ctrlKey && !e.metaKey && !e.altKey && !input.current?.closest('[inert]')) {
         e.preventDefault();
         input.current?.focus();
         input.current?.select();
@@ -104,8 +127,21 @@ export function Sidebar(p: SidebarProps) {
   const hideCard = () => {
     if (!pinnedRef.current) forceHide();
   };
-  useEffect(() => hideCard, []);
+  useEffect(() => () => clearTimeout(cardTimer.current), []);
   useEffect(() => hideCard(), [lines]);
+  // a box on the whole screen covers the list: its card goes too, and stays away
+  const covered = () => !!input.current?.closest('[inert]');
+  // Escape hides a card that is not pinned (the pinned one has its own Escape), and only that; not a covered one
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && shownRef.current && !pinnedRef.current && !covered()) {
+        e.stopPropagation();
+        forceHide();
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, []);
   const scheduleCard = (row: HTMLElement, delay: number) => {
     const id = row.dataset.id;
     if (!id || cardFor.current === id) return;
@@ -127,6 +163,7 @@ export function Sidebar(p: SidebarProps) {
     if (pinnedRef.current) return;
     const row = (e.target as Element).closest?.('[data-i]') as HTMLElement | null;
     if (row) scheduleCard(row, card ? 0 : CARD_DELAY);
+    else hideCard(); // the empty space below a short list
   };
   // a click closes the card, and it stays closed until the pointer moves on to another row
   const onListDown = (e: MouseEvent) => {
@@ -134,9 +171,12 @@ export function Sidebar(p: SidebarProps) {
     cardFor.current = ((e.target as Element).closest?.('[data-i]') as HTMLElement | null)?.dataset.id;
   };
   const onListFocus = (e: FocusEvent) => {
-    if (pinnedRef.current) return;
     const row = e.target as HTMLElement;
-    if (row.dataset?.i !== undefined && row.matches(':focus-visible')) scheduleCard(row, CARD_DELAY);
+    if (row.dataset?.i === undefined) return;
+    // the keyboard's position follows the focus, so the arrows go on from the row that has it
+    const i = Number(row.dataset.i);
+    if (i !== active) setActive(i);
+    if (!pinnedRef.current && row.matches(':focus-visible')) scheduleCard(row, CARD_DELAY);
   };
 
   const toggle = (id: string) => {
@@ -151,16 +191,32 @@ export function Sidebar(p: SidebarProps) {
     const target = e.target as HTMLElement;
     const inSearch = target === input.current;
     const inList = !!target.closest?.('.rab-n-vlist');
-    if (!lines.length || (!inSearch && !inList)) return;
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    if (!inSearch && !inList) return;
+    // Ctrl+Enter sends the open request (Operation); the list leaves modified keys alone
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (inSearch && (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter') && flushQuery()) {
       e.preventDefault();
-      const step = e.key === 'ArrowDown' ? 1 : -1;
+      return;
+    }
+    if (!lines.length) return;
+    // Home, End, PageUp and PageDown move in the list itself (in the search box they move the caret)
+    const page = Math.max(1, Math.floor((target.closest('.rab-n-vlist')?.clientHeight ?? 0) / ROW) - 1);
+    const moves: Record<string, number> = { ArrowDown: 1, ArrowUp: -1, ...(inList ? { PageDown: page, PageUp: -page, Home: -lines.length, End: lines.length } : {}) };
+    if (e.key in moves) {
+      e.preventDefault();
+      const step = moves[e.key];
       const from = active < 0 ? (step > 0 ? -1 : lines.length) : active;
       setActive(Math.min(lines.length - 1, Math.max(0, from + step)));
       if (inList) {
-        // keep the keyboard focus on the highlighted row (the list scrolls it into view and renders it first)
+        // keep the keyboard focus on the highlighted row; a row out of the rendered window appears only after the
+        // list has scrolled to it, a frame or two later
         const list = target.closest('.rab-n-vlist');
-        requestAnimationFrame(() => (list?.querySelector('.rab-n-op.active, .rab-n-module.active') as HTMLElement | null)?.focus());
+        const focus = (tries: number) => {
+          const row = list?.querySelector('.rab-n-op.active, .rab-n-module.active') as HTMLElement | null;
+          if (row) row.focus();
+          else if (tries > 0) requestAnimationFrame(() => focus(tries - 1));
+        };
+        requestAnimationFrame(() => focus(5));
       }
     } else if (e.key === 'Enter' && inSearch && active >= 0 && active < lines.length) {
       e.preventDefault();
@@ -169,7 +225,7 @@ export function Sidebar(p: SidebarProps) {
       else toggle(l.module.id);
     } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && inList && active >= 0 && active < lines.length) {
       const l = lines[active];
-      if (l.kind === 'module' && p.collapsed.has(l.module.id) === (e.key === 'ArrowRight')) toggle(l.module.id);
+      if (l.kind === 'module' && foldable(l.module) && p.collapsed.has(l.module.id) === (e.key === 'ArrowRight')) toggle(l.module.id);
     }
   };
 
@@ -210,7 +266,7 @@ export function Sidebar(p: SidebarProps) {
             ) : searching || p.supportedOnly ? (
               <>{hits.length.toLocaleString()} of {total.toLocaleString()} operations</>
             ) : (
-              <>{total.toLocaleString()} operations in {s.modules.length} modules</>
+              <>{plural(total, 'operation')} in {plural(s.modules.length, 'module')}</>
             )}
           </span>
           {!searching && s && lines.length > 0 && (
@@ -247,7 +303,11 @@ export function Sidebar(p: SidebarProps) {
               <path d="M10.6 10.6L14 14M5.2 7h3.6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
             </svg>
           </span>
-          <span>No operation matches.</span>
+          <span>
+            {!s.complete ? 'No operation matches yet; the catalog is still being built.'
+              : !searching && !p.supportedOnly && total === 0 ? 'No REST operations were found on this instance.'
+              : 'No operation matches.'}
+          </span>
           {hiddenBySupported > 0 && (
             <button class="rab-n-link" onClick={() => p.onSupportedOnly(false)}>
               Include internal and app endpoints ({hiddenBySupported})
@@ -261,6 +321,7 @@ export function Sidebar(p: SidebarProps) {
           count={lines.length}
           rowHeight={ROW}
           activeIndex={active}
+          resetKey={listKey}
           ariaLabel="Operations"
           renderRow={(i) => {
             const l = lines[i];
@@ -272,6 +333,7 @@ export function Sidebar(p: SidebarProps) {
                   count={l.count}
                   collapsed={p.collapsed.has(l.module.id)}
                   active={i === active}
+                  tabStop={i === active || (active < 0 && i === 0)}
                   onClick={() => {
                     setActive(i);
                     toggle(l.module.id);
@@ -284,6 +346,8 @@ export function Sidebar(p: SidebarProps) {
             return (
               <button
                 class={'rab-n-op' + (l.op.key === p.selectedKey ? ' selected' : '') + (i === active ? ' active' : '') + (searching ? '' : ' indented')}
+                tabIndex={i === active || (active < 0 && i === 0) ? 0 : -1}
+                aria-current={l.op.key === p.selectedKey ? 'true' : undefined}
                 onClick={() => {
                   setActive(i);
                   p.onSelect(l.op);
@@ -311,29 +375,34 @@ export function Sidebar(p: SidebarProps) {
   );
 }
 
-function ModuleRow({ index, module, count, collapsed, active, onClick }: {
-  index: number; module: Module; count: number; collapsed: boolean; active: boolean; onClick: () => void;
+function ModuleRow({ index, module, count, collapsed, active, tabStop, onClick }: {
+  index: number; module: Module; count: number; collapsed: boolean; active: boolean; tabStop: boolean; onClick: () => void;
 }) {
   const kind = moduleFact(module);
+  // a pending or failed module has no operations to fold: no chevron, no expanded state
+  const foldable = module.state === 'ok';
+  const skipped = isSkipped(module);
   return (
     <button
       class={
         'rab-n-module' +
         (module.stability === 'supported' ? ' supported' : '') +
         (active ? ' active' : '') +
-        (module.state !== 'ok' ? ' ' + module.state : '')
+        (module.state !== 'ok' ? ' ' + module.state : '') +
+        (skipped ? ' skipped' : '')
       }
       onClick={onClick}
-      aria-expanded={!collapsed}
+      tabIndex={tabStop ? 0 : -1}
+      aria-expanded={foldable ? !collapsed : undefined}
       data-testid="module"
       data-i={index}
       data-id={'module:' + module.id}
     >
-      <span class="rab-n-chevron">{collapsed ? '▸' : '▾'}</span>
+      <span class="rab-n-chevron" aria-hidden="true">{foldable ? (collapsed ? '▸' : '▾') : ''}</span>
       <span class="rab-n-module-path"><PathText path={module.path} rank={false} /></span>
       <Ticks facts={kind ? [kind] : []} />
       <span class="rab-n-count">
-        {module.state === 'ok' ? count : module.state === 'pending' ? '…' : 'failed: ' + (module.reason ?? 'error')}
+        {module.state === 'ok' ? count : module.state === 'pending' ? '…' : skipped ? 'not described' : 'failed: ' + (module.reason ?? 'error')}
       </span>
     </button>
   );

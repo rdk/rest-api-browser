@@ -24,6 +24,7 @@ import java.util.List;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -106,7 +107,7 @@ public class CatalogResourceTest {
         login(false, false);
         Response r = resource.summary(request);
         assertEquals(200, r.getStatus());
-        assertEquals("\"" + snapshot.hash() + "-u\"", r.getHeaderString("ETag"));
+        assertEquals("\"" + snapshot.hash() + "-c1.1-u\"", r.getHeaderString("ETag"));
         assertEquals("private, no-cache", r.getHeaderString("Cache-Control"));
         assertTrue(((String) r.getEntity()).contains("\"admin\":false"));
         assertTrue(((String) r.getEntity()).contains("\"baseUrl\":\"/jira\""));
@@ -117,7 +118,7 @@ public class CatalogResourceTest {
         login(true, false);
         Response r = resource.summary(request);
         assertEquals(200, r.getStatus());
-        assertEquals("\"" + snapshot.adminTag() + "-a\"", r.getHeaderString("ETag"));
+        assertEquals("\"" + snapshot.adminTag() + "-c1.1-a\"", r.getHeaderString("ETag"));
         assertTrue(snapshot.adminTag().matches(snapshot.hash() + "-[0-9a-f]{8}"));
         assertTrue(((String) r.getEntity()).contains("\"admin\":true"));
         assertTrue(((String) r.getEntity()).contains("\"sysadmin\":false"));
@@ -127,7 +128,7 @@ public class CatalogResourceTest {
     public void summaryForASystemAdminHasItsOwnEtag() {
         login(true, true);
         Response r = resource.summary(request);
-        assertEquals("\"" + snapshot.adminTag() + "-s\"", r.getHeaderString("ETag"));
+        assertEquals("\"" + snapshot.adminTag() + "-c1.1-s\"", r.getHeaderString("ETag"));
         assertTrue(((String) r.getEntity()).contains("\"sysadmin\":true"));
     }
 
@@ -147,18 +148,48 @@ public class CatalogResourceTest {
     @Test
     public void summaryAnswers304WhenTheEtagMatches() {
         login(false, false);
-        when(request.getHeader("If-None-Match")).thenReturn("\"" + snapshot.hash() + "-u\"");
+        when(request.getHeader("If-None-Match")).thenReturn("\"" + snapshot.hash() + "-c1.1-u\"");
         Response r = resource.summary(request);
         assertEquals(304, r.getStatus());
-        assertEquals("\"" + snapshot.hash() + "-u\"", r.getHeaderString("ETag"));
+        assertEquals("\"" + snapshot.hash() + "-c1.1-u\"", r.getHeaderString("ETag"));
         assertNull(r.getEntity());
     }
 
     @Test
     public void anAdminsEtagDoesNotMatchAUsersCache() {
         login(true, false);
-        when(request.getHeader("If-None-Match")).thenReturn("\"" + snapshot.hash() + "-u\"");
+        when(request.getHeader("If-None-Match")).thenReturn("\"" + snapshot.hash() + "-c1.1-u\"");
         assertEquals(200, resource.summary(request).getStatus());
+    }
+
+    @Test
+    public void theSummaryEtagFollowsTheProgressOfARebuild() {
+        // a rebuild of an unchanged catalog keeps its hash while the modules are read again
+        List<ModuleEntry> modules = List.of(CatalogTestSupport.module("a", "api/1", State.ok, "1.0"),
+                CatalogTestSupport.module("b", "api/2", State.ok, "1.0"));
+        CatalogSnapshot started = CatalogTestSupport.snapshot(modules, List.of(), false, 0, 2, "1.0.0");
+        CatalogSnapshot halfway = CatalogTestSupport.snapshot(modules, List.of(), false, 1, 2, "1.0.0");
+        CatalogSnapshot finished = CatalogTestSupport.snapshot(modules, List.of(), true, 2, 2, "1.0.0");
+        assertEquals(started.hash(), halfway.hash());
+        for (boolean admin : new boolean[]{false, true}) {
+            login(admin, false);
+            when(request.getHeader("If-None-Match")).thenReturn(null);
+            snapshot = started;
+            String first = resource.summary(request).getHeaderString("ETag");
+            when(request.getHeader("If-None-Match")).thenReturn(first);
+            assertEquals(304, resource.summary(request).getStatus());
+            snapshot = halfway;
+            Response r = resource.summary(request);
+            assertEquals(200, r.getStatus());
+            assertTrue(((String) r.getEntity()).contains("\"progress\":{\"done\":1,\"total\":2}"));
+            String second = r.getHeaderString("ETag");
+            assertNotEquals(first, second);
+            when(request.getHeader("If-None-Match")).thenReturn(second);
+            snapshot = finished;
+            assertEquals(200, resource.summary(request).getStatus());
+        }
+        assertEquals("p1.2", CatalogResource.progress(halfway));
+        assertEquals("c2.2", CatalogResource.progress(finished));
     }
 
     @Test

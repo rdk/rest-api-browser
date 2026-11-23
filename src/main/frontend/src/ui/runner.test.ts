@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RequestRunner, downloadBlob, fetchEcho } from './runner';
+import { RequestRunner, downloadBlob, fetchEcho, kindOf } from './runner';
 
 const req = { method: 'GET', url: '/rest/api/2/x', headers: { Accept: 'application/json' } };
 const fakeFetch = (make: (init?: RequestInit) => Response | Promise<Response>) =>
@@ -27,7 +27,7 @@ describe('RequestRunner', () => {
     expect(r.text).toBe('{"a":1}');
     expect(r.size).toBe(7);
     expect(r.truncated).toBe(false);
-    expect(r.blob).toBeUndefined();
+    expect(r.blob?.size).toBe(7);   // the bytes as received, for the download
     expect(r.headers.some(([n]) => n === 'content-type')).toBe(true);
     expect(r.sessionExpired).toBe(false);
   });
@@ -123,10 +123,11 @@ describe('RequestRunner', () => {
     const txt = await new RequestRunner(fakeFetch(() =>
       new Response('{"a":1}', { headers: { 'content-type': 'application/json' } })),
     ).run(req);
-    const blob = downloadBlob(txt)!;
+    const blob = downloadBlob({ ...txt, blob: undefined })!;
     expect(blob.size).toBe(7);
     expect(blob.type).toBe('application/json');
-    expect(downloadBlob({ ...txt, text: undefined })).toBeNull();
+    expect(downloadBlob(txt)).toBe(txt.blob);
+    expect(downloadBlob({ ...txt, text: undefined, blob: undefined })).toBeNull();
   });
 });
 
@@ -162,5 +163,30 @@ describe('fetchEcho', () => {
     await new Promise((res) => setTimeout(res, 0));
     await expect(fetchEcho('', r, f)).rejects.toThrow();
     expect(n).toBe(2);
+  });
+});
+
+describe('RequestRunner review fixes', () => {
+  it('takes only XML types for XML, so Office files stay binary', () => {
+    expect(kindOf('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 10)).toBe('binary');
+    expect(kindOf('application/vnd.openxmlformats-officedocument.wordprocessingml.document', 10)).toBe('binary');
+    expect(kindOf('application/xml; charset=UTF-8', 10)).toBe('xml');
+    expect(kindOf('text/xml', 10)).toBe('xml');
+    expect(kindOf('application/atom+xml', 10)).toBe('xml');
+    expect(kindOf('image/svg+xml', 10)).toBe('xml');
+  });
+
+  it('decodes text in the charset of its Content-Type and keeps the bytes for the download', async () => {
+    const bytes = new Uint8Array([0x63, 0x61, 0x66, 0xe9]);   // "café" in ISO-8859-1
+    const r = await new RequestRunner(fakeFetch(() =>
+      new Response(bytes, { headers: { 'content-type': 'text/plain; charset="ISO-8859-1"' } })),
+    ).run(req);
+    expect(r.kind).toBe('text');
+    expect(r.text).toBe('café');
+    expect(new Uint8Array(await downloadBlob(r)!.arrayBuffer())).toEqual(bytes);
+    const unknown = await new RequestRunner(fakeFetch(() =>
+      new Response('é', { headers: { 'content-type': 'text/plain; charset=x-no-such-charset' } })),
+    ).run(req);
+    expect(unknown.text).toBe('é');
   });
 });

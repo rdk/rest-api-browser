@@ -9,10 +9,34 @@ export const RETRY_DELAYS_MS = [250, 500, 1000];
 
 class NotFound extends Error {}
 
-function sessionExpired(path: string): Error {
-  const e = new Error(`${path}: HTTP 401`);
+function sessionExpired(path: string, status: number): Error {
+  const e = new Error(`${path}: HTTP ${status}, the session has expired`);
   e.name = 'SessionExpired';
   return e;
+}
+
+/**
+ * Whether an answer is the product telling that the session expired: a 401, a login reason header saying so, or a
+ * redirect to a login page. Where JSON was expected (`jsonExpected`), an HTML page counts too: it is the login page.
+ */
+export function isLoginAnswer(res: Response, jsonExpected = false): boolean {
+  if (res.status === 401) return true;
+  const reason = (res.headers.get('x-seraph-loginreason') ?? '').toUpperCase();
+  if (reason.includes('OUT') || reason.includes('AUTHENTICATION')) return true;
+  const html = /text\/html/i.test(res.headers.get('content-type') ?? '');
+  if (res.redirected && /login/i.test(res.url) && (html || jsonExpected)) return true;
+  return jsonExpected && res.ok && html;
+}
+
+// What the UI shows of a summary besides its operations: progress, completion and each module's state and count.
+function sameView(a: Summary, b: Summary): boolean {
+  if (a.complete !== b.complete || a.progress.done !== b.progress.done || a.progress.total !== b.progress.total) return false;
+  if (a.admin !== b.admin || a.sysadmin !== b.sysadmin || a.modules.length !== b.modules.length) return false;
+  return a.modules.every((m, i) => {
+    const n = b.modules[i];
+    return m.id === n.id && m.path === n.path && m.state === n.state && m.opCount === n.opCount && m.reason === n.reason
+      && m.error === n.error && m.stability === n.stability && m.origin === n.origin;
+  });
 }
 
 const isSessionExpired = (e: unknown) => e instanceof Error && e.name === 'SessionExpired';
@@ -87,7 +111,7 @@ export class CatalogStore {
       credentials: 'same-origin',
       headers: { Accept: 'application/json' },
     });
-    if (res.status === 401) throw sessionExpired(path);
+    if (isLoginAnswer(res, true)) throw sessionExpired(path, res.status);
     if (res.status === 404) throw new NotFound(path);
     if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
     return (await res.json()) as T;
@@ -153,7 +177,10 @@ export class CatalogStore {
         if (generation !== this.generation) return;
         this.attempt = 0;
       } else {
+        // the same operations, but progress, completion or a module's state may have changed: show it
+        const changed = !this.summary || !sameView(this.summary, summary);
         this.summary = summary;
+        if (changed) this.listeners.forEach((l) => l());
       }
     } catch (e) {
       if (generation !== this.generation) return;

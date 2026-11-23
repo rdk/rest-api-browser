@@ -49,3 +49,31 @@ describe('form history', () => {
     expect(UNDO_STEPS).toBeGreaterThanOrEqual(50);
   });
 });
+
+describe('form history review fixes', () => {
+  const empty: FormState = { values: { path: {}, query: { q: [''] }, header: {}, matrix: {} }, custom: [], noXsrfHeader: false };
+  const cleared: FormState = {
+    values: { path: { a: '' }, query: { q: [], r: [''] }, header: { h: '' }, matrix: { m: '' }, body: '', accept: '' },
+    custom: [{ name: '', value: '' }, { name: '', value: '' }],
+    noXsrfHeader: false,
+  };
+
+  it('does not count a field typed into and cleared as a change from the empty form', () => {
+    expect(changedField(cleared, empty)).toBeNull();
+    expect(changedField(empty, cleared)).toBeNull();
+    expect(changedField({ ...cleared, values: { ...cleared.values, query: { q: ['', ''] } } }, empty)).toBe('query.q');
+    expect(changedField({ ...cleared, values: { ...cleared.values, path: { a: ' ' } } }, empty)).toBe('path.a');
+    expect(changedField({ ...cleared, custom: [{ name: 'X-A', value: '' }] }, empty)).toBe('custom');
+  });
+
+  it('reads only a name\'s own value, so a parameter called "constructor" compares like any other', () => {
+    expect(changedField(form({ constructor: '' }), form())).toBeNull();
+    expect(changedField(form({ toString: 'x' }), form())).toBe('path.toString');
+  });
+
+  it('still records adding or removing an empty header row, so the form shows it', () => {
+    const one = { ...form(), custom: [{ name: '', value: '' }] };
+    expect(record(NO_HISTORY, form(), one, 0)).not.toBeNull();
+    expect(record(NO_HISTORY, one, form(), 0)).not.toBeNull();
+  });
+});

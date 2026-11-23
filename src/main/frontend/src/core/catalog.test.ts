@@ -231,4 +231,70 @@ describe('CatalogStore', () => {
       vi.unstubAllGlobals();
     }
   });
+
+  it('emits when a poll brings new progress, module states or completion under the same hash, not for the same summary', async () => {
+    const pending = (done: number) => summary([module('a', 'api/1', { state: 'pending' }), module('b', 'api/2', { state: 'pending' })],
+      { complete: false, progress: { done, total: 2 } });
+    const answers = [
+      pending(0),
+      pending(0),
+      pending(1),
+      summary([module('a', 'api/1', { opCount: 0 }), module('b', 'api/2', { state: 'failed', error: 'x' })], { complete: true, progress: { done: 2, total: 2 } }),
+    ];
+    let n = 0;
+    const srv = server({ summary: () => answers[Math.min(n++, answers.length - 1)], index: (h) => index([], h) });
+    const store = new CatalogStore('http://host/jira', srv.fetchFn);
+    const onChange = vi.fn();
+    store.onChange(onChange);
+    await store.load();
+    expect(onChange).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1000);   // the same summary: nothing new to show
+    expect(onChange).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(2000);   // one module done
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(store.summary?.progress.done).toBe(1);
+    await vi.advanceTimersByTimeAsync(4000);   // complete, the last module failed
+    expect(onChange).toHaveBeenCalledTimes(3);
+    expect(store.summary?.complete).toBe(true);
+    expect(store.summary?.modules[1].state).toBe('failed');
+    const calls = srv.calls.length;
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(srv.calls.length).toBe(calls);
+  });
+
+  it('takes a login page for an expired session: HTML instead of JSON, a redirect to login, a login reason header', async () => {
+    const html = () => Promise.resolve(new Response('<html>Log in</html>', { status: 200, headers: { 'content-type': 'text/html;charset=UTF-8' } }));
+    const store = new CatalogStore('http://host/jira', html);
+    await expect(store.load()).rejects.toMatchObject({ name: 'SessionExpired' });
+    expect(store.error?.name).toBe('SessionExpired');
+
+    const redirected: FetchFn = () => {
+      const res = new Response('{}', { status: 200 });
+      Object.defineProperty(res, 'redirected', { value: true });
+      Object.defineProperty(res, 'url', { value: 'http://host/jira/login.jsp?os_destination=x' });
+      return Promise.resolve(res);
+    };
+    await expect(new CatalogStore('http://host/jira', redirected).load()).rejects.toMatchObject({ name: 'SessionExpired' });
+
+    const denied: FetchFn = () => Promise.resolve(new Response('{}', { status: 403, headers: { 'X-Seraph-LoginReason': 'AUTHENTICATION_DENIED' } }));
+    await expect(new CatalogStore('http://host/jira', denied).load()).rejects.toMatchObject({ name: 'SessionExpired' });
+
+    // "OK" is what Jira sends on every authenticated request
+    const okReason: FetchFn = (url) => Promise.resolve(new Response(
+      JSON.stringify(url.includes('/index/') ? index([], 'h1') : summary(mods)), { headers: { 'X-Seraph-LoginReason': 'OK' } }));
+    await new CatalogStore('http://host/jira', okReason).load();
+
+    // while polling: it stops and says so
+    let expired = false;
+    const srv = server({ summary: () => summary(mods, { complete: false }), index: (h) => index([], h) });
+    const polled = new CatalogStore('http://host/jira', (url, init) => (expired ? html() : srv.fetchFn(url, init)));
+    const onChange = vi.fn();
+    polled.onChange(onChange);
+    await polled.load();
+    expired = true;
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(polled.error?.name).toBe('SessionExpired');
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });

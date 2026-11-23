@@ -1,12 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { downloadBlob, fetchEcho, type RunResult } from './runner';
-import { buildLines, find, visibleLines, type LineModel } from '../core/jsonlines';
+import { buildLines, find, formatJson, visibleLines, type LineModel } from '../core/jsonlines';
+import { findRows, rowEnd, wrapRows } from '../core/textrows';
 import { VirtualList } from './VirtualList';
-import { MaximizeButton, Tabs, copyText, download, formatBytes } from './bits';
+import { MaximizeButton, Tabs, copyText, download, formatBytes, tabId, useFlash } from './bits';
 
 const LINE = 20;
-/** Longer lines are split into rows (raw text) or cut (JSON): one DOM text node of megabytes freezes the tab. */
-const MAX_LINE = 2000;
+/** Pretty cuts a longer line (one DOM text node of megabytes freezes the tab); up to this, it scrolls sideways. */
+const PRETTY_LINE = 10_000;
+/** Pretty formats bodies up to this size; a larger one (millions of lines) is shown as received, in Raw's view. */
+const PRETTY_MAX = 5 * 1024 * 1024;
+/** Raw's gutter (the line numbers) and its margins, in pixels: the rest of the width is for the text. */
+const GUTTER_PX = 60;
 
 type View = 'pretty' | 'raw' | 'headers' | 'sent';
 /** A request to move to the next (dir 1) or previous (dir -1) match; n counts the requests. */
@@ -30,14 +35,15 @@ export function ResponseView({ result, running, onCancel, maximized, onMaximize,
   const [found, setFound] = useState({ count: 0, index: 0 });
   const onFound = useCallback((count: number, index: number) => setFound({ count, index }), []);
   // parsed once per response, kept across tab switches
+  const tooLarge = !!result && result.kind === 'json' && (result.text?.length ?? 0) > PRETTY_MAX;
   const model = useMemo(
-    () => (result && result.kind === 'json' && !result.truncated && result.text ? buildLines(result.text) : null),
-    [result],
+    () => (result && result.kind === 'json' && !result.truncated && result.text && !tooLarge ? buildLines(result.text) : null),
+    [result, tooLarge],
   );
   if (running) {
     return (
       <div class="rab-n-response rab-n-response-state" data-testid="response-running">
-        <div class="rab-n-response-state-inner">
+        <div class="rab-n-response-state-inner" role="status">
           <span class="rab-n-spinner" /> Sending… <button class="rab-n-link" onClick={onCancel}>Cancel (Esc)</button>
         </div>
       </div>
@@ -58,7 +64,7 @@ export function ResponseView({ result, running, onCancel, maximized, onMaximize,
   if (result.error) {
     return (
       <div class="rab-n-response rab-n-response-state" data-testid="response-error">
-        <div class="rab-n-response-state-inner is-error">
+        <div class="rab-n-response-state-inner is-error" role="status">
           <svg class="rab-n-svg rab-n-error" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5" />
             <path d="M8 5v3.5M8 10.7v.4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
@@ -74,11 +80,13 @@ export function ResponseView({ result, running, onCancel, maximized, onMaximize,
     <div class={'rab-n-response tone-' + statusClass} data-testid="response">
       {result.sessionExpired && (
         <div class="rab-n-banner" data-testid="session-expired">
-          Your session has expired, so the product answered with its login page.{' '}
+          {result.kind === 'html'
+            ? 'Your session has expired, so the product answered with its login page.'
+            : `The product answered ${result.status || ''} ${result.status === 401 ? 'Unauthorized' : ''}: you may not be logged in any more.`.replace(/\s+/g, ' ')}{' '}
           <button class="rab-n-link" onClick={() => location.reload()}>Reload to log in again</button>
         </div>
       )}
-      <div class={'rab-n-statusline is-' + statusClass}>
+      <div class={'rab-n-statusline is-' + statusClass} role="status">
         <span class={'rab-n-status-code ' + statusClass} data-testid="response-status">{result.status} {result.statusText}</span>
         <span class="rab-n-metric">{Math.round(result.durationMs)} ms</span>
         <span class="rab-n-metric">{formatBytes(result.size)}{result.truncated ? ' (truncated)' : ''}</span>
@@ -90,6 +98,8 @@ export function ResponseView({ result, running, onCancel, maximized, onMaximize,
         <Tabs<View>
           value={view}
           onChange={setView}
+          label="The response"
+          panelId="rab-n-response-pane"
           tabs={[
             { id: 'pretty', label: 'Pretty' },
             { id: 'raw', label: 'Raw' },
@@ -103,13 +113,17 @@ export function ResponseView({ result, running, onCancel, maximized, onMaximize,
                    count={found.count} index={found.index} />
         )}
         <div class="rab-n-form-tools">
-          <CopyContentButton view={view} result={result} baseUrl={baseUrl} />
-          <DownloadButton view={view} result={result} baseUrl={baseUrl} />
+          <CopyContentButton key={view + id} view={view} result={result} baseUrl={baseUrl} formatted={view === 'pretty' && !!model} />
+          <DownloadButton view={view} result={result} baseUrl={baseUrl} formatted={view === 'pretty' && !!model} />
         </div>
       </div>
       {result.truncated && (
         <div class="rab-n-banner">The response is larger than the limit; only its start was read. Downloading saves that part.</div>
       )}
+      {tooLarge && view === 'pretty' && (
+        <div class="rab-n-banner">The body is too large to format (over {formatBytes(PRETTY_MAX)}): it is shown as received.</div>
+      )}
+      <div class="rab-n-response-pane" id="rab-n-response-pane" role="tabpanel" aria-labelledby={tabId('rab-n-response-pane', view)}>
       {view === 'headers' ? (
         <div class="rab-n-headers" data-testid="response-headers">
           {result.headers.map(([k, v], i) => (
@@ -132,6 +146,7 @@ export function ResponseView({ result, running, onCancel, maximized, onMaximize,
           <TextView key={'text' + id} text={result.text ?? ''} needle={needle} step={step} onFound={onFound} />
         </>
       )}
+      </div>
     </div>
   );
 }
@@ -139,29 +154,37 @@ export function ResponseView({ result, running, onCancel, maximized, onMaximize,
 const EXTENSIONS: Record<string, string> = { json: '.json', xml: '.xml', html: '.html', text: '.txt' };
 
 /**
- * What the open tab downloads: Pretty the body formatted (JSON indented), Raw the body as received, the headers tabs
- * their headers as text. Null when there is nothing to save (an empty body).
+ * The headers the browser and proxies added, from the echo: those the app did not set itself, with the real body's
+ * Content-Length (the echo's copy of the request has no body). The tab and its copy and download share it.
  */
+function addedHeaders(result: RunResult, echo: [string, string][]): [string, string][] {
+  const ownNames = new Set((result.requestHeaders ?? []).map(([k]) => k.toLowerCase()));
+  return echo
+    .filter(([k]) => !ownNames.has(k.toLowerCase()))
+    .map(([k, v]): [string, string] =>
+      k.toLowerCase() === 'content-length' && result.requestBodyBytes ? [k, String(result.requestBodyBytes)] : [k, v]);
+}
+
 /**
- * What the open tab shows, as text: the headers as "name: value" lines, Pretty a JSON body indented, else the body
- * as received. Null for a body that is empty or not text (binary).
+ * What the open tab shows, as text: the headers as "name: value" lines, Pretty a JSON body indented (numbers and keys
+ * exactly as received), else the body as received. Null for a body that is empty or not text (binary).
  */
 async function textOf(view: View, result: RunResult, baseUrl: string): Promise<string | null> {
-  const lines = (pairs: [string, string][]) => pairs.map(([k, v]) => `${k}: ${v}`).join('\n');
-  if (view === 'headers') return `HTTP ${result.status} ${result.statusText}\n${lines(result.headers)}\n`;
+  const lines = (pairs: [string, string][]) => pairs.map(([k, v]) => `${k}: ${v}\n`).join('');
+  if (view === 'headers') return `HTTP ${result.status} ${result.statusText}\n${lines(result.headers)}`;
   if (view === 'sent') {
-    const own = result.requestHeaders ?? [];
-    const ownNames = new Set(own.map(([k]) => k.toLowerCase()));
-    const added = (await fetchEcho(baseUrl, result).catch(() => [] as [string, string][])).filter(([k]) => !ownNames.has(k.toLowerCase()));
-    return `${result.method} ${result.url}\n${lines(own)}\n${lines(added)}\n`;
+    let added: string;
+    try {
+      added = lines(addedHeaders(result, await fetchEcho(baseUrl, result)));
+    } catch (e) {
+      added = `# The headers the browser added could not be read: ${e instanceof Error ? e.message : String(e)}\n`;
+    }
+    return `${result.method} ${result.url}\n${lines(result.requestHeaders ?? [])}${added}`;
   }
   if (result.size === 0 || result.text === undefined) return null;
-  if (view === 'pretty' && result.kind === 'json' && !result.truncated) {
-    try {
-      return JSON.stringify(JSON.parse(result.text), null, 2) + '\n';
-    } catch {
-      // not valid JSON after all: as received
-    }
+  if (view === 'pretty' && result.kind === 'json' && !result.truncated && result.text.length <= PRETTY_MAX) {
+    const formatted = formatJson(result.text);
+    if (formatted !== null) return formatted + '\n';
   }
   return result.text;
 }
@@ -180,30 +203,34 @@ async function downloadOf(view: View, result: RunResult, baseUrl: string): Promi
   return blob && result.size > 0 ? { blob, name: 'response' + (EXTENSIONS[result.kind] ?? '') } : null;
 }
 
-/** One quiet icon left of Download: copies what the open tab shows, as text; a check mark says it worked. */
-function CopyContentButton({ view, result, baseUrl }: { view: View; result: RunResult; baseUrl: string }) {
+/**
+ * One quiet icon left of Download: copies what the open tab shows, as text; a check mark says it worked, a warning
+ * sign that it did not. Keyed by the tab and the response, so a new one starts idle.
+ */
+function CopyContentButton({ view, result, baseUrl, formatted }: { view: View; result: RunResult; baseUrl: string; formatted: boolean }) {
   const [state, setState] = useState<'idle' | 'done' | 'failed'>('idle');
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => clearTimeout(timer.current), []);
+  const flash = useFlash<'done' | 'failed'>(setState);
   const body = view === 'pretty' || view === 'raw';
   const off = body && (result.size === 0 || result.kind === 'binary');
   const what = view === 'headers' ? 'the response\'s headers' : view === 'sent' ? 'the request\'s headers'
-    : view === 'pretty' && result.kind === 'json' ? 'the body, formatted' : 'the body';
+    : formatted ? 'the body, formatted' : 'the body';
   const label = off ? (result.kind === 'binary' ? 'A binary body cannot be copied: download it' : 'Nothing to copy: the body is empty')
     : state === 'done' ? 'Copied' : state === 'failed' ? 'The browser did not allow copying' : 'Copy ' + what;
   return (
-    <button class={'rab-n-tool' + (state === 'done' ? ' done' : '')} disabled={off} title={label} aria-label={label}
+    <button class={'rab-n-tool' + (state === 'done' ? ' done' : state === 'failed' ? ' failed' : '')} disabled={off} title={label} aria-label={label}
             data-testid="copy-content" data-state={state}
             onClick={async () => {
               const text = await textOf(view, result, baseUrl);
-              const ok = text !== null && (await copyText(text));
-              setState(ok ? 'done' : 'failed');
-              clearTimeout(timer.current);
-              timer.current = setTimeout(() => setState('idle'), 1500);
+              flash(text !== null && (await copyText(text)) ? 'done' : 'failed');
             }}>
       {state === 'done' ? (
         <svg class="rab-n-svg" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
           <path d="M3.2 8.4l3 3 6.6-6.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      ) : state === 'failed' ? (
+        <svg class="rab-n-svg" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M8 2.4l6 10.6H2L8 2.4z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+          <path d="M8 6.6v2.9M8 11.4v.1" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
         </svg>
       ) : (
         <svg class="rab-n-svg" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -216,10 +243,10 @@ function CopyContentButton({ view, result, baseUrl }: { view: View; result: RunR
 }
 
 /** One quiet icon at the end of the tab bar: downloads what the open tab shows. */
-function DownloadButton({ view, result, baseUrl }: { view: View; result: RunResult; baseUrl: string }) {
+function DownloadButton({ view, result, baseUrl, formatted }: { view: View; result: RunResult; baseUrl: string; formatted: boolean }) {
   const empty = (view === 'pretty' || view === 'raw') && result.size === 0;
   const what = view === 'headers' ? 'the response\'s headers' : view === 'sent' ? 'the request\'s headers'
-    : view === 'pretty' && result.kind === 'json' ? 'the body, formatted' : 'the body as received';
+    : formatted ? 'the body, formatted' : 'the body as received';
   const label = empty ? 'Nothing to download: the body is empty' : 'Download ' + what;
   return (
     <button class="rab-n-tool" disabled={empty} title={label} aria-label={label} data-testid="download"
@@ -255,11 +282,7 @@ function RequestHeaders({ result, baseUrl }: { result: RunResult; baseUrl: strin
     };
   }, [result, baseUrl]);
   const own = result.requestHeaders ?? [];
-  const ownNames = new Set(own.map(([k]) => k.toLowerCase()));
-  const added = (echo ?? [])
-    .filter(([k]) => !ownNames.has(k.toLowerCase()))
-    .map(([k, v]): [string, string] =>
-      k.toLowerCase() === 'content-length' && result.requestBodyBytes ? [k, String(result.requestBodyBytes)] : [k, v]);
+  const added = addedHeaders(result, echo ?? []);
   return (
     <div class="rab-n-headers" data-testid="request-headers">
       <div class="rab-n-headers-group">Set by the app <span class="rab-n-headers-count">{own.length}</span></div>
@@ -270,7 +293,7 @@ function RequestHeaders({ result, baseUrl }: { result: RunResult; baseUrl: strin
         Added by the browser and on the way {echo && <span class="rab-n-headers-count">{added.length}</span>}
       </div>
       {error ? (
-        <div class="rab-n-headers-note rab-n-error">They could not be read: {error}.</div>
+        <div class="rab-n-headers-note is-error">They could not be read: {error}.</div>
       ) : !echo ? (
         <div class="rab-n-headers-note"><span class="rab-n-spinner" aria-hidden="true" /> Asking the server what it receives…</div>
       ) : (
@@ -317,7 +340,8 @@ function FindBox({ initial, onFind, onStep, count, index }: {
             }, 150);
           }}
           onKeyDown={(e) => {
-            if (e.key !== 'Enter') return;
+            // Ctrl+Enter sends the request (Operation), it does not step through the matches
+            if (e.key !== 'Enter' || e.ctrlKey || e.metaKey || e.altKey) return;
             if (timer.current !== undefined) {
               // typed less than 150 ms ago: search now instead of stepping through the old matches
               clearTimeout(timer.current);
@@ -330,7 +354,11 @@ function FindBox({ initial, onFind, onStep, count, index }: {
           aria-label="Find in response"
         />
       </div>
-      {needle && <span class="rab-n-subtle rab-n-find-count" data-testid="find-count">{count ? `${index + 1} of ${count}` : 'no match'}</span>}
+      {needle && (
+        <span class="rab-n-subtle rab-n-find-count" data-testid="find-count" aria-live="polite">
+          {needle !== initial ? '…' : count ? `${index + 1} of ${count}` : 'no match'}
+        </span>
+      )}
     </div>
   );
 }
@@ -339,15 +367,17 @@ function FindBox({ initial, onFind, onStep, count, index }: {
  * The matches of the find box in one view: searched again when the needle changes (and when the view opens with
  * one), stepped through on each Enter, reported back for the count beside the box.
  */
-function useFind(needle: string, step: Step, onFound: (count: number, index: number) => void, search: (needle: string) => number[]) {
+function useFind(needle: string, step: Step, onFound: (count: number, index: number) => void, search: (needle: string) => number[],
+                 rows?: unknown) {
   const [matches, setMatches] = useState<number[]>([]);
   const [current, setCurrent] = useState(0);
   const searchRef = useRef(search);
   searchRef.current = search;
+  // searched again when the rows change too (Raw wraps again when its pane is resized)
   useEffect(() => {
     setMatches(needle ? searchRef.current(needle) : []);
     setCurrent(0);
-  }, [needle]);
+  }, [needle, rows]);
   const seen = useRef(step.n);
   useEffect(() => {
     if (step.n === seen.current) return; // a step made before this view opened
@@ -390,6 +420,10 @@ function JsonView({ model, needle, step, onFound }: {
     setCollapsed(next);
   };
   const activeRow = activeLine >= 0 ? indexIn(visible, activeLine) : -1;
+  // a step onto a match inside a block folded since the search unfolds the blocks, so the match can be seen
+  useEffect(() => {
+    if (activeLine >= 0 && activeRow < 0 && collapsed.size) setCollapsed(new Set());
+  }, [activeLine, activeRow]);
   return (
     <div class="rab-n-code-wrap">
       <VirtualList
@@ -397,6 +431,7 @@ function JsonView({ model, needle, step, onFound }: {
         count={visible.length}
         rowHeight={LINE}
         activeIndex={activeRow >= 0 ? activeRow : undefined}
+        revealKey={step.n}
         renderRow={(row) => {
           const i = visible[row];
           const line = model.lines[i];
@@ -408,14 +443,14 @@ function JsonView({ model, needle, step, onFound }: {
             <div class={'rab-n-line' + (matchSet.has(i) ? ' match' : '') + (i === activeLine ? ' current' : '')}>
               <span class="rab-n-fold">
                 {foldable && (
-                  <button class="rab-n-fold-btn" onClick={() => toggle(i)} aria-label={folded ? 'Expand' : 'Collapse'}>
+                  <button class="rab-n-fold-btn" onClick={() => toggle(i)} aria-label={folded ? 'Expand' : 'Collapse'} aria-expanded={!folded}>
                     {folded ? '▸' : '▾'}
                   </button>
                 )}
               </span>
               <span class="rab-n-code-text" style={{ paddingLeft: line.depth * 2 + 'ch' }}>
-                {text.length > MAX_LINE ? text.slice(0, MAX_LINE) : text}
-                {text.length > MAX_LINE && <span class="rab-n-folded"> … {(text.length - MAX_LINE).toLocaleString()} more characters (see Raw or Download)</span>}
+                {text.length > PRETTY_LINE ? text.slice(0, PRETTY_LINE) : text}
+                {text.length > PRETTY_LINE && <span class="rab-n-folded"> … {(text.length - PRETTY_LINE).toLocaleString()} more characters (see Raw or Download)</span>}
                 {folded && <span class="rab-n-folded"> … {line.foldEnd! - i - 1} lines {closing}</span>}
               </span>
             </div>
@@ -426,49 +461,65 @@ function JsonView({ model, needle, step, onFound }: {
   );
 }
 
-/** Raw text, split into rows of at most MAX_LINE characters (minified JSON is one line of megabytes). */
+/** How many characters of the code font fit in the element's width; measured again when it is resized. */
+function useColumns(ref: { current: HTMLElement | null }): number {
+  const [cols, setCols] = useState(0);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const probe = document.createElement('span');
+    probe.className = 'rab-n-code rab-n-code-probe';
+    probe.textContent = '0'.repeat(100);
+    el.appendChild(probe);
+    const ch = probe.getBoundingClientRect().width / 100 || 7.5;
+    probe.remove();
+    const measure = () => {
+      const list = el.querySelector('.rab-n-vlist') as HTMLElement | null;
+      const width = (list ?? el).clientWidth;
+      if (width) setCols(Math.max(20, Math.floor((width - GUTTER_PX) / ch) - 1));
+    };
+    measure();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => {
+      clearTimeout(timer);
+      timer = setTimeout(measure, 120); // once the resizing stops: wrapping megabytes again takes a moment
+    });
+    observer?.observe(el);
+    return () => {
+      observer?.disconnect();
+      clearTimeout(timer);
+    };
+  }, []);
+  return cols;
+}
+
+/** Raw text, wrapped at the pane's width: every character can be seen (minified JSON is one line of megabytes). */
 function TextView({ text, needle, step, onFound }: {
   text: string; needle: string; step: Step; onFound: (count: number, index: number) => void;
 }) {
-  const rows = useMemo(() => {
-    const out: { line: number; text: string; cont: boolean }[] = [];
-    let line = 0, start = 0;
-    while (start <= text.length) {
-      let end = text.indexOf('\n', start);
-      if (end < 0) end = text.length;
-      for (let s = start; s < end || s === start; s += MAX_LINE) {
-        out.push({ line, text: text.slice(s, Math.min(end, s + MAX_LINE)), cont: s > start });
-        if (end - s <= MAX_LINE) break;
-      }
-      line++;
-      start = end + 1;
-    }
-    return out;
-  }, [text]);
-  const lower = useRef<string[] | null>(null);
-  const { matches, current } = useFind(needle, step, onFound, (needleText) => {
-    const n = needleText.toLowerCase();
-    const found: number[] = [];
-    if (!lower.current) lower.current = rows.map((r) => r.text.toLowerCase());
-    const l = lower.current;
-    for (let i = 0; i < l.length; i++) if (l[i].includes(n)) found.push(i);
-    return found;
-  });
+  const wrap = useRef<HTMLDivElement>(null);
+  const cols = useColumns(wrap);
+  const rows = useMemo(() => wrapRows(text, cols || 2000), [text, cols]);
+  const { matches, current } = useFind(needle, step, onFound, (n) => findRows(text, rows, n), rows);
   const matchSet = useMemo(() => new Set(matches), [matches]);
   const activeRow = matches.length ? matches[current] : -1;
   return (
-    <div class="rab-n-code-wrap">
+    <div class="rab-n-code-wrap" ref={wrap}>
       <VirtualList
-        className="rab-n-code"
-        count={rows.length}
+        className="rab-n-code rab-n-code-raw"
+        count={rows.count}
         rowHeight={LINE}
         activeIndex={activeRow >= 0 ? activeRow : undefined}
-        renderRow={(i) => (
-          <div class={'rab-n-line' + (matchSet.has(i) ? ' match' : '') + (i === activeRow ? ' current' : '')}>
-            <span class="rab-n-gutter">{rows[i].cont ? '' : rows[i].line + 1}</span>
-            <span class="rab-n-code-text rab-n-nowrap">{rows[i].text}</span>
-          </div>
-        )}
+        revealKey={step.n}
+        renderRow={(i) => {
+          const first = i === 0 || rows.lines[i - 1] !== rows.lines[i];
+          return (
+            <div class={'rab-n-line' + (matchSet.has(i) ? ' match' : '') + (i === activeRow ? ' current' : '')}>
+              <span class="rab-n-gutter">{first ? rows.lines[i] + 1 : ''}</span>
+              <span class="rab-n-code-text rab-n-nowrap">{text.slice(rows.starts[i], rowEnd(rows, i, text.length))}</span>
+            </div>
+          );
+        }}
       />
     </div>
   );

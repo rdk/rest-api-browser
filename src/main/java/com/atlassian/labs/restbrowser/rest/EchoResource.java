@@ -1,6 +1,7 @@
 package com.atlassian.labs.restbrowser.rest;
 
 import com.atlassian.annotations.security.LicensedOnly;
+import com.atlassian.annotations.security.XsrfProtectionExcluded;
 import com.atlassian.sal.api.user.UserManager;
 import jakarta.inject.Inject;
 import jakarta.servlet.http.HttpServletRequest;
@@ -19,7 +20,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
-import java.util.regex.Pattern;
+import java.util.Set;
 
 /**
  * The headers of a request as the server received them: what the browser added (User-Agent, Accept-Language,
@@ -33,8 +34,16 @@ import java.util.regex.Pattern;
 @LicensedOnly
 public class EchoResource {
 
-    /** Header names whose values are secrets; X-Atlassian-Token ("no-check") is not one. */
-    static final Pattern SECRET = Pattern.compile("(?i)secret|password|passwd|session|api-?key|token|credential");
+    /**
+     * The words of a header name that make its value a secret: keys, tokens and passwords, and what a proxy adds
+     * about the user (client certificates, OIDC and SAML data). Whole words only, so X-Author-Id and X-Processor
+     * stay visible; "api-key" is two. The new UI keeps the same names out of its history (isCredentialHeader).
+     */
+    static final Set<String> SECRET_WORDS = Set.of("secret", "secrets", "password", "passwords", "passwd", "pwd",
+            "session", "sessions", "sessionid", "api-key", "api-keys", "apikey", "apikeys", "token", "tokens",
+            "credential", "credentials", "jwt", "assertion", "assertions", "signature", "signatures", "auth",
+            "authorization", "authn", "cert", "certs", "certificate", "certificates", "oidc", "sso", "saml",
+            "principal");
     static final int MAX_VALUE = 1000;
 
     private final UserManager userManager;
@@ -50,26 +59,31 @@ public class EchoResource {
         return echo(request);
     }
 
+    // No XSRF check here and below: the echo changes nothing, and a copy sent without X-Atlassian-Token must arrive.
     @POST
     @Produces(MediaType.APPLICATION_JSON)
+    @XsrfProtectionExcluded
     public Response post(@Context HttpServletRequest request) {
         return echo(request);
     }
 
     @PUT
     @Produces(MediaType.APPLICATION_JSON)
+    @XsrfProtectionExcluded
     public Response put(@Context HttpServletRequest request) {
         return echo(request);
     }
 
     @PATCH
     @Produces(MediaType.APPLICATION_JSON)
+    @XsrfProtectionExcluded
     public Response patch(@Context HttpServletRequest request) {
         return echo(request);
     }
 
     @DELETE
     @Produces(MediaType.APPLICATION_JSON)
+    @XsrfProtectionExcluded
     public Response delete(@Context HttpServletRequest request) {
         return echo(request);
     }
@@ -94,7 +108,10 @@ public class EchoResource {
         return out.append("]}").toString();
     }
 
-    /** The value as it may be shown: cookies by name and length, credentials by scheme, secrets not at all. */
+    /**
+     * The value as it may be shown: cookies by name and length (a cookie without a name by its length only),
+     * credentials by scheme, secrets not at all.
+     */
     static String safe(String name, String value) {
         String n = name.toLowerCase(Locale.ROOT);
         if (value == null) {
@@ -106,7 +123,8 @@ public class EchoResource {
                 String t = c.trim();
                 int eq = t.indexOf('=');
                 if (!t.isEmpty()) {
-                    cookies.add(eq < 0 ? t : t.substring(0, eq) + "=… (" + (t.length() - eq - 1) + " characters, hidden)");
+                    cookies.add(eq < 0 ? "… (a value without a name, " + t.length() + " characters, hidden)"
+                            : t.substring(0, eq) + "=… (" + (t.length() - eq - 1) + " characters, hidden)");
                 }
             }
             return String.join("; ", cookies);
@@ -115,10 +133,29 @@ public class EchoResource {
             int space = value.indexOf(' ');
             return (space < 0 ? "" : value.substring(0, space) + " ") + "… (hidden)";
         }
-        if (!n.equals("x-atlassian-token") && SECRET.matcher(n).find()) {
+        if (secret(name)) {
             return "… (hidden)";
         }
         return value.length() <= MAX_VALUE ? value : value.substring(0, MAX_VALUE) + "…";
+    }
+
+    /**
+     * Whether a header's value is a secret, by the words of its name once separators are dashes: X_API_KEY,
+     * x-api-key and X-ApiKey alike. X-Atlassian-Token ("no-check") is not a secret.
+     */
+    static boolean secret(String name) {
+        String n = name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "-");
+        if (n.equals("x-atlassian-token")) {
+            return false;
+        }
+        String[] words = n.split("-");
+        for (int i = 0; i < words.length; i++) {
+            if (SECRET_WORDS.contains(words[i])
+                    || (i + 1 < words.length && SECRET_WORDS.contains(words[i] + "-" + words[i + 1]))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String quote(String s) {

@@ -8,7 +8,9 @@ export const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 export function MethodBadge({ method }: { method: string }) {
   const m = method.toUpperCase();
   const cls = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(m) ? m.toLowerCase() : 'other';
-  return <span class={'rab-n-method rab-n-method-' + cls}>{m === 'DELETE' ? 'DEL' : m}</span>;
+  return m === 'DELETE'
+    ? <span class={'rab-n-method rab-n-method-' + cls} title="DELETE" aria-label="DELETE">DEL</span>
+    : <span class={'rab-n-method rab-n-method-' + cls}>{m}</span>;
 }
 
 /**
@@ -59,6 +61,7 @@ export function usePin(shown: () => boolean, box: { current: HTMLElement | null 
     const onKey = (e: KeyboardEvent) => {
       if (isPinKey(e) && (pinned || latest.current.shown())) {
         e.preventDefault();
+        e.stopImmediatePropagation();
         if (pinned) release();
         else setPinned(true);
       } else if (pinned && e.key === 'Escape') {
@@ -119,14 +122,22 @@ export function CheckMark({ check }: { check: Check }) {
   );
 }
 
-export function Tabs<T extends string>({ tabs, value, onChange }: {
+/** The id of a tab of `Tabs` with this panel id; the panel names its selected tab with it (aria-labelledby). */
+export const tabId = (panelId: string, id: string) => panelId + '-tab-' + id;
+
+export function Tabs<T extends string>({ tabs, value, onChange, label, panelId }: {
   tabs: { id: T; label: ComponentChildren }[]; value: T; onChange: (id: T) => void;
+  /** The tab list's accessible name. */
+  label?: string;
+  /** The id of the panel the tabs show (role="tabpanel", aria-labelledby={tabId(panelId, value)}). */
+  panelId?: string;
 }) {
-  // arrow keys move between tabs; only the selected tab is in the Tab order
+  const at = tabs.findIndex((t) => t.id === value);
+  // arrow keys move between tabs; only the selected tab (or the first, when none is) is in the Tab order
   const onKeyDown = (e: KeyboardEvent) => {
-    const i = tabs.findIndex((t) => t.id === value);
-    const next = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : -2;
-    if (next === -2 || !tabs.length) return;
+    const i = Math.max(0, at);
+    const next = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : null;
+    if (next === null || !tabs.length) return;
     e.preventDefault();
     const t = tabs[(next + tabs.length) % tabs.length];
     onChange(t.id);
@@ -134,13 +145,15 @@ export function Tabs<T extends string>({ tabs, value, onChange }: {
     requestAnimationFrame(() => (list.querySelector('[aria-selected="true"]') as HTMLElement | null)?.focus());
   };
   return (
-    <div class="rab-n-tabs" role="tablist" onKeyDown={onKeyDown}>
-      {tabs.map((t) => (
+    <div class="rab-n-tabs" role="tablist" aria-label={label} onKeyDown={onKeyDown}>
+      {tabs.map((t, idx) => (
         <button
           key={t.id}
+          id={panelId ? tabId(panelId, t.id) : undefined}
           role="tab"
           aria-selected={t.id === value}
-          tabIndex={t.id === value ? 0 : -1}
+          aria-controls={panelId}
+          tabIndex={t.id === value || (at < 0 && idx === 0) ? 0 : -1}
           class={'rab-n-tab' + (t.id === value ? ' on' : '')}
           onClick={() => onChange(t.id)}
         >
@@ -171,18 +184,20 @@ export async function copyText(value: string): Promise<boolean> {
   }
 }
 
-export function CopyButton({ text, label, testId, quiet }: { text: () => string; label: string; testId?: string; quiet?: boolean }) {
+export function CopyButton({ text, label, testId, quiet, disabled, title }: {
+  text: () => string; label: string; testId?: string; quiet?: boolean;
+  /** Nothing to copy: the button is disabled and `title` says why. */
+  disabled?: boolean; title?: string;
+}) {
   const [state, setState] = useState<'idle' | 'done' | 'failed'>('idle');
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => clearTimeout(timer.current), []);
+  const flash = useFlash<'done' | 'failed'>(setState);
   const copy = async () => {
-    const ok = await copyText(text());
-    setState(ok ? 'done' : 'failed');
-    clearTimeout(timer.current);
-    timer.current = setTimeout(() => setState('idle'), 1500);
+    const value = text();
+    flash(value !== '' && (await copyText(value)) ? 'done' : 'failed');
   };
   return (
-    <button class={(quiet ? 'rab-n-quiet' : 'rab-n-button') + ' rab-n-copy' + (state === 'done' ? ' copied' : '')} onClick={copy} data-testid={testId}>
+    <button class={(quiet ? 'rab-n-quiet' : 'rab-n-button') + ' rab-n-copy' + (state === 'done' ? ' copied' : state === 'failed' ? ' failed' : '')}
+            onClick={copy} disabled={disabled} title={title} data-testid={testId} data-state={state}>
       {state === 'done' ? (
         <svg class="rab-n-svg" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
           <path d="M3.2 8.4l3 3 6.6-6.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
@@ -197,6 +212,34 @@ export function CopyButton({ text, label, testId, quiet }: { text: () => string;
     </button>
   );
 }
+
+/**
+ * A short feedback state (copied, failed) that goes back to idle after 1.5 s; safe after the component is gone,
+ * when a copy finishes late (the clipboard can take a while to answer).
+ */
+export function useFlash<S extends string>(set: (s: S | 'idle') => void): (s: S) => void {
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const live = useRef(true);
+  useEffect(() => {
+    live.current = true;
+    return () => {
+      live.current = false;
+      clearTimeout(timer.current);
+    };
+  }, []);
+  return (s: S) => {
+    if (!live.current) return;
+    set(s);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => live.current && set('idle'), 1500);
+  };
+}
+
+/** "1 module", "3 modules": a count with its noun, singular or plural. */
+export const plural = (n: number, one: string, many = one + 's') => `${n.toLocaleString()} ${n === 1 ? one : many}`;
+
+/** A link target that is safe to open: http(s) only, never javascript: or data: (plugin descriptors are not trusted). */
+export const safeHref = (url?: string) => (url && /^https?:\/\//i.test(url.trim()) ? url.trim() : undefined);
 
 export function formatBytes(n: number): string {
   if (n < 1024) return n + ' B';

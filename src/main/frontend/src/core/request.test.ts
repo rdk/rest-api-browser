@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { buildRequest, mediaChoices, setHeader, toCurl, type RequestValues } from './request';
+import { buildRequest, mediaChoices, setHeader, toCurl, urlParts, type RequestValues } from './request';
+import { checkValue } from './validate';
+import type { Param } from './types';
 import { module, op, summary } from './fixtures';
 
 const s = summary([module('jira:api2', 'api/2')]);
 const empty: RequestValues = { path: {}, query: {}, header: {}, matrix: {} };
 const vals = (v: Partial<RequestValues>): RequestValues => ({ ...empty, ...v });
+const param = (name: string, where: Param['in'], extra: Partial<Param> = {}): Param => ({ name, in: where, type: 'string', required: false, ...extra });
 
 describe('buildRequest', () => {
   it('builds the URL, encoding each path segment', () => {
@@ -29,13 +32,14 @@ describe('buildRequest', () => {
   });
 
   it('adds matrix params to the last segment and query params in order', () => {
-    const o = op('jira:api2', 'GET', 'a/b');
+    const params = [param('m', 'matrix'), param('skip', 'matrix'), param('x', 'query'), param('e', 'query'), param('y', 'query')];
+    const o = op('jira:api2', 'GET', 'a/b', { params });
     const r = buildRequest(s, o, vals({ matrix: { m: '1 2', skip: '' }, query: { x: ['1', '2'], e: [''], y: ['a&b'] } }));
     expect(r.url).toBe('/jira/rest/api/2/a/b;m=1%202?x=1&x=2&y=a%26b');
   });
 
   it('puts header params into headers and picks Accept', () => {
-    const o = op('jira:api2', 'GET', 'a', { produces: ['text/plain', 'application/json'] });
+    const o = op('jira:api2', 'GET', 'a', { produces: ['text/plain', 'application/json'], params: [param('X-A', 'header'), param('X-B', 'header')] });
     expect(buildRequest(s, o, vals({ header: { 'X-A': '1', 'X-B': '' } })).headers).toEqual({ 'X-A': '1', Accept: 'text/plain' });
     expect(buildRequest(s, o, empty, { accept: 'x/y' }).headers.Accept).toBe('x/y');
     expect(buildRequest(s, op('jira:api2', 'GET', 'a', { produces: [] }), empty).headers.Accept).toBe('application/json');
@@ -106,7 +110,7 @@ describe('request details', () => {
 
 describe('toCurl', () => {
   it('builds a one-line command with quoting and placeholder auth', () => {
-    const r = buildRequest(s, op('jira:api2', 'POST', 'a'), vals({ body: `{"a":"it's"}`, query: { q: ['1'] } }));
+    const r = buildRequest(s, op('jira:api2', 'POST', 'a', { params: [param('q', 'query')] }), vals({ body: `{"a":"it's"}`, query: { q: ['1'] } }));
     const c = toCurl(r);
     expect(c).not.toContain('\n');
     expect(c).toContain('-X POST');
@@ -119,5 +123,57 @@ describe('toCurl', () => {
 
   it('omits -X for GET', () => {
     expect(toCurl(buildRequest(s, op('jira:api2', 'GET', 'a'), empty))).not.toContain('-X');
+  });
+});
+
+
+describe('request review fixes', () => {
+  it('lets a declared Accept, Content-Type or X-Atlassian-Token header the user filled in win', () => {
+    const o = op('jira:api2', 'POST', 'a', { params: ['Accept', 'content-type', 'X-Atlassian-Token'].map((n) => param(n, 'header')), consumes: ['application/json'] });
+    const typed = buildRequest(s, o, vals({ header: { Accept: 'text/csv', 'content-type': 'text/x', 'X-Atlassian-Token': 'nocheck' }, body: '{}' }), { accept: 'application/json' });
+    expect(typed.headers).toEqual({ Accept: 'text/csv', 'content-type': 'text/x', 'X-Atlassian-Token': 'nocheck' });
+    const blank = buildRequest(s, o, vals({ header: { Accept: '', 'content-type': '  ' }, body: '{}' }));
+    expect(blank.headers).toEqual({ Accept: 'application/json', 'Content-Type': 'application/json', 'X-Atlassian-Token': 'no-check' });
+  });
+
+  it('uses -I for HEAD and leaves out -u when the request has its own Authorization', () => {
+    const head = toCurl(buildRequest(s, op('jira:api2', 'HEAD', 'a'), empty));
+    expect(head.startsWith('curl -I ')).toBe(true);
+    expect(head).not.toContain('-X');
+    const r = buildRequest(s, op('jira:api2', 'GET', 'a'), empty);
+    setHeader(r.headers, 'authorization', 'Bearer x');
+    expect(toCurl(r)).not.toContain(' -u ');
+    expect(toCurl(r)).toContain(`-H 'authorization: Bearer x'`);
+  });
+
+  it('builds no URL while the operation\'s module is missing from the summary', () => {
+    const o = op('jira:gone', 'GET', 'issue/{key}');
+    const u = urlParts(s, o, vals({ path: { key: 'A-1' } }));
+    expect(u.error).toMatch(/module/i);
+    expect(u.parts.map((p) => p.text).join('')).not.toContain('/jira/rest/issue/');
+    expect(() => buildRequest(s, o, vals({ path: { key: 'A-1' } }))).toThrow(/module/i);
+  });
+
+  it('sends only the values of parameters the operation declares', () => {
+    const o = op('jira:api2', 'GET', 'a/{id}', { params: [param('q', 'query'), param('m', 'matrix'), param('X-Declared', 'header')] });
+    const r = buildRequest(s, o, vals({
+      path: { id: '1', gone: 'x' }, query: { q: ['1'], stale: ['2'] }, matrix: { m: '3', old: '4' },
+      header: { 'X-Declared': '5', 'X-Stale': '6' },
+    }));
+    expect(r.url).toBe('/jira/rest/api/2/a/1;m=3?q=1');
+    expect(r.headers).toEqual({ 'X-Declared': '5', Accept: 'application/json' });
+    expect(urlParts(s, o, vals({ path: { id: '1' }, query: { stale: ['2'] } })).parts.map((p) => p.text).join('')).toBe('/jira/rest/api/2/a/1');
+  });
+
+  it('counts a blank value as missing, as the form\'s check does', () => {
+    const key = param('key', 'path', { required: true });
+    const o = op('jira:api2', 'GET', 'issue/{key}', { params: [key, param('q', 'query'), param('m', 'matrix'), param('X-H', 'header')] });
+    expect(checkValue(key, '   ')?.message).toBe('Required');
+    expect(urlParts(s, o, vals({ path: { key: '   ' } })).missing).toEqual(['key']);
+    expect(() => buildRequest(s, o, vals({ path: { key: '   ' } }))).toThrow(/key/);
+    expect(() => buildRequest(s, op('jira:api2', 'GET', 'x/{t}'), vals({ path: { t: ' ' } }))).toThrow(/: t$/);
+    const r = buildRequest(s, o, vals({ path: { key: 'A-1' }, query: { q: ['  '] }, matrix: { m: ' ' }, header: { 'X-H': ' ' } }));
+    expect(r.url).toBe('/jira/rest/api/2/issue/A-1');
+    expect(r.headers).toEqual({ Accept: 'application/json' });
   });
 });

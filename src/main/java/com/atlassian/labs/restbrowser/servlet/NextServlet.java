@@ -7,6 +7,7 @@ import com.atlassian.plugin.PluginAccessor;
 import com.atlassian.sal.api.ApplicationProperties;
 import com.atlassian.sal.api.UrlMode;
 import com.atlassian.sal.api.auth.LoginUriProvider;
+import com.atlassian.sal.api.user.UserKey;
 import com.atlassian.sal.api.user.UserManager;
 import com.atlassian.templaterenderer.TemplateRenderer;
 import jakarta.servlet.http.HttpServletRequest;
@@ -23,12 +24,14 @@ import static java.util.Objects.requireNonNull;
 @AnonymousSiteAccess
 public class NextServlet extends RequiresLoginServlet {
 
+    private final UserManager userManager;
     private final ApplicationProperties applicationProperties;
     private final PluginAccessor pluginAccessor;
 
     public NextServlet(UserManager userManager, TemplateRenderer renderer, LoginUriProvider loginUriProvider,
                        ApplicationProperties applicationProperties, PluginAccessor pluginAccessor) {
         super(userManager, renderer, loginUriProvider);
+        this.userManager = requireNonNull(userManager);
         this.applicationProperties = requireNonNull(applicationProperties);
         this.pluginAccessor = requireNonNull(pluginAccessor);
     }
@@ -45,7 +48,17 @@ public class NextServlet extends RequiresLoginServlet {
         context.put("siteUrl", applicationProperties.getBaseUrl(UrlMode.CANONICAL));
         context.put("productName", applicationProperties.getDisplayName());
         context.put("pluginVersion", pluginVersion());
+        context.put("user", user(request));
         return context;
+    }
+
+    /**
+     * The user's key, so the app keeps each user's history apart in a shared browser profile; empty when
+     * anonymous.
+     */
+    private String user(HttpServletRequest request) {
+        UserKey key = userManager.getRemoteUserKey(request);
+        return key == null ? "" : key.getStringValue();
     }
 
     /** This app's version, for the page's header; empty when the plugin system does not know it. */

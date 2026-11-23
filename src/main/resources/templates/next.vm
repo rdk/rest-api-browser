@@ -4,6 +4,7 @@
 #* @vtlvariable name="productName" type="java.lang.String" *#
 #* @vtlvariable name="pluginVersion" type="java.lang.String" *#
 #* @vtlvariable name="siteUrl" type="java.lang.String" *#
+#* @vtlvariable name="user" type="java.lang.String" *#
 <html>
   <head>
     <title>REST API Browser</title>
@@ -13,6 +14,7 @@
   <body class="page-type-admin rab-next-page">
     <div id="rab-next" data-base-url="$textUtils.htmlEncode($baseUrl)" data-product="$textUtils.htmlEncode($productName)"
          data-classic-url="$textUtils.htmlEncode($baseUrl)/plugins/servlet/restbrowser"
-         data-version="$textUtils.htmlEncode($pluginVersion)" data-site-url="$textUtils.htmlEncode($siteUrl)"></div>
+         data-version="$textUtils.htmlEncode($pluginVersion)" data-site-url="$textUtils.htmlEncode($siteUrl)"
+         data-user="$textUtils.htmlEncode($user)"></div>
   </body>
 </html>

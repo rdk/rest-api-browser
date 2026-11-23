@@ -5,8 +5,11 @@ interface Props {
   count: number;
   rowHeight: number;
   renderRow: (index: number) => ComponentChildren;
-  /** Scrolled into view when it changes. */
+  /** Scrolled into view when it changes, or when revealKey changes (the same row again, after the user scrolled away). */
   activeIndex?: number;
+  revealKey?: number;
+  /** A change scrolls the list back to its top (a new search). */
+  resetKey?: string;
   className?: string;
   overscan?: number;
   /** Set for a semantic list (the operations); code lines leave it out. */
@@ -21,7 +24,7 @@ const MAX_HEIGHT = 8_000_000;
  * without measuring, and a million rows cost as much as the 30 on screen. Past MAX_HEIGHT the scrollbar maps
  * proportionally onto the rows, so the end of a 20 MB response stays reachable.
  */
-export function VirtualList({ count, rowHeight, renderRow, activeIndex, className, overscan = 8, ariaLabel }: Props) {
+export function VirtualList({ count, rowHeight, renderRow, activeIndex, revealKey, resetKey, className, overscan = 8, ariaLabel }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [first, setFirst] = useState(0);
   const [, setTick] = useState(0);
@@ -48,18 +51,28 @@ export function VirtualList({ count, rowHeight, renderRow, activeIndex, classNam
   useLayoutEffect(() => {
     const el = ref.current;
     if (el) setFirst(firstFor(el.scrollTop));
-  }, [count]);
+  }, [count, rowHeight, scale]);
+
+  const firstReset = useRef(resetKey);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || firstReset.current === resetKey) return;
+    firstReset.current = resetKey;
+    el.scrollTop = 0;
+    setFirst(0);
+  }, [resetKey]);
 
   useEffect(() => {
     const el = ref.current;
-    if (!el || activeIndex === undefined || activeIndex < 0) return;
+    // a hidden list (display: none, behind a box on the whole screen) has no height to scroll within
+    if (!el || !el.clientHeight || activeIndex === undefined || activeIndex < 0) return;
     // compare in virtual coordinates (the rows'), then convert back to the scaled scroll position
     const vTop = activeIndex * rowHeight;
     const vScroll = el.scrollTop * scale;
     if (vTop < vScroll) el.scrollTop = vTop / scale;
     else if (vTop + rowHeight > vScroll + el.clientHeight) el.scrollTop = (vTop + rowHeight - el.clientHeight) / scale;
     setFirst(firstFor(el.scrollTop));
-  }, [activeIndex, rowHeight]);
+  }, [activeIndex, revealKey, rowHeight, scale]);
 
   const onScroll = (e: Event) => {
     const f = firstFor((e.currentTarget as HTMLDivElement).scrollTop);
@@ -74,14 +87,16 @@ export function VirtualList({ count, rowHeight, renderRow, activeIndex, classNam
   const scrollTop = ref.current?.scrollTop ?? 0;
   const offset = scrollTop * (1 - scale);
   const rows = [];
-  for (let i = start; i < end; i++) {
-    rows.push(
-      <div key={i} class="rab-n-vrow" role={ariaLabel ? 'listitem' : undefined}
-           style={{ top: offset + i * rowHeight + 'px', height: rowHeight + 'px' }}>
-        {renderRow(i)}
-      </div>,
-    );
-  }
+  const row = (i: number) => (
+    <div key={i} class="rab-n-vrow" role={ariaLabel ? 'listitem' : undefined}
+         aria-setsize={ariaLabel ? count : undefined} aria-posinset={ariaLabel ? i + 1 : undefined}
+         style={{ top: offset + i * rowHeight + 'px', height: rowHeight + 'px' }}>
+      {renderRow(i)}
+    </div>
+  );
+  for (let i = start; i < end; i++) rows.push(row(i));
+  // the active row stays rendered when the list scrolls away from it, so a row with the keyboard focus keeps it
+  if (activeIndex !== undefined && activeIndex >= 0 && activeIndex < count && (activeIndex < start || activeIndex >= end)) rows.push(row(activeIndex));
   return (
     <div
       ref={ref}

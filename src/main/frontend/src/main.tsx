@@ -15,6 +15,7 @@ function mount() {
         product={root.dataset.product ?? ''}
         version={root.dataset.version ?? ''}
         siteUrl={root.dataset.siteUrl ?? ''}
+        user={root.dataset.user ?? ''}
       />,
       root,
     );

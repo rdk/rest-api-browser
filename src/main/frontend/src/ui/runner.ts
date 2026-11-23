@@ -1,3 +1,4 @@
+import { isLoginAnswer } from '../core/catalog';
 import type { BuiltRequest } from '../core/request';
 
 export type ResultKind = 'json' | 'xml' | 'html' | 'text' | 'binary' | 'empty';
@@ -17,8 +18,14 @@ export interface RunResult {
   durationMs: number;
   size: number;
   truncated: boolean;
+  /** How to show the body; 'binary' is the only kind without text. */
   kind: ResultKind;
+  /** The body as text, in the charset of its Content-Type (UTF-8 when it names none the browser knows); not for binary. */
   text?: string;
+  /**
+   * The body's bytes as received (up to the cap), so a download saves them unchanged: binary and text bodies alike,
+   * none for an empty one. Whether a body is binary is `kind`, not whether this is set.
+   */
   blob?: Blob;
   sessionExpired: boolean;
   error?: string;
@@ -32,17 +39,16 @@ export function kindOf(contentType: string, size: number): ResultKind {
   if (size === 0) return 'empty';
   const ct = contentType.toLowerCase().split(';')[0].trim();
   if (ct === 'application/json' || ct.endsWith('+json')) return 'json';
-  if (ct.includes('xml')) return 'xml';
+  // XML itself only: Office files (application/vnd.openxmlformats-...) have "xml" in their type but are zips
+  if (ct === 'application/xml' || ct === 'text/xml' || ct.endsWith('+xml')) return 'xml';
   if (ct === 'text/html') return 'html';
   if (ct.startsWith('text/') || ct === 'application/javascript') return 'text';
   return 'binary';
 }
 
-function isSessionExpired(res: Response, contentType: string): boolean {
-  if (res.status === 401) return true;
-  const reason = (res.headers.get('x-seraph-loginreason') ?? '').toUpperCase();
-  if (reason.includes('OUT') || reason.includes('AUTHENTICATION')) return true;
-  return !!res.redirected && /login/i.test(res.url) && /text\/html/i.test(contentType);
+/** The charset a Content-Type names ("text/plain; charset=ISO-8859-1"), if any. */
+function charsetOf(contentType: string): string | undefined {
+  return /;\s*charset\s*=\s*"?([^";\s]+)"?/i.exec(contentType)?.[1];
 }
 
 // The chunks are never joined: a Blob takes them as parts and the text decoder streams over them.
@@ -72,8 +78,14 @@ async function readCapped(res: Response, cap: number): Promise<{ chunks: Uint8Ar
   return { chunks, size, truncated };
 }
 
-function decode(chunks: Uint8Array[]): string {
-  const decoder = new TextDecoder('utf-8');
+// In the charset of the Content-Type when the browser knows it, else UTF-8.
+function decode(chunks: Uint8Array[], contentType: string): string {
+  let decoder: TextDecoder;
+  try {
+    decoder = new TextDecoder(charsetOf(contentType) ?? 'utf-8');
+  } catch {
+    decoder = new TextDecoder('utf-8');
+  }
   let out = '';
   for (const c of chunks) out += decoder.decode(c, { stream: true });
   return out + decoder.decode();
@@ -106,7 +118,7 @@ export function fetchEcho(baseUrl: string, result: RunResult, fetchFn: typeof fe
   return p;
 }
 
-// What a download should save: the binary blob, or the text as a Blob made on demand.
+// What a download should save: the bytes as received, or, for a result without them, the text as a Blob made on demand.
 export function downloadBlob(result: RunResult): Blob | null {
   if (result.blob) return result.blob;
   if (result.text !== undefined) return new Blob([result.text], { type: result.contentType });
@@ -167,9 +179,9 @@ export class RequestRunner {
         size,
         truncated,
         kind,
-        text: kind === 'binary' ? undefined : decode(chunks),
-        blob: kind === 'binary' ? new Blob(chunks as BlobPart[], { type: contentType }) : undefined,
-        sessionExpired: isSessionExpired(res, contentType),
+        text: kind === 'binary' ? undefined : decode(chunks, contentType),
+        blob: size > 0 ? new Blob(chunks as BlobPart[], { type: contentType }) : undefined,
+        sessionExpired: isLoginAnswer(res),
       };
     } catch (e) {
       const aborted = controller.signal.aborted;

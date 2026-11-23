@@ -62,3 +62,16 @@ describe('javatokens', () => {
     expect(text(annotationTokens(clipped))).toBe(clipped);
   });
 });
+
+describe('javatokens review fixes', () => {
+  it('colours all-caps type names as types and only real constants as constants', () => {
+    expect(show(tokenize('URI get(UUID id, JSON j, @Context URL u) throws IOException'))).toBe(
+      'type:URI| |name:get|punct:(|type:UUID| |name:id|punct:,| |type:JSON| |name:j|punct:,| |ann:@Context| |type:URL| |name:u|punct:)| |'
+      + 'kw:throws| |type:IOException');
+    expect(show(tokenize('MAX_VALUE, MediaType.APPLICATION_JSON, RetentionPolicy.RUNTIME, Status.OK, java.net.URI, T, Map<K, V>'))).toBe(
+      'num:MAX_VALUE|punct:,| |type:MediaType|punct:.|num:APPLICATION_JSON|punct:,| |type:RetentionPolicy|punct:.|num:RUNTIME|punct:,| |'
+      + 'type:Status|punct:.|num:OK|punct:,| |name:java|punct:.|name:net|punct:.|type:URI|punct:,| |type:T|punct:,| |'
+      + 'type:Map|punct:<|type:K|punct:,| |type:V|punct:>');
+    expect(show(annotationTokens('@Retention(RetentionPolicy.RUNTIME)'))).toBe('ann:@Retention|punct:(|type:RetentionPolicy|punct:.|num:RUNTIME|punct:)');
+  });
+});

@@ -272,12 +272,16 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
             return { w: Math.round(r.width), h: Math.round(r.height), top: Math.round(r.top), shown: getComputedStyle(e).display !== 'none' }; })()`);
         const screen = await b.evaluate(`({ w: innerWidth, h: innerHeight })`);
         const whole = r => !!r && r.shown && r.top <= 1 && Math.abs(r.w - screen.w) <= 20 && Math.abs(r.h - screen.h) <= 2;
+        const inert = () => b.evaluate(`({ topbar: document.querySelector('.rab-n-topbar').inert, side: document.querySelector('.rab-n-side').inert })`);
         await click('[data-testid=max-top]');
         await sleep(150);
-        const top = { operation: await box('[data-testid=operation]'), response: await box('[data-testid=response]') };
+        const top = { operation: await box('[data-testid=operation]'), response: await box('[data-testid=response]'), inert: await inert() };
         await press('Escape');
         await sleep(150);
         const topBack = await box('[data-testid=operation]');
+        const inertBack = await inert();
+        c.check('what a box on the whole screen covers (the header, the list) is inert until it gives the screen back',
+            top.inert.topbar && top.inert.side && !inertBack.topbar && !inertBack.side, { during: top.inert, after: inertBack });
         await click('[data-testid=max-bottom]');
         await sleep(150);
         const bottom = { response: await box('[data-testid=response]'), head: await box('.rab-n-op-head') };
@@ -297,7 +301,9 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
             const colorOf = sel => b.evaluate(`(() => { const e = document.querySelector(${q(sel)}); return e ? getComputedStyle(e).color : null; })()`);
             const templateColor = await colorOf('[data-testid=live-url] .rab-n-pp-param');
             const empty = { mark: await mark(), tab: await b.evaluate(`!!document.querySelector('[data-testid=params-warn]')`),
-                send: await b.evaluate(`document.querySelector('[data-testid=send]').disabled`) };
+                send: await b.evaluate(`document.querySelector('[data-testid=send]').disabled`),
+                curl: await b.evaluate(`document.querySelector('[data-testid=copy-curl]').disabled`) };
+            c.check('Copy curl is disabled like Send while a required value is missing', empty.send && empty.curl, empty);
             await b.shot(path.join(SHOTS, `${PRODUCT}-next-5-form.png`));
             await type(`input[name=${q(P.param)}]`, ODD);
             await sleep(100);
@@ -461,10 +467,15 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
             const band = document.querySelector('.rab-n-statusline'), pane = document.querySelector('.rab-n-tabpane, .rab-n-request');
             return { skin: r.dataset.skin, image: t.backgroundImage.slice(0, 60), color: t.backgroundColor,
                 band: band && getComputedStyle(band).backgroundColor, pane: pane && getComputedStyle(pane.closest('.rab-n-main') || pane).backgroundColor }; })()`);
-        const pickSkin = async id => { await click('[data-testid=menu-button]'); await b.waitFor(`!!document.querySelector('[data-testid=skin-${id}]')`, 3000);
-            await click(`[data-testid=skin-${id}]`); await sleep(200); return skinOf(); };
+        const menuOpen = () => b.evaluate(`!!document.querySelector('[data-testid=menu]')`);
+        const pickSkin = async id => {
+            if (!await menuOpen()) await click('[data-testid=menu-button]');
+            await b.waitFor(`!!document.querySelector('[data-testid=skin-${id}]')`, 3000);
+            await click(`[data-testid=skin-${id}]`); await sleep(200); return skinOf();
+        };
         const skins = { balanced: await skinOf() };
         for (const id of ['vivid', 'navy']) skins[id] = await pickSkin(id);
+        c.check('choosing a skin leaves the menu open, like the colour modes', await menuOpen());
         c.check('the menu switches the skin: Balanced by default, Vivid, Calm (a navy header)',
             skins.balanced.skin === 'balanced' && /gradient/.test(skins.balanced.image) && skins.vivid.skin === 'vivid'
             && /gradient/.test(skins.vivid.image) && skins.vivid.image !== skins.balanced.image
@@ -485,7 +496,36 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
             return { ...await modeOf(), pressed: await b.evaluate(`document.querySelector('[data-testid=mode-${m}]').getAttribute('aria-checked')`) };
         };
         const modes = { dark: await pickMode('dark'), light: await pickMode('light'), system: await pickMode('system') };
+        // the Send button's text against the first colour of its fill (the lighter end of a gradient), per skin and mode
+        const lum = c3 => { const [r, g, bl] = c3.map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+            return 0.2126 * r + 0.7152 * g + 0.0722 * bl; };
+        // computed colours come as rgb(r, g, b) or, for colour-mix results, as color(srgb r g b) with 0..1 channels
+        const rgb = t => { const f = t.match(/color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)/); if (f) return f.slice(1, 4).map(v => Number(v) * 255);
+            return (t.match(/rgba?\(([^)]+)\)/) || [, ''])[1].split(',').slice(0, 3).map(Number); };
+        const contrast = (a, z) => { const [x, y] = [lum(rgb(a)), lum(rgb(z))].sort((m, n) => n - m); return Math.round((x + 0.05) / (y + 0.05) * 100) / 100; };
+        const sendColors = () => b.evaluate(`(() => { const s = document.querySelector('[data-testid=send]'); if (!s) return null; const st = getComputedStyle(s);
+            return { color: st.color, fill: (st.backgroundImage.match(/(rgba?|color)\\([^)]*\\)/) || [st.backgroundColor])[0] }; })()`);
+        const sends = {};
+        for (const id of ['balanced', 'vivid', 'navy']) {
+            await pickSkin(id);
+            for (const m of ['light', 'dark']) {
+                await pickMode(m);
+                const sc = await sendColors();
+                if (sc) sends[`${id}-${m}`] = { ...sc, ratio: contrast(sc.color, sc.fill) };
+            }
+        }
+        await pickMode('system');
+        await pickSkin('navy');
         await press('Escape');
+        c.check(`Send's text keeps 4.5:1 against its fill in every skin, light and dark (${Object.keys(sends).length} seen)`,
+            Object.keys(sends).length === 6 && Object.values(sends).every(x => x.ratio >= 4.5), sends);
+        const theme = await b.evaluate(`document.documentElement.getAttribute('data-theme') || ''`);
+        c.check('the page\'s data-theme gets dark:dark and light:light, nothing else', /dark:dark/.test(theme) && /light:light/.test(theme) && !/null/.test(theme), theme);
+        // the request's and the response's tabs each point to their panel
+        const panels = await b.evaluate(`[...document.querySelectorAll('.rab-n-request [role=tablist], .rab-n-response [role=tablist]')].map(l => {
+            const t = l.querySelector('[role=tab][aria-selected=true]'); const pane = t && document.getElementById(t.getAttribute('aria-controls') || '');
+            return { label: l.getAttribute('aria-label'), panel: pane ? pane.getAttribute('role') : null, labelledBy: pane && pane.getAttribute('aria-labelledby') === t.id }; })`);
+        c.check('the request\'s and the response\'s tabs each point to their panel', panels.length === 2 && panels.every(x => x.label && x.panel === 'tabpanel' && x.labelledBy), panels);
         c.check('the menu switches light, dark and system: the product\'s colours follow on this page',
             modes.dark.mode === 'dark' && !modes.dark.auto && modes.light.mode === 'light' && !modes.light.auto
             && modes.dark.surface !== modes.light.surface && modes.system.auto
@@ -509,6 +549,11 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         await pickSkin('balanced');
         const sent = await b.evaluate(`!!document.querySelector('[data-testid=response]')`);
         c.check('a deep link opens the operation with its values, without sending', prefilled && !sent, { prefilled, sent });
+
+        // a link with parameters named like an object's built-in properties still opens the page
+        await b.navigate(PAGE + '?op=' + encodeURIComponent(key) + '&q.toString=1&path.constructor=2&h.__proto__=3&valueOf=4');
+        const odd = await b.waitFor(`!!document.querySelector('[data-testid=search]') && !!document.querySelector('[data-testid=operation]')`, 60000);
+        c.check('a link with parameters named toString, constructor, __proto__ still opens the page and the operation', odd);
 
         // errors
         const own = b.exceptions.filter(e => /next\.js|rest-api-browser|restbrowser/i.test(e));

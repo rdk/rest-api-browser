@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { memo } from 'preact/compat';
 import type { Index, Operation, Summary } from '../core/types';
 import { CatalogStore } from '../core/catalog';
+import { clearDetails } from '../core/details';
 import { buildRows } from '../core/search';
 import { formatState, parseState, type RouteState } from '../core/router';
 import { findTemplates } from '../core/template';
@@ -10,7 +11,8 @@ import { UserStore, isCredentialHeader } from './userstore';
 import { Sidebar } from './Sidebar';
 import { OperationView, emptyDraft, type Draft } from './Operation';
 import { Menu, type MenuItem } from './Menu';
-import { PinHint, usePin } from './bits';
+import { PinHint, plural, usePin } from './bits';
+import { isSkipped } from './facts';
 
 interface Props {
   baseUrl: string;
@@ -20,6 +22,8 @@ interface Props {
   version: string;
   /** The product's base URL as configured ("https://jira.example.com"), empty when unknown. */
   siteUrl: string;
+  /** The user's key, which keeps their request history apart from other users of this browser; empty when anonymous. */
+  user?: string;
 }
 
 /** The skins of skins.css, in the menu's order; the first is the default. */
@@ -50,8 +54,9 @@ const isMode = (m: unknown): m is Mode => m === 'light' || m === 'dark' || m ===
  */
 function applyMode(mode: Mode): () => void {
   const h = document.documentElement;
-  const theme = h.getAttribute('data-theme') ?? '';
-  for (const t of ['dark:dark', 'light:light']) if (!theme.split(/\s+/).includes(t)) h.setAttribute('data-theme', (h.getAttribute('data-theme') + ' ' + t).trim());
+  const themes = (h.getAttribute('data-theme') ?? '').split(/\s+/).filter(Boolean);
+  for (const t of ['dark:dark', 'light:light']) if (!themes.includes(t)) themes.push(t);
+  if (h.getAttribute('data-theme') !== themes.join(' ')) h.setAttribute('data-theme', themes.join(' '));
   if (mode !== 'system') {
     h.removeAttribute('data-color-mode-auto');
     h.setAttribute('data-color-mode', mode);
@@ -98,10 +103,10 @@ const SPLIT = 0.45;
 /** The list may take up to this share of the width. */
 const MAX_SIDEBAR = 0.75;
 
-export function App({ baseUrl, classicUrl, product, version, siteUrl }: Props) {
+export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Props) {
   const store = useMemo(() => new CatalogStore(baseUrl), [baseUrl]);
   const runner = useMemo(() => new RequestRunner(), []);
-  const userStore = useMemo(() => new UserStore(baseUrl || location.host), [baseUrl]);
+  const userStore = useMemo(() => new UserStore(baseUrl || location.host, user || undefined), [baseUrl, user]);
 
   const [summary, setSummary] = useState<Summary | null>(null);
   const [index, setIndex] = useState<Index | null>(null);
@@ -120,38 +125,35 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl }: Props) {
     };
   }, [store]);
 
+  // a catalog that changed (rebuilt, an app upgraded) may have other Java behind the same operations
+  const hash = summary?.hash;
+  const lastHash = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (hash && lastHash.current && hash !== lastHash.current) clearDetails();
+    if (hash) lastHash.current = hash;
+  }, [hash]);
+
   const rows = useMemo(() => (summary && index ? buildRows(summary, index) : []), [summary, index]);
   const opsByKey = useMemo(() => new Map((index?.operations ?? []).map((o) => [o.key, o])), [index]);
   const modulesById = useMemo(() => new Map((summary?.modules ?? []).map((m) => [m.id, m])), [summary]);
 
-  // ---- preferences
+  // ---- preferences, read at once: the first paint already has the user's skin, colour mode and layout
+  const stored = useMemo(() => userStore.prefsNow(), [userStore]);
   const [query, setQuery] = useState('');
-  const [supportedOnly, setSupportedOnly] = useState(false);
-  const [collapsed, setCollapsed] = useState<Set<string> | null>(null);
-  const [prefsLoaded, setPrefsLoaded] = useState(false);
-  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_WIDTH);
-  const [split, setSplit] = useState(SPLIT);
-  const [skin, setSkin] = useState(SKINS[0].id);
-  // the colour mode: the product's until the user chooses one here
-  const [mode, setMode] = useState<Mode | null>(null);
-  useEffect(() => (mode ? applyMode(mode) : undefined), [mode]);
-  useEffect(() => {
-    userStore.prefs().then((p) => {
-      setSkin(skinOf(p.skin));
-      if (isMode(p.mode)) setMode(p.mode);
-      if (p.supportedOnly !== undefined) setSupportedOnly(p.supportedOnly);
-      if (p.collapsed) setCollapsed(new Set(p.collapsed));
-      if (p.sidebarWidth) setSidebarWidth(p.sidebarWidth);
-      if (p.split) setSplit(p.split);
-      setPrefsLoaded(true);
-    });
-  }, [userStore]);
+  const [supportedOnly, setSupportedOnly] = useState(!!stored.supportedOnly);
+  const [collapsed, setCollapsed] = useState<Set<string> | null>(stored.collapsed ? new Set(stored.collapsed) : null);
+  const [sidebarWidth, setSidebarWidth] = useState(stored.sidebarWidth || SIDEBAR_WIDTH);
+  const [split, setSplit] = useState(stored.split || SPLIT);
+  const [skin, setSkin] = useState(skinOf(stored.skin));
+  // the colour mode: the product's until the user chooses one here; applied before the browser paints
+  const [mode, setMode] = useState<Mode | null>(isMode(stored.mode) ? stored.mode : null);
+  useLayoutEffect(() => (mode ? applyMode(mode) : undefined), [mode]);
   // first visit: only the product's supported modules start expanded, decided as soon as the modules are known
   useEffect(() => {
-    if (prefsLoaded && collapsed === null && summary) {
+    if (collapsed === null && summary) {
       setCollapsed(new Set(summary.modules.filter((m) => m.stability !== 'supported').map((m) => m.id)));
     }
-  }, [prefsLoaded, summary, collapsed]);
+  }, [summary, collapsed]);
   const save = useCallback((patch: Parameters<UserStore['setPrefs']>[0]) => void userStore.setPrefs(patch), [userStore]);
   const onSupportedOnly = useCallback((v: boolean) => {
     setSupportedOnly(v);
@@ -170,11 +172,17 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl }: Props) {
   const routeState = useRef<RouteState>(parseState(location.search));
   const [selectedKey, setSelectedKey] = useState<string | undefined>(routeState.current.op);
   const drafts = useRef(new Map<string, Draft>());
+  // bumped when Back or Forward lands on a link with values: the form is filled from it again, as when it was opened
+  const [revision, setRevision] = useState(0);
   useEffect(() => {
     const onPop = () => {
-      routeState.current = parseState(location.search);
-      if (routeState.current.op !== selectedRef.current) runner.abort();
-      setSelectedKey(routeState.current.op);
+      const state = (routeState.current = parseState(location.search));
+      if (state.op !== selectedRef.current) runner.abort();
+      if (state.op && (Object.keys(state.path).length || Object.keys(state.q).length || Object.keys(state.h).length)) {
+        drafts.current.delete(state.op);
+        setRevision((r) => r + 1);
+      }
+      setSelectedKey(state.op);
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
@@ -229,9 +237,19 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl }: Props) {
     return () => window.removeEventListener('resize', measure);
   }, []);
 
+  const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | undefined>();
+  // a failed rebuild says so in the list's status line for a while, then the counts come back
+  useEffect(() => {
+    if (!refreshError) return;
+    const t = setTimeout(() => setRefreshError(undefined), 10_000);
+    return () => clearTimeout(t);
+  }, [refreshError]);
   const refresh = useCallback(async () => {
     setRefreshError(undefined);
+    setRefreshing(true);
+    clearDetails();
+    const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
     try {
       const res = await fetch(baseUrl + '/rest/restbrowser/1/catalog/refresh', {
         method: 'POST',
@@ -239,22 +257,35 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl }: Props) {
         headers: { 'X-Atlassian-Token': 'no-check' },
       });
       if (!res.ok) {
-        setRefreshError(res.status === 403 ? 'Only system administrators can rebuild the catalog.' : `The rebuild failed (${res.status}).`);
+        setRefreshError(res.status === 403 ? 'Only system administrators can rebuild the catalog.' : `The rebuild could not be started (HTTP ${res.status}).`);
         return;
       }
-      await store.refreshSoon();
+      try {
+        await store.refreshSoon();
+      } catch (e) {
+        setRefreshError('The rebuild started, but the catalog could not be read again: ' + message(e));
+      }
     } catch (e) {
-      setRefreshError('The rebuild failed: ' + (e instanceof Error ? e.message : String(e)));
+      setRefreshError('The rebuild could not be started: ' + message(e));
+    } finally {
+      setRefreshing(false);
     }
   }, [baseUrl, store]);
 
   const productLabel = summary ? `${summary.product.name} ${summary.product.version}` : product;
   // the header's tooltip about the project: on hover or keyboard focus of the brand, pinned with Alt+P
   const brandWrap = useRef<HTMLSpanElement>(null);
-  const aboutPinned = usePin(
-    () => !!brandWrap.current && (brandWrap.current.matches(':hover') || brandWrap.current.contains(document.activeElement)),
-    brandWrap,
-  );
+  const aboutShown = () => !!brandWrap.current && (brandWrap.current.matches(':hover') || brandWrap.current.contains(document.activeElement));
+  // Escape hides it even while the pointer rests on it (it comes back when the pointer or the focus comes back)
+  const [aboutDismissed, setAboutDismissed] = useState(false);
+  const aboutPinned = usePin(aboutShown, brandWrap, () => setAboutDismissed(true));
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && aboutShown()) setAboutDismissed(true);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
   const site = siteUrl.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').replace(/\/+$/, '');
   const siteHost = site.split('/')[0];
   const menu: MenuItem[] = [
@@ -272,8 +303,8 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl }: Props) {
       ? [{
           id: 'rebuild',
           label: 'Rebuild the catalog',
-          hint: summary.complete ? 'Reads every REST module again (system administrators)' : 'The catalog is being built…',
-          disabled: !summary.complete,
+          hint: summary.complete && !refreshing ? 'Reads every REST module again (system administrators)' : 'The catalog is being built…',
+          disabled: !summary.complete || refreshing,
           onSelect: refresh,
           testId: 'refresh',
           group: true,
@@ -301,6 +332,7 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl }: Props) {
       label: k.label,
       hint: k.hint,
       checked: skin === k.id,
+      keepOpen: true,
       testId: 'skin-' + k.id,
       onSelect: () => {
         setSkin(k.id);
@@ -322,7 +354,8 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl }: Props) {
     <div class="rab-n" ref={root} style={{ height: height + 'px' }} data-skin={skin}>
       <div class="rab-n-topbar">
         <div class="rab-n-top-left">
-        <span ref={brandWrap} class={'rab-n-brand-wrap' + (aboutPinned ? ' pinned' : '')}>
+        <span ref={brandWrap} class={'rab-n-brand-wrap' + (aboutPinned ? ' pinned' : aboutDismissed ? ' dismissed' : '')}
+              onMouseEnter={() => setAboutDismissed(false)} onFocusIn={() => setAboutDismissed(false)}>
           <a class="rab-n-brand" href={REPO} target="_blank" rel="noopener noreferrer" aria-describedby="rab-n-about" data-testid="brand">
             <span class="rab-n-brand-mark" aria-hidden="true">
               <BrandIcon size={15} />
@@ -382,7 +415,7 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl }: Props) {
         <div class="rab-n-main">
           {op && draft && summary ? (
             <MemoOperation
-              key={op.key}
+              key={op.key + ':' + revision}
               summary={summary}
               op={op}
               module={modulesById.get(op.module)}
@@ -397,7 +430,7 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl }: Props) {
             <Welcome
               summary={summary}
               missing={!!selectedKey && !!index && !op && !!summary?.complete}
-              indexing={!!selectedKey && !op && !summary?.complete}
+              indexing={!!selectedKey && !op && !loadError && !summary?.complete}
             />
           )}
         </div>
@@ -437,7 +470,7 @@ function About({ version, product, operations, modules, pinned }: {
         {modules !== undefined && operations > 0 && (
           <>
             <dt>Catalog</dt>
-            <dd>{operations.toLocaleString()} operations in {modules} modules</dd>
+            <dd>{plural(operations, 'operation')} in {plural(modules, 'module')}</dd>
           </>
         )}
         <dt>Project</dt>
@@ -445,7 +478,7 @@ function About({ version, product, operations, modules, pinned }: {
         <dt>License</dt>
         <dd>Apache License 2.0</dd>
       </dl>
-      <a class="rab-n-about-foot" href={REPO} target="_blank" rel="noopener noreferrer" tabIndex={-1}>
+      <a class="rab-n-about-foot" href={REPO} target="_blank" rel="noopener noreferrer" tabIndex={-1} aria-hidden="true">
         <svg class="rab-n-svg" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
           <path d="M9 3h4v4M13 3L7.5 8.5M11.5 9.5V13h-8.5V4.5H6.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
@@ -501,6 +534,8 @@ function prefill(op: Operation, draft: Draft, state: RouteState): Draft {
 
 function Welcome({ summary, missing, indexing }: { summary: Summary | null; missing: boolean; indexing: boolean }) {
   const ops = summary ? summary.modules.reduce((n, m) => n + m.opCount, 0) : 0;
+  // modules left out on purpose (excluded, REST v1) are not failures
+  const failed = summary ? summary.modules.filter((m) => m.state === 'failed' && !isSkipped(m)).length : 0;
   return (
     <div class="rab-n-welcome" data-testid="welcome">
       <div class="rab-n-welcome-inner">
@@ -543,10 +578,9 @@ function Welcome({ summary, missing, indexing }: { summary: Summary | null; miss
             Requests run as you, in your browser. The History tab keeps the ones you sent.
           </li>
         </ul>
-        {summary && summary.modules.some((m) => m.state === 'failed') && (
+        {failed > 0 && (
           <p class="rab-n-subtle rab-n-welcome-note">
-            {summary.modules.filter((m) => m.state === 'failed').length} modules could not be described; they are listed
-            with the reason.
+            {plural(failed, 'module')} could not be described; {failed === 1 ? 'it is' : 'they are'} listed with the reason.
           </p>
         )}
       </div>
@@ -566,6 +600,8 @@ function SideHandle({ width, onWidth, onDone }: { width: number; onWidth: (w: nu
     onDone(next);
   };
   const ref = useRef<HTMLDivElement>(null);
+  const stop = useRef<(() => void) | undefined>(undefined);
+  useEffect(() => () => stop.current?.(), []);
   const onDown = (e: PointerEvent) => {
     const row = ref.current?.parentElement;
     const side = row?.firstElementChild as HTMLElement | null;
@@ -578,21 +614,28 @@ function SideHandle({ width, onWidth, onDone }: { width: number; onWidth: (w: nu
       last = Math.round(Math.min(row.clientWidth * MAX_SIDEBAR, Math.max(240, ev.clientX - left)));
       side.style.width = last + 'px';
     };
-    const up = () => {
+    const detach = () => {
       document.removeEventListener('pointermove', move);
       document.removeEventListener('pointerup', up);
       document.removeEventListener('pointercancel', up);
+      stop.current = undefined;
+    };
+    const up = () => {
+      detach();
       if (last) {
         onWidth(last);
         onDone(last);
       }
     };
+    stop.current = detach;
     document.addEventListener('pointermove', move);
     document.addEventListener('pointerup', up);
     document.addEventListener('pointercancel', up);
   };
+  const rowWidth = ref.current?.parentElement?.clientWidth;
   return (
     <div ref={ref} class="rab-n-vsplit" onPointerDown={onDown} onKeyDown={onKeyDown} tabIndex={0}
-         role="separator" aria-orientation="vertical" aria-label="Resize the list" aria-valuenow={width} />
+         role="separator" aria-orientation="vertical" aria-label="Resize the list" aria-valuenow={width}
+         aria-valuemin={240} aria-valuemax={rowWidth ? Math.round(rowWidth * MAX_SIDEBAR) : undefined} />
   );
 }

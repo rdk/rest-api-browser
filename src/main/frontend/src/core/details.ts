@@ -1,3 +1,5 @@
+import { isLoginAnswer } from './catalog';
+
 // The Java behind one operation: GET /rest/restbrowser/1/catalog/details?op=<key> (system administrators only).
 // Every section may instead be { error }, when the server could not read it; the others are still there.
 
@@ -60,10 +62,29 @@ export function shortJava(s: string): string {
     .join('');
 }
 
+/**
+ * A failed fetch: the HTTP status and the server's reason ("system-admin-only", "unknown-operation", ...), or ours:
+ * "session-expired" (the answer was the login page; the status is then 401) and "not-details" (a 200 that is not
+ * the details). The message is the reason, or a sentence for ours.
+ */
 export class DetailsError extends Error {
-  constructor(readonly status: number, readonly reason: string) {
-    super(reason);
+  constructor(readonly status: number, readonly reason: string, message: string = reason) {
+    super(message);
   }
+}
+
+const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+// a section is { error } or what it holds; `holds` checks the latter
+const section = (v: unknown, holds: (x: unknown) => boolean) => isError(v as Section<unknown>) || holds(v);
+
+/** Whether a body has the sections the Java tab reads, each { error } or of the right kind. */
+function isDetails(b: unknown): b is OperationDetails {
+  return isObject(b)
+    && section(b.method, isObject) && section(b.resourceClass, isObject) && section(b.module, isObject)
+    && section(b.bundle, isObject) && section(b.plugin, (x) => x === null || isObject(x))
+    && section(b.types, Array.isArray) && section(b.locators, Array.isArray)
+    && (b.definition === undefined || section(b.definition, isObject))
+    && (b.declaringClass === undefined || section(b.declaringClass, isObject));
 }
 
 const cache = new Map<string, Promise<OperationDetails>>();
@@ -78,16 +99,36 @@ export function fetchDetails(baseUrl: string, key: string, fetchFn: typeof fetch
       credentials: 'same-origin',
       headers: { Accept: 'application/json' },
     });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new DetailsError(res.status, (body as { error?: string }).error ?? `HTTP ${res.status}`);
-    return body as OperationDetails;
+    if (isLoginAnswer(res, true)) {
+      // 401 whatever the login page came with: a 200 would read as a success
+      throw new DetailsError(401, 'session-expired', 'Your session has expired: reload the page to log in again.');
+    }
+    let body: unknown;
+    try {
+      body = JSON.parse(await res.text());
+    } catch {
+      body = undefined;
+    }
+    if (!res.ok) {
+      const reason = isObject(body) && typeof body.error === 'string' ? body.error : `HTTP ${res.status}`;
+      throw new DetailsError(res.status, reason);
+    }
+    if (!isDetails(body)) {
+      throw new DetailsError(res.status, 'not-details', 'The server answered with something other than the details of the operation.');
+    }
+    return body;
   })();
   cache.set(key, p);
-  p.catch(() => cache.delete(key)); // a failure is asked again next time
+  p.catch(() => cache.get(key) === p && cache.delete(key)); // a failure is asked again next time
   while (cache.size > CACHE_SIZE) cache.delete(cache.keys().next().value!);
   return p;
 }
 
 export function forgetDetails(key: string): void {
   cache.delete(key);
+}
+
+/** Forgets every operation's details, e.g. when the catalog was rebuilt and the Java behind it may have changed. */
+export function clearDetails(): void {
+  cache.clear();
 }

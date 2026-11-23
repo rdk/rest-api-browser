@@ -17,13 +17,15 @@ export interface MenuItem {
   section?: string;
   /** One of a set of choices: shown with a check mark when chosen (a menu item radio). */
   checked?: boolean;
+  /** Choosing it leaves the menu open (a skin, to compare them), like the choices row. */
+  keepOpen?: boolean;
   /** A row of small choices with icons instead of one item (light, dark, system); label and onSelect are unused. */
   choices?: { id: string; label: string; icon: ComponentChildren; checked: boolean; onSelect: () => void; testId?: string }[];
 }
 
 /**
- * One button that opens a menu below it. The keyboard works as in any menu: the arrows, Home and End move,
- * Enter picks, Escape and Tab close; a click outside closes it too.
+ * One button that opens a menu below it. The keyboard works as in any menu: the arrows, Home and End move (Left and
+ * Right inside a row of choices), Enter and Space pick, Escape and Tab close; a click outside closes it too.
  */
 export function Menu({ label, items }: { label: string; items: MenuItem[] }) {
   const [open, setOpen] = useState(false);
@@ -49,10 +51,19 @@ export function Menu({ label, items }: { label: string; items: MenuItem[] }) {
   const onKey = (e: KeyboardEvent) => {
     const list = enabled();
     const i = list.indexOf(document.activeElement as HTMLElement);
+    const inRow = !!(document.activeElement as HTMLElement | null)?.closest('.rab-n-menu-choices');
     if (e.key === 'Escape') {
       e.preventDefault();
       e.stopPropagation(); // Escape also cancels a running request; here it only closes the menu
       close();
+    } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && inRow) {
+      e.preventDefault();
+      const row = [...(document.activeElement as HTMLElement).closest('.rab-n-menu-choices')!.querySelectorAll<HTMLElement>('[role=menuitemradio]')];
+      const j = row.indexOf(document.activeElement as HTMLElement);
+      row[(j + (e.key === 'ArrowRight' ? 1 : row.length - 1)) % row.length]?.focus();
+    } else if (e.key === ' ' && (document.activeElement as HTMLElement | null)?.tagName === 'A') {
+      e.preventDefault(); // a link item picks with Space too, like the buttons
+      (document.activeElement as HTMLElement).click();
     } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       const n = list.length;
@@ -80,6 +91,10 @@ export function Menu({ label, items }: { label: string; items: MenuItem[] }) {
           if (e.key === 'ArrowDown' && !open) {
             e.preventDefault();
             setOpen(true);
+          } else if (e.key === 'Escape' && open) {
+            e.preventDefault();
+            e.stopPropagation();
+            setOpen(false);
           }
         }}
         data-testid="menu-button"
@@ -123,7 +138,7 @@ export function Menu({ label, items }: { label: string; items: MenuItem[] }) {
                   aria-disabled={it.disabled || undefined}
                   onClick={() => {
                     if (it.disabled) return;
-                    close();
+                    if (!it.keepOpen) close();
                     it.onSelect?.();
                   }}
                   data-testid={it.testId}

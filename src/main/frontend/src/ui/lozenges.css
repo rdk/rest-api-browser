@@ -43,9 +43,7 @@
 .rab-n .rab-n-tag-access-unrestrictedaccess,
 .rab-n .rab-n-tag-access-anonymousallowed { --tag: var(--ds-text-accent-teal, #206a83); }
 .rab-n .rab-n-tag-access-unlicensedsiteaccess { --tag: var(--ds-text-accent-blue, #0055cc); }
-.rab-n .rab-n-tag-access-licensedonly { --tag: var(--ds-text-information, #0055cc); }
+.rab-n .rab-n-tag-access-licensedonly { --tag: var(--ds-text-subtle, #44546f); }
 .rab-n .rab-n-tag-access-adminonly { --tag: var(--ds-text-warning, #a54800); }
 .rab-n .rab-n-tag-access-systemadminonly { --tag: var(--ds-text-accent-magenta, #943d73); }
 
-/* the selected list row has a tinted background: keep its lozenges as readable as elsewhere */
-.rab-n .rab-n-op.selected .rab-n-tag { background: color-mix(in srgb, var(--tag) 16%, var(--ds-surface, #fff)); }

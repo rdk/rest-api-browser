@@ -1,3 +1,4 @@
+import { isBlank } from './request';
 import type { Param } from './types';
 
 /** What the form shows beside a value: a warning, a check mark once it is fine, or nothing for an empty optional one. */
@@ -19,13 +20,18 @@ const warn = (message: string): Check => ({ state: 'warn', message });
 /**
  * The check of one value against what the catalog knows of its parameter: required, the Java type (whole numbers and
  * their range, decimals, booleans, UUIDs), the listed options, and the regex of its path template ("{mode: view|edit}").
+ * A blank value is not filled in, as for the request (isBlank). A typed value is checked as it is sent, spaces
+ * included.
  */
 export function checkValue(p: Param, value: string, regex?: string): Check {
-  const v = value.trim();
   // a path value has no default to fall back on (the URL needs the segment), and an empty default is none
-  if (!v) return p.required && (p.in === 'path' || !p.default) ? warn('Required') : null;
+  if (isBlank(value)) return p.required && (p.in === 'path' || !p.default) ? warn('Required') : null;
+  const v = value.trim();
   const type = p.type.toLowerCase();
-  const range = RANGES[type];
+  const range = Object.prototype.hasOwnProperty.call(RANGES, type) ? RANGES[type] : undefined;
+  const typed = !!range || DECIMAL.has(type) || type === 'boolean' || type === 'uuid' || !!p.options?.length;
+  // the request sends the value as typed: " 123 " is not a number to the server
+  if (typed && v !== value) return warn('Leading or trailing spaces');
   if (range) {
     if (!WHOLE.test(v)) return warn('Expected a whole number');
     const n = BigInt(v);

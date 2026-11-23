@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RequestValues } from '../core/request';
-import { UserStore } from './userstore';
+import { UserStore, isCredentialHeader, isCredentialParam } from './userstore';
 
 class FakeStorage implements Storage {
   data = new Map<string, string>();
@@ -156,7 +156,7 @@ describe('UserStore review fixes', () => {
     const e = await s.addHistory(entry('a', {
       url: '/rest/x?apiKey=1&keep=2&auth_code=3#h',
       values: {
-        path: {}, header: { ' X-Api-Key ': 'k', 'X-Atlassian-Token': 'no-check', AuthX: 'a' },
+        path: {}, header: { ' X-Api-Key ': 'k', 'X-Atlassian-Token': 'no-check', 'X-Auth-User': 'a' },
         query: { api_key: ['1'], keep: ['2'] }, matrix: { Authorization: 'z', m: '1' },
       },
     }));
@@ -170,5 +170,128 @@ describe('UserStore review fixes', () => {
     const s = new UserStore('u', new FakeStorage());
     const e = await s.addHistory(entry('a', { url: '/rest/x;token=abc;m=1/y;api_key=2?keep=3', values: values() }));
     expect(e.url).toBe('/rest/x;m=1/y?keep=3');
+  });
+});
+
+describe('UserStore second review', () => {
+  it('keeps both of two quick setPrefs calls', async () => {
+    const s = new UserStore('u', new FakeStorage());
+    await Promise.all([s.setPrefs({ split: 0.3 }), s.setPrefs({ skin: 'calm' })]);
+    expect(await s.prefs()).toEqual({ split: 0.3, skin: 'calm' });
+  });
+
+  it('reads the prefs synchronously, for the first paint', async () => {
+    const st = new FakeStorage();
+    await new UserStore('u', st).setPrefs({ skin: 'calm', mode: 'dark' });
+    const s = new UserStore('u', st);
+    expect(s.prefsNow()).toEqual({ skin: 'calm', mode: 'dark' });
+    expect(s.prefsNow()).toEqual(await s.prefs());
+    expect(new UserStore('u', null).prefsNow()).toEqual({});
+    st.data.set('rab-next:u:prefs', 'null');
+    expect(s.prefsNow()).toEqual({});
+  });
+
+  it('hides header names by their words, as the server echo does', () => {
+    const hidden = ['Authorization', 'Proxy-Authorization', 'Cookie', 'Set-Cookie', 'X-Auth-Token', 'X-API_KEY', 'x-apikey', 'X-ApiKey',
+      'X-Api Key', 'client_secret', 'X-Passwd', 'X-PWD', 'X-Session-Id', 'X-Auth-User', 'X-Credentials', 'Cf-Access-Jwt-Assertion',
+      'X-Amz-Signature', 'X-Csrf-Token', 'X-Forwarded-Client-Cert', 'OIDC_CLAIM_email', 'X-SSO-User', 'X-Forwarded-Principal', 'SAML-Attr'];
+    for (const n of hidden) expect(isCredentialHeader(n), n).toBe(true);
+    const shown = ['X-Atlassian-Token', 'x_atlassian_token', ' X-Atlassian-Token ', 'X-Processor', 'X-Author-Id', 'AuthX', 'Accept',
+      'Content-Type', 'X-Request-Id', 'User-Agent'];
+    for (const n of shown) expect(isCredentialHeader(n), n).toBe(false);
+  });
+
+  it('tells credential parameters by their exact names, or a name ending in password or secret', () => {
+    const hidden = ['password', 'PASSWD', 'secret', 'token', 'access_token', 'refresh_token', 'id_token', 'api_key', 'apikey', 'api-key', 'apiKey',
+      'atl_token', 'client_secret', 'os_password', 'newPassword', 'authorization', 'auth_code'];
+    for (const n of hidden) expect(isCredentialParam(n), n).toBe(true);
+    for (const n of ['author', 'authorKey', 'pageToken', 'nextPageToken', 'syncToken', 'os_username', 'tokenId', 'passwordHint', 'secretary', 'session']) {
+      expect(isCredentialParam(n), n).toBe(false);
+    }
+  });
+
+  it('keeps harmless parameters whose names only look like credentials', async () => {
+    const s = new UserStore('u', new FakeStorage());
+    const e = await s.addHistory(entry('a', {
+      url: '/rest/x;pageToken=1;token=2?author=a&authorKey=b&pageToken=c&nextPageToken=d&syncToken=e&os_username=f&os_password=g&access_token=h&newPassword=i',
+      values: {
+        path: {}, header: {}, matrix: { pageToken: '1', token: '2' },
+        query: {
+          author: ['a'], authorKey: ['b'], pageToken: ['c'], nextPageToken: ['d'], syncToken: ['e'], os_username: ['f'], os_password: ['g'],
+          access_token: ['h'], newPassword: ['i'],
+        },
+      },
+    }));
+    expect(e.url).toBe('/rest/x;pageToken=1?author=a&authorKey=b&pageToken=c&nextPageToken=d&syncToken=e&os_username=f');
+    expect(Object.keys(e.values.query)).toEqual(['author', 'authorKey', 'pageToken', 'nextPageToken', 'syncToken', 'os_username']);
+    expect(e.values.matrix).toEqual({ pageToken: '1' });
+    expect(e.redacted).toBe(true);
+    const plain = await s.addHistory(entry('a', { url: '/rest/x?pageToken=c', values: { ...values({ Accept: 'a/b' }), query: { pageToken: ['c'] } } }));
+    expect(plain.redacted).toBeUndefined();
+  });
+
+  it('scrubs credential-named path values from the values and the url', async () => {
+    const s = new UserStore('u', new FakeStorage());
+    const e = await s.addHistory(entry('a', {
+      url: '/jira/rest/x/1/token/s3cr%2Ft/y?keep=1',
+      values: { ...values(), path: { id: '1', token: 's3cr/t' } },
+    }));
+    expect(e.values.path).toEqual({ id: '1' });
+    expect(e.url).toBe('/jira/rest/x/1/token/{token}/y?keep=1');
+    expect(JSON.stringify(e)).not.toContain('s3cr');
+    expect(e.redacted).toBe(true);
+    const spans = await s.addHistory(entry('a', { url: '/jira/rest/f/a/b.txt', values: { ...values(), path: { secret: 'a/b.txt' } } }));
+    expect(spans.url).toBe('/jira/rest/f/{secret}');
+  });
+
+  it('hides secrets in a JSON body and keeps the rest as written', async () => {
+    const storage = new FakeStorage();
+    const s = new UserStore('u', storage);
+    const body = '{"name":"x","password":"hunter2","n":9007199254740993,"nested":{"api_token":"TOK1","pageToken":"PAGE2","list":[{"secret":"SEC3"}]},'
+      + '"tokenCount":5, "pass\\u0077ord" : "PW4"}';
+    const e = await s.addHistory(entry('a', { values: { ...values(), body } }));
+    expect(e.values.body).toBe('{"name":"x","password":"(hidden)","n":9007199254740993,"nested":{"api_token":"(hidden)","pageToken":"(hidden)",'
+      + '"list":[{"secret":"(hidden)"}]},"tokenCount":5, "pass\\u0077ord" : "(hidden)"}');
+    expect(e.redacted).toBe(true);
+    expect([...storage.data.values()].join('')).not.toMatch(/hunter2|TOK1|PAGE2|SEC3|PW4/);   // ids are lower case
+    for (const b of ['password=x&user=y', '{"a":1}', '{"password":']) {
+      const kept = await s.addHistory(entry('a', { values: { ...values(), body: b } }));
+      expect(kept.values.body).toBe(b);
+      expect(kept.redacted).toBeUndefined();
+    }
+  });
+
+  it('hides a secret in a long JSON body before cutting it', async () => {
+    const s = new UserStore('u', new FakeStorage());
+    const body = JSON.stringify({ password: 'hunter2', filler: 'x'.repeat(12_000) });
+    const e = await s.addHistory(entry('a', { values: { ...values(), body } }));
+    expect(e.bodyTruncated).toBe(true);
+    expect(e.values.body).not.toContain('hunter2');
+    expect(e.values.body!.startsWith('{"password":"(hidden)"')).toBe(true);
+  });
+
+  it('keeps history per user when given one, and removes the old shared list', async () => {
+    const st = new FakeStorage();
+    await new UserStore('site', st).addHistory(entry('a'));
+    expect(st.data.has('rab-next:site:history')).toBe(true);
+    const alice = new UserStore('site', 'alice', st);
+    expect(await alice.history('a')).toHaveLength(0);
+    expect(st.data.has('rab-next:site:history')).toBe(false);
+    await alice.addHistory(entry('a'));
+    expect(await new UserStore('site', 'bob', st).history('a')).toHaveLength(0);
+    expect(await new UserStore('site', 'alice', st).history('a')).toHaveLength(1);
+    // the preferences stay the site's
+    await alice.setPrefs({ skin: 'calm' });
+    expect((await new UserStore('site', 'bob', st).prefs()).skin).toBe('calm');
+    expect(new UserStore('site', undefined, st).prefsNow().skin).toBe('calm');
+  });
+
+  it('drops the response previews old versions stored', async () => {
+    const st = new FakeStorage();
+    st.data.set('rab-next:u:history', JSON.stringify([{ id: 'old', opKey: 'a', at: 1, method: 'GET', url: '/rest/x', values: values(), bodyPreview: 'old answer' }]));
+    const s = new UserStore('u', st);
+    await s.addHistory(entry('b'));
+    expect(st.data.get('rab-next:u:history')).not.toContain('old answer');
+    expect((await s.history('a'))[0].id).toBe('old');
   });
 });

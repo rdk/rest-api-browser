@@ -110,4 +110,11 @@ describe('routes', () => {
   it('prefers GET when several methods share a path', () => {
     expect(m.match('/rest/api/2/issue/A-1')!.op.method).toBe('GET');
   });
+
+  it('reads query and path names that Object.prototype also has', () => {
+    const r = m.match('/rest/api/2/issue/A-1?toString=1&constructor=2&__proto__=3&toString=4')!;
+    expect(Object.entries(r.query)).toEqual([['toString', ['1', '4']], ['constructor', ['2']], ['__proto__', ['3']]]);
+    const mm = createMatcher(summary([module('m', 'api')]), index([op('m', 'GET', 'a/{__proto__}/{constructor}')]));
+    expect(Object.entries(mm.match('/rest/api/a/x/y')!.values)).toEqual([['__proto__', 'x'], ['constructor', 'y']]);
+  });
 });

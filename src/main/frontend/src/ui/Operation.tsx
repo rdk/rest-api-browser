@@ -4,9 +4,10 @@ import { buildRequest, mediaChoices, setHeader, toCurl, urlParts, type BuiltRequ
 import { findTemplates } from '../core/template';
 import { checkValue, type Check } from '../core/validate';
 import { changedField, NO_HISTORY, record, redo as redoStep, undo as undoStep, type FormHistory, type FormState } from '../core/formhistory';
+import { formatJson } from '../core/jsonlines';
 import type { RequestRunner, RunResult } from './runner';
 import type { HistoryEntry, UserStore } from './userstore';
-import { CheckMark, CopyButton, MaximizeButton, MethodBadge, PathText, Tabs, WarnGlyph, WRITE_METHODS } from './bits';
+import { CheckMark, CopyButton, MaximizeButton, MethodBadge, PathText, Tabs, WarnGlyph, WRITE_METHODS, formatBytes, tabId } from './bits';
 import { ResponseView } from './Response';
 import { JavaTab } from './JavaTab';
 
@@ -116,7 +117,6 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
         status: result.status,
         durationMs: Math.round(result.durationMs),
         size: result.size,
-        bodyPreview: result.text?.slice(0, 2000),
       });
       if (mounted.current) setHistory((h) => [entry, ...h].slice(0, 20));
     }
@@ -130,11 +130,16 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         sendRef.current();
-      } else if (e.key === 'Escape' && maxRef.current) {
-        setMax(null);
-      } else if (e.key === 'Escape' && runner.running) {
-        runner.abort();
+        return;
       }
+      // (not e.defaultPrevented: the product's own page handlers cancel Escape on the whole document)
+      if (e.key !== 'Escape') return;
+      // Escape in a search box with text clears the box, nothing else
+      const t = e.target as HTMLInputElement | null;
+      if (t?.tagName === 'INPUT' && t.type === 'search' && t.value) return;
+      // a running request first (the response says "Cancel (Esc)"), then the box on the whole screen
+      if (runner.running) runner.abort();
+      else if (maxRef.current) setMax(null);
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
@@ -178,13 +183,29 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
   const formParams = op.params.filter((p) => p.in === 'form');
   const regexes = useMemo(() => templateRegexes(op.path), [op.path]);
   const warnings = visibleParams.reduce(
-    (n, p) => n + valuesOf(p, draft.values).filter((v, i, all) => checkAt(p, v, i, all, regexes[p.name])?.state === 'warn').length, 0);
+    (n, p) => n + valuesOf(p, draft.values).filter((v, i, all) => checkAt(p, v, i, all, regexOf(p, regexes))?.state === 'warn').length, 0);
   // the response takes room only once there is one to show; until then a slim line, and the form has the space
   const compact = !draft.result || !!draft.result.error;
+  // a response on the whole screen that turns into a slim line (a failed or cancelled re-send) gives the screen back:
+  // the slim line has no button to do it
+  useEffect(() => {
+    if (compact && max === 'bottom') setMax(null);
+  }, [compact, max]);
+  // what a box on the whole screen covers (the header, the list) leaves the Tab order and the shortcuts
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!max) return;
+    const app = rootRef.current?.closest('.rab-n');
+    const covered = app ? [...app.querySelectorAll<HTMLElement>(':scope > .rab-n-topbar, :scope > .rab-n-body-row > :not(.rab-n-main)')] : [];
+    for (const el of covered) el.setAttribute('inert', '');
+    return () => {
+      for (const el of covered) el.removeAttribute('inert');
+    };
+  }, [max]);
   const hasBadges = module?.stability === 'supported' || module?.stability === 'app' || !!op.access || !!op.deprecated;
 
   return (
-    <div class={'rab-n-operation' + (max ? ' max-' + max : '')} data-testid="operation">
+    <div ref={rootRef} class={'rab-n-operation' + (max ? ' max-' + max : '')} data-testid="operation">
       <div class="rab-n-op-head">
         <div class="rab-n-op-title">
           <MethodBadge method={method} />
@@ -198,7 +219,8 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
             </span>
           )}
           <span class="rab-n-spacer" />
-          <CopyButton label="Copy curl" testId="copy-curl" text={() => (built.request ? toCurl({ ...built.request, url: absolute(built.request.url) }) : '')} />
+          <CopyButton label="Copy curl" testId="copy-curl" disabled={!built.request} title={built.error ?? 'The request as a curl command'}
+                      text={() => (built.request ? toCurl({ ...built.request, url: absolute(built.request.url) }) : '')} />
         </div>
         <div class={'rab-n-urlbar' + (write ? ' is-write' : '') + (isDelete ? ' is-delete' : '')}>
           <div class="rab-n-url-group">
@@ -228,6 +250,15 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
               Send {method}
             </button>
           )}
+          {/* the response is hidden while the request has the whole screen: its outcome shows here */}
+          {max === 'top' && (running || draft.result) && (
+            <button class="rab-n-max-status" onClick={() => setMax('bottom')} title="Show the response on the whole screen"
+                    data-testid="max-status" aria-live="polite">
+              {running ? <><span class="rab-n-spinner" aria-hidden="true" /> Sending…</>
+                : draft.result!.error ? (draft.result!.error === 'aborted' ? 'Cancelled' : 'Failed')
+                : <>{draft.result!.status} · {Math.round(draft.result!.durationMs)} ms · {formatBytes(draft.result!.size)}</>}
+            </button>
+          )}
         </div>
       </div>
       <div class={'rab-n-op-split' + (compact ? ' is-compact' : '')}>
@@ -236,6 +267,8 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
           <Tabs<Tab>
             value={tab}
             onChange={setTab}
+            label="The request"
+            panelId="rab-n-request-pane"
             tabs={[
               {
                 id: 'params',
@@ -262,7 +295,8 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
             <span class="rab-n-tool-sep" aria-hidden="true" />
             <MaximizeButton on={max === 'top'} onToggle={() => setMax(max === 'top' ? null : 'top')} what="request" testId="max-top" />
           </div>
-          <div class={'rab-n-tabpane' + (tab === 'java' ? ' is-java' : '')}>
+          <div class={'rab-n-tabpane' + (tab === 'java' ? ' is-java' : '')} id="rab-n-request-pane" role="tabpanel"
+               aria-labelledby={tabId('rab-n-request-pane', tab)}>
             {tab === 'params' && (
               <ParamsTab params={visibleParams} formParams={formParams} values={draft.values} onValues={setValues} regexes={regexes} />
             )}
@@ -324,6 +358,9 @@ function withTemplateParams(op: Operation): Param[] {
     .map((name): Param => ({ name, in: 'path', type: 'string', required: true }));
   return missing.length ? [...op.params, ...missing] : op.params;
 }
+
+/** The template's regex applies to the path parameter of that name only, not to a query or header one. */
+const regexOf = (p: Param, regexes: Record<string, string>) => (p.in === 'path' ? regexes[p.name] : undefined);
 
 /** The regex of each path template that has one: "{mode: view|edit}". */
 function templateRegexes(path: string): Record<string, string> {
@@ -392,7 +429,7 @@ function ParamsTab({ params, formParams, values, onValues, regexes }: {
               </td>
               <td class="rab-n-param-value">
                 {list.map((v, i) => {
-                  const check = checkAt(p, v, i, list, regexes[p.name]);
+                  const check = checkAt(p, v, i, list, regexOf(p, regexes));
                   return (
                   <div class="rab-n-param-row" key={i}>
                     <ParamInput param={p} value={v} invalid={check?.state === 'warn' && !!v.trim()} onChange={(nv) => set(p, list.map((x, j) => (j === i ? nv : x)))} />
@@ -425,25 +462,32 @@ function ParamsTab({ params, formParams, values, onValues, regexes }: {
   );
 }
 
+const INTEGER_TYPES = new Set(['int', 'integer', 'long', 'short', 'byte', 'biginteger']);
+const DECIMAL_TYPES = new Set(['number', 'double', 'float', 'bigdecimal']);
+
 function ParamInput({ param, value, invalid, onChange }: { param: Param; value: string; invalid?: boolean; onChange: (v: string) => void }) {
   const cls = 'rab-n-input' + (invalid ? ' is-warn' : '');
+  const type = param.type.toLowerCase();
   const placeholder = param.default && param.in !== 'path' ? 'default: ' + param.default : param.required ? 'required' : '';
   const on = (e: Event) => onChange((e.target as HTMLInputElement | HTMLSelectElement).value);
-  if (param.type === 'boolean' || (param.options && param.options.length)) {
-    const options = param.type === 'boolean' ? ['true', 'false'] : param.options!;
+  const label = `${param.name} (${param.in} parameter${param.required ? ', required' : ''})`;
+  if (type === 'boolean' || (param.options && param.options.length)) {
+    const options = type === 'boolean' ? ['true', 'false'] : param.options!;
     return (
-      <select class={cls} value={value} onChange={on} name={param.name}>
+      <select class={cls} value={value} onChange={on} name={param.name} aria-label={label}>
         <option value="">{placeholder || '(not set)'}</option>
         {options.map((o) => <option key={o} value={o}>{o}</option>)}
+        {/* a value from the history or a link that is not one of the choices still shows, as it is sent */}
+        {value && !options.includes(value) && <option value={value}>{value}</option>}
       </select>
     );
   }
-  const numeric = param.type === 'int' || param.type === 'long' || param.type === 'number';
   return (
     <input
       class={cls}
       name={param.name}
-      inputMode={numeric ? 'numeric' : undefined}
+      aria-label={label}
+      inputMode={INTEGER_TYPES.has(type) ? 'numeric' : DECIMAL_TYPES.has(type) ? 'decimal' : undefined}
       value={value}
       placeholder={placeholder}
       onInput={on}
@@ -465,11 +509,8 @@ function BodyTab({ op, values, onValues }: { op: Operation; values: RequestValue
     }
   }, [values.body, isJson]);
   const format = () => {
-    try {
-      onValues({ ...values, body: JSON.stringify(JSON.parse(values.body ?? ''), null, 2) });
-    } catch {
-      // the error is already shown
-    }
+    const formatted = formatJson(values.body ?? '');
+    if (formatted !== null && formatted !== values.body) onValues({ ...values, body: formatted });
   };
   return (
     <div class="rab-n-body">
@@ -496,6 +537,7 @@ function BodyTab({ op, values, onValues }: { op: Operation; values: RequestValue
         value={values.body ?? ''}
         onInput={(e) => onValues({ ...values, body: (e.target as HTMLTextAreaElement).value })}
         placeholder={isJson ? '{ }' : ''}
+        aria-label="Request body"
         data-testid="body"
       />
     </div>
@@ -523,9 +565,14 @@ function HeadersTab({ op, draft, onDraft, write }: { op: Operation; draft: Draft
       <div class="rab-n-subtle rab-n-row rab-n-cookie-note">The browser sends your session cookie; Authorization headers are not needed.</div>
       {custom.map((h, i) => (
         <div class="rab-n-headers-custom-row" key={i}>
-          <input class="rab-n-input" placeholder="Header" value={h.name} onInput={(e) => setCustom(custom.map((x, j) => (j === i ? { ...x, name: (e.target as HTMLInputElement).value } : x)))} />
-          <input class="rab-n-input" placeholder="Value" value={h.value} onInput={(e) => setCustom(custom.map((x, j) => (j === i ? { ...x, value: (e.target as HTMLInputElement).value } : x)))} />
-          <button class="rab-n-icon" aria-label="Remove header" onClick={() => setCustom(custom.filter((_, j) => j !== i))}>×</button>
+          <input class="rab-n-input" placeholder="Header" aria-label={`Header ${i + 1}: name`} value={h.name}
+                 onInput={(e) => setCustom(custom.map((x, j) => (j === i ? { ...x, name: (e.target as HTMLInputElement).value } : x)))} />
+          <input class="rab-n-input" placeholder="Value" aria-label={`Header ${i + 1}: value`} value={h.value}
+                 onInput={(e) => setCustom(custom.map((x, j) => (j === i ? { ...x, value: (e.target as HTMLInputElement).value } : x)))} />
+          {/* the empty row shown when there are none has nothing to remove */}
+          {draft.custom.length > 0 ? (
+            <button class="rab-n-icon" aria-label={`Remove header ${i + 1}`} title="Remove this header" onClick={() => setCustom(custom.filter((_, j) => j !== i))}>×</button>
+          ) : <span class="rab-n-icon-slot" aria-hidden="true" />}
         </div>
       ))}
       <button class="rab-n-link" onClick={() => setCustom([...custom, { name: '', value: '' }])}>+ header</button>
@@ -541,15 +588,29 @@ function HistoryTab({ entries, onRestore, onClear }: { entries: HistoryEntry[]; 
   return (
     <div class="rab-n-history" data-testid="history">
       {entries.map((e) => (
-        <button key={e.id} class="rab-n-history-row" onClick={() => onRestore(e)} title="Restore these values">
+        <button key={e.id} class="rab-n-history-row" onClick={() => onRestore(e)} title={historyTitle(e)}>
           <span class={'rab-n-status-code ' + statusClass(e.status)}>{e.status ?? '?'}</span>
           <span class="rab-n-subtle rab-n-history-time">{new Date(e.at).toLocaleString()}</span>
           <span class="rab-n-ellipsis rab-n-history-url">{e.url}</span>
+          {(e.bodyTruncated || e.redacted) && (
+            <span class="rab-n-history-note" data-testid="history-note">
+              {[e.bodyTruncated && 'body cut', e.redacted && 'secrets left out'].filter(Boolean).join(', ')}
+            </span>
+          )}
         </button>
       ))}
       <button class="rab-n-link" onClick={onClear}>Clear history</button>
     </div>
   );
+}
+
+/** What restoring a history row gives back, with what it cannot give back. */
+function historyTitle(e: HistoryEntry): string {
+  const notes = [
+    e.bodyTruncated && 'the body was cut at 10,000 characters when it was saved',
+    e.redacted && 'values that looked like secrets were not saved',
+  ].filter(Boolean);
+  return 'Restore these values' + (notes.length ? ' (' + notes.join('; ') + ')' : '');
 }
 
 function SplitHandle({ split, onSplit }: { split: number; onSplit: (ratio: number) => void }) {
@@ -559,6 +620,9 @@ function SplitHandle({ split, onSplit }: { split: number; onSplit: (ratio: numbe
     onSplit(Math.min(0.8, Math.max(0.15, split + (e.key === 'ArrowDown' ? 0.05 : -0.05))));
   };
   const ref = useRef<HTMLDivElement>(null);
+  // a drag cut short (the response turned into a slim line, another operation opened) leaves no listener behind
+  const stop = useRef<(() => void) | undefined>(undefined);
+  useEffect(() => () => stop.current?.(), []);
   const onDown = (e: PointerEvent) => {
     const parent = ref.current?.parentElement;
     if (!parent) return;
@@ -571,12 +635,17 @@ function SplitHandle({ split, onSplit }: { split: number; onSplit: (ratio: numbe
       ratio = Math.min(0.8, Math.max(0.15, (ev.clientY - rect.top) / rect.height));
       if (request) request.style.flexBasis = Math.round(ratio * 100) + '%';
     };
-    const up = () => {
+    const detach = () => {
       document.removeEventListener('pointermove', move);
       document.removeEventListener('pointerup', up);
       document.removeEventListener('pointercancel', up);
+      stop.current = undefined;
+    };
+    const up = () => {
+      detach();
       if (ratio) onSplit(ratio);
     };
+    stop.current = detach;
     document.addEventListener('pointermove', move);
     document.addEventListener('pointerup', up);
     document.addEventListener('pointercancel', up);
@@ -584,6 +653,6 @@ function SplitHandle({ split, onSplit }: { split: number; onSplit: (ratio: numbe
   return (
     <div ref={ref} class="rab-n-hsplit" onPointerDown={onDown} onKeyDown={onKeyDown} tabIndex={0}
          role="separator" aria-orientation="horizontal" aria-label="Resize the request and the response"
-         aria-valuenow={Math.round(split * 100)} />
+         aria-valuenow={Math.round(split * 100)} aria-valuemin={15} aria-valuemax={80} aria-valuetext={`The request takes ${Math.round(split * 100)}%`} />
   );
 }

@@ -36,4 +36,16 @@ describe('checkValue', () => {
     expect(checkValue(param({ in: 'path', required: true }), 'viewx', 'view|edit')?.message).toBe('Must match view|edit');
     expect(checkValue(param({ in: 'path', required: true }), 'x', '\\p{javaLowerCase}+(')?.state).toBe('ok');
   });
+
+  it('warns about spaces around a typed value, which is sent as typed', () => {
+    expect(checkValue(param({ type: 'int' }), ' 123 ')?.message).toBe('Leading or trailing spaces');
+    expect(checkValue(param({ type: 'Long', in: 'path', required: true }), '5 ')?.state).toBe('warn');
+    expect(checkValue(param({ type: 'double' }), '1.5 ')?.state).toBe('warn');
+    expect(checkValue(param({ type: 'boolean' }), ' true')?.state).toBe('warn');
+    expect(checkValue(param({ type: 'UUID' }), '123e4567-e89b-12d3-a456-426614174000 ')?.state).toBe('warn');
+    expect(checkValue(param({ options: ['A', 'B'] }), 'A ')?.state).toBe('warn');
+    expect(checkValue(param({ type: 'int' }), '123')?.state).toBe('ok');
+    expect(checkValue(param({}), ' a b ')?.state).toBe('ok');   // a plain string may hold spaces
+  });
 });
+

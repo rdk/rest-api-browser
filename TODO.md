@@ -11,7 +11,7 @@ The short list: one line per item, the details in [`docs/todo/`](docs/todo/). Ho
 ## Later
 
 - [ ] [Decompiled method in the Java tab](docs/todo/decompile-analysis.md) — shows what an endpoint really does; needs a licensing decision first.
-- [ ] [Long lines in Pretty](docs/todo/json-long-lines.md) — values over 2,000 characters are cut.
+- [ ] [Long lines in Pretty](docs/todo/json-long-lines.md) — values over 10,000 characters are still cut; Pretty scrolls sideways and Raw wraps up to there.
 
 ## Known limitations
 

@@ -44,6 +44,9 @@ export function rowTicks(op: Operation, m: Module | undefined, withModule: boole
   return out;
 }
 
+/** A module left out on purpose (excluded by the product's rules, or REST v1): not a failure, nothing to fix. */
+export const isSkipped = (m: Module) => m.state === 'failed' && (m.reason === 'excluded' || m.reason === 'rest-v1');
+
 export function originLabel(m: Module): string {
   return m.origin === 'product' ? 'The product' : m.origin === 'bundled' ? 'App bundled with the product' : 'Installed app';
 }

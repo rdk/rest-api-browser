@@ -67,7 +67,8 @@ public class CatalogResource {
         UserKey user = userManager.getRemoteUserKey(request);
         boolean admin = user != null && userManager.isAdmin(user);
         boolean sysadmin = user != null && userManager.isSystemAdmin(user);
-        String tag = admin ? snapshot.adminTag() + (sysadmin ? "-s" : "-a") : snapshot.hash() + "-u";
+        String tag = (admin ? snapshot.adminTag() : snapshot.hash()) + "-" + progress(snapshot)
+                + (admin ? (sysadmin ? "-s" : "-a") : "-u");
         String etag = "\"" + tag + "\"";
         if (matches(request.getHeader("If-None-Match"), tag)) {
             return Response.notModified().header("ETag", etag).header("Cache-Control", "private, no-cache").build();
@@ -132,6 +133,14 @@ public class CatalogResource {
         OperationDetails.Result result = details.describe(op);
         return Response.status(result.status()).type(JSON).header("Cache-Control", "no-store")
                 .entity(result.json()).build();
+    }
+
+    /**
+     * The summary's progress and completeness for its ETag: a rebuild of an unchanged catalog keeps its hash while
+     * modules are read again, and the UI's counter must not freeze on a 304.
+     */
+    static String progress(CatalogSnapshot snapshot) {
+        return (snapshot.complete() ? "c" : "p") + snapshot.done() + "." + snapshot.total();
     }
 
     /** A second line behind @LicensedOnly: never anonymous, whatever the classic page allows. */
