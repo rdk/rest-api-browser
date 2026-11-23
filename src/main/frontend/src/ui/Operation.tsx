@@ -282,7 +282,7 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
           </div>
         </div>
         {!compact && <SplitHandle split={split} onSplit={onSplit} />}
-        <ResponseView result={draft.result} running={running} onCancel={cancel}
+        <ResponseView result={draft.result} running={running} onCancel={cancel} baseUrl={summary.baseUrl}
                       maximized={max === 'bottom'} onMaximize={() => setMax(max === 'bottom' ? null : 'bottom')} />
       </div>
     </div>

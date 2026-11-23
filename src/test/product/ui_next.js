@@ -170,8 +170,13 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         await responseTab('Request headers');
         await b.waitFor(`!!document.querySelector('[data-testid=request-header]')`, 3000);
         const sentHeaders = await b.evaluate(`[...document.querySelectorAll('[data-testid=request-header]')].map(e => e.textContent)`);
-        c.check('Pretty shows no line numbers; the response\'s and the request\'s headers have a tab each',
-            numbers === 0 && received && sentHeaders.some(h => /^accept:/i.test(h)), { numbers, received, sentHeaders });
+        await b.waitFor(`!!document.querySelector('[data-testid=browser-header]')`, 10000);
+        const browserHeaders = await b.evaluate(`[...document.querySelectorAll('[data-testid=browser-header]')].map(e => e.textContent)`);
+        const cookies = browserHeaders.filter(h => /^cookie:/i.test(h));
+        c.check('the response\'s and the request\'s headers have a tab each; the browser\'s headers too, cookie values hidden',
+            numbers === 0 && received && sentHeaders.some(h => /^accept:/i.test(h)) && browserHeaders.some(h => /^user-agent:/i.test(h))
+            && cookies.every(h => !/=(?!…)[^;\s]{8,}/.test(h)),
+            { numbers, received, sentHeaders, browserHeaders: browserHeaders.map(h => h.slice(0, 80)) });
         await b.evaluate(`([...document.querySelectorAll('[data-testid=response] [role=tab]')].find(t => /^Pretty/.test(t.textContent)) || {}).click?.(), true`);
         // the find box sits in the response's tab bar, right after the tabs, and finds as you type
         const findBox = await b.evaluate(`(() => { const bar = document.querySelector('[data-testid=response] .rab-n-tabbar');

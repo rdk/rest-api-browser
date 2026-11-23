@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RequestRunner, downloadBlob } from './runner';
+import { RequestRunner, downloadBlob, fetchEcho } from './runner';
 
 const req = { method: 'GET', url: '/rest/api/2/x', headers: { Accept: 'application/json' } };
 const fakeFetch = (make: (init?: RequestInit) => Response | Promise<Response>) =>
@@ -127,5 +127,40 @@ describe('RequestRunner', () => {
     expect(blob.size).toBe(7);
     expect(blob.type).toBe('application/json');
     expect(downloadBlob({ ...txt, text: undefined })).toBeNull();
+  });
+});
+
+describe('fetchEcho', () => {
+  const result = (method: string) => ({
+    method, url: '/jira/rest/x', status: 200, statusText: 'OK', ok: true, headers: [], contentType: '', durationMs: 1, size: 0,
+    truncated: false, kind: 'empty' as const, sessionExpired: false,
+    requestHeaders: [['Accept', 'text/plain'], ['X-Atlassian-Token', 'no-check']] as [string, string][],
+  });
+
+  it('sends a copy with the same method and headers (JSON accepted), once per response', async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const f = (async (url: string, init: RequestInit) => {
+      calls.push({ url, init });
+      return new Response('{"method":"PUT","headers":[["user-agent","UA"]]}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const r = result('PUT');
+    expect(await fetchEcho('/jira', r, f)).toEqual([['user-agent', 'UA']]);
+    await fetchEcho('/jira', r, f);
+    expect(calls.length).toBe(1);
+    expect(calls[0].url).toBe('/jira/rest/restbrowser/1/echo');
+    expect(calls[0].init.method).toBe('PUT');
+    expect(calls[0].init.headers).toEqual({ 'X-Atlassian-Token': 'no-check', Accept: 'application/json' });
+    await fetchEcho('/jira', result('OPTIONS'), f);
+    expect(calls[1].init.method).toBe('GET');
+  });
+
+  it('asks again after a failure', async () => {
+    let n = 0;
+    const f = (async () => { n++; return new Response('', { status: 500 }); }) as unknown as typeof fetch;
+    const r = result('GET');
+    await expect(fetchEcho('', r, f)).rejects.toThrow('HTTP 500');
+    await new Promise((res) => setTimeout(res, 0));
+    await expect(fetchEcho('', r, f)).rejects.toThrow();
+    expect(n).toBe(2);
   });
 });

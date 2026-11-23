@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { downloadBlob, type RunResult } from './runner';
+import { downloadBlob, fetchEcho, type RunResult } from './runner';
 import { buildLines, find, visibleLines, type LineModel } from '../core/jsonlines';
 import { VirtualList } from './VirtualList';
 import { MaximizeButton, Tabs, download, formatBytes } from './bits';
@@ -20,8 +20,8 @@ const idOf = (r: RunResult) => {
   return id;
 };
 
-export function ResponseView({ result, running, onCancel, maximized, onMaximize }: {
-  result: RunResult | null; running: boolean; onCancel: () => void; maximized: boolean; onMaximize: () => void;
+export function ResponseView({ result, running, onCancel, maximized, onMaximize, baseUrl }: {
+  result: RunResult | null; running: boolean; onCancel: () => void; maximized: boolean; onMaximize: () => void; baseUrl: string;
 }) {
   const [view, setView] = useState<View>('pretty');
   // the find box sits in the tab bar; Pretty and Raw do the matching and report the count back
@@ -108,7 +108,7 @@ export function ResponseView({ result, running, onCancel, maximized, onMaximize 
             { id: 'pretty', label: 'Pretty' },
             { id: 'raw', label: 'Raw' },
             { id: 'headers', label: `Response headers (${result.headers.length})` },
-            { id: 'sent', label: `Request headers (${result.requestHeaders?.length ?? 0})` },
+            { id: 'sent', label: 'Request headers' },
           ]}
         />
         {(view === 'pretty' || view === 'raw') && result.kind !== 'binary' && result.kind !== 'empty' && (
@@ -130,12 +130,7 @@ export function ResponseView({ result, running, onCancel, maximized, onMaximize 
           ))}
         </div>
       ) : view === 'sent' ? (
-        <div class="rab-n-headers" data-testid="request-headers">
-          {(result.requestHeaders ?? []).map(([k, v], i) => (
-            <div class="rab-n-header-row" key={i} data-testid="request-header"><span class="rab-n-header-name">{k}:</span> {v}</div>
-          ))}
-          <div class="rab-n-headers-note">The headers the app set. The browser adds its own: cookies, User-Agent, Origin…</div>
-        </div>
+        <RequestHeaders key={'sent' + id} result={result} baseUrl={baseUrl} />
       ) : result.kind === 'binary' ? (
         <div class="rab-n-response-state rab-n-subtle">Binary content ({result.contentType || 'no content type'}). Use Download.</div>
       ) : result.kind === 'empty' ? (
@@ -150,6 +145,61 @@ export function ResponseView({ result, running, onCancel, maximized, onMaximize 
           <TextView key={'text' + id} text={result.text ?? ''} needle={needle} step={step} onFound={onFound} />
         </>
       )}
+    </div>
+  );
+}
+
+/** Headers that proxies add on the way, told apart from the browser's. */
+const PROXY = /^(x-forwarded-|forwarded$|via$|x-real-ip$|x-request-id$|x-amzn-|x-b3-|traceparent$|true-client-ip$|cf-)/i;
+
+/**
+ * The request's headers: those the app set, then those the browser and proxies added, as the server received them
+ * for a copy of the request (the echo resource), with cookie values and credentials hidden.
+ */
+function RequestHeaders({ result, baseUrl }: { result: RunResult; baseUrl: string }) {
+  const [echo, setEcho] = useState<[string, string][] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    fetchEcho(baseUrl, result).then(
+      (h) => live && setEcho(h),
+      (e) => live && setError(e instanceof Error ? e.message : String(e)),
+    );
+    return () => {
+      live = false;
+    };
+  }, [result, baseUrl]);
+  const own = result.requestHeaders ?? [];
+  const ownNames = new Set(own.map(([k]) => k.toLowerCase()));
+  const added = (echo ?? [])
+    .filter(([k]) => !ownNames.has(k.toLowerCase()))
+    .map(([k, v]): [string, string] =>
+      k.toLowerCase() === 'content-length' && result.requestBodyBytes ? [k, String(result.requestBodyBytes)] : [k, v]);
+  return (
+    <div class="rab-n-headers" data-testid="request-headers">
+      <div class="rab-n-headers-group">Set by the app <span class="rab-n-headers-count">{own.length}</span></div>
+      {own.map(([k, v], i) => (
+        <div class="rab-n-header-row" key={'a' + i} data-testid="request-header"><span class="rab-n-header-name">{k}:</span> {v}</div>
+      ))}
+      <div class="rab-n-headers-group">
+        Added by the browser and on the way {echo && <span class="rab-n-headers-count">{added.length}</span>}
+      </div>
+      {error ? (
+        <div class="rab-n-headers-note rab-n-error">They could not be read: {error}.</div>
+      ) : !echo ? (
+        <div class="rab-n-headers-note"><span class="rab-n-spinner" aria-hidden="true" /> Asking the server what it receives…</div>
+      ) : (
+        added.map(([k, v], i) => (
+          <div class="rab-n-header-row" key={'b' + i} data-testid="browser-header">
+            <span class="rab-n-header-name">{k}:</span> {v}
+            {PROXY.test(k) && <span class="rab-n-header-tag">proxy</span>}
+          </div>
+        ))
+      )}
+      <div class="rab-n-headers-note">
+        As the server received a copy of this request (the same method and headers, without the body), sent to the
+        plugin's echo resource when this tab opened. Cookie values and credentials are hidden.
+      </div>
     </div>
   );
 }

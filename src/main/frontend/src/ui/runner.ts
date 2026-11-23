@@ -11,6 +11,8 @@ export interface RunResult {
   headers: [string, string][];
   /** The headers the app set on the request; the browser adds its own (cookies, User-Agent, …). */
   requestHeaders: [string, string][];
+  /** The size of the request's body in bytes, when it had one (the browser sends it as Content-Length). */
+  requestBodyBytes?: number;
   contentType: string;
   durationMs: number;
   size: number;
@@ -77,6 +79,33 @@ function decode(chunks: Uint8Array[]): string {
   return out + decoder.decode();
 }
 
+/**
+ * The headers the server receives for a request like this one: a copy (same method and the headers the app set, no
+ * body) goes to the plugin's echo resource, which answers what arrived, the browser's and proxies' headers included.
+ * Cookie values and credentials come back hidden. Asked once per response, when its Request headers tab opens.
+ */
+const echoes = new WeakMap<RunResult, Promise<[string, string][]>>();
+const ECHO_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
+
+export function fetchEcho(baseUrl: string, result: RunResult, fetchFn: typeof fetch = (...a) => fetch(...a)): Promise<[string, string][]> {
+  let p = echoes.get(result);
+  if (!p) {
+    const method = ECHO_METHODS.has(result.method.toUpperCase()) ? result.method.toUpperCase() : 'GET';
+    p = (async () => {
+      const res = await fetchFn(`${baseUrl}/rest/restbrowser/1/echo`, {
+        method,
+        headers: Object.fromEntries(result.requestHeaders.filter(([k]) => k.toLowerCase() !== 'accept').concat([['Accept', 'application/json']])),
+        credentials: 'same-origin',
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return ((await res.json()) as { headers: [string, string][] }).headers;
+    })();
+    p.catch(() => echoes.delete(result));
+    echoes.set(result, p);
+  }
+  return p;
+}
+
 // What a download should save: the binary blob, or the text as a Blob made on demand.
 export function downloadBlob(result: RunResult): Blob | null {
   if (result.blob) return result.blob;
@@ -107,7 +136,12 @@ export class RequestRunner {
     const controller = new AbortController();
     this.controller = controller;
     const start = now();
-    const base = { method: req.method, url: req.url, requestHeaders: Object.entries(req.headers) };
+    const base = {
+      method: req.method,
+      url: req.url,
+      requestHeaders: Object.entries(req.headers),
+      requestBodyBytes: req.body === undefined ? undefined : new TextEncoder().encode(req.body).length,
+    };
     try {
       const res = await this.fetchFn(req.url, {
         method: req.method,

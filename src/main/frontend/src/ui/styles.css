@@ -1720,18 +1720,50 @@
 
 .rab-n-headers {
   padding: 6px 14px;
-  font: 12.5px/1.6 var(--rab-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
   overflow: auto;
   flex: 1;
 }
 .rab-n-header-row {
   padding: 3px 6px;
+  font-family: var(--rab-mono);
   border-bottom: 1px solid var(--rab-border-subtle);
   word-break: break-word;
 }
 .rab-n-header-row:last-child { border-bottom: 0; }
 .rab-n-header-name { color: var(--rab-info); font-weight: 600; margin-right: 4px; }
-.rab-n-headers-note { margin-top: 8px; font: 12px/1.5 var(--ds-font-family-body, inherit); color: var(--rab-subtlest); }
+.rab-n-headers-note { margin-top: 8px; font-size: 12px; line-height: 1.5; color: var(--rab-subtlest); }
+.rab-n-headers-group {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 10px 0 2px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--rab-subtle);
+}
+.rab-n-headers-group:first-child { margin-top: 2px; }
+.rab-n-headers-count {
+  padding: 0 6px;
+  border-radius: var(--rab-radius-pill);
+  background: var(--rab-neutral);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+.rab-n-header-tag {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: var(--rab-radius-pill);
+  background: var(--rab-bg-warning);
+  color: var(--rab-warning);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 16px;
+}
 
 /* Code viewer and Find bar */
 .rab-n-code-wrap { display: flex; flex-direction: column; flex: 1; min-height: 0; }
