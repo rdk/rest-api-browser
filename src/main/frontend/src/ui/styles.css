@@ -2105,3 +2105,6 @@ body.rab-next-page #footer {
 }
 .rab-n-tip-title { font-weight: 700; color: var(--rab-text); }
 .rab-n-tip .rab-n-pin-hint { margin-top: 2px; }
+/* where the app has no room below, or on the right (RichTip measures) */
+.rab-n-tip-wrap.above > .rab-n-tip { top: auto; bottom: calc(100% + 7px); }
+.rab-n-tip-wrap.end > .rab-n-tip { left: auto; right: 0; }

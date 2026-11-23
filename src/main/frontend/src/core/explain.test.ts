@@ -49,6 +49,6 @@ describe('statusInfo', () => {
     expect(statusInfo(0).text).toMatch(/No answer/);
   });
   it('gives each class its tone', () => {
-    expect([undefined, 0, 200, 302, 404, 503].map(statusTone)).toEqual(['info', 'info', 'ok', 'info', 'warn', 'err']);
+    expect([undefined, 0, 101, 200, 302, 404, 503].map(statusTone)).toEqual(['info', 'info', 'info', 'ok', 'info', 'warn', 'err']);
   });
 });

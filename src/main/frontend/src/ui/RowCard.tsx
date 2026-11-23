@@ -87,7 +87,7 @@ function ModuleFacts({ m, count, startFailure }: { m: Module; count: number; sta
           <Row name="Reason">
             <span class={reason.kind === 'failed' ? 'rab-n-card-error' : 'rab-n-card-strong'}>{reason.code}</span>
             <div class="rab-n-card-explain">{reason.text}</div>
-            {startFailure && <div class="rab-n-card-explain">The last start: {startFailure}.</div>}
+            {startFailure && reason.kind === 'waiting' && <div class="rab-n-card-explain">The last start: {startFailure}.</div>}
             {m.error && <div class="rab-n-card-mono rab-n-card-note">{clip(m.error, 300)}</div>}
           </Row>
         )}

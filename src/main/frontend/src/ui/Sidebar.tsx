@@ -176,7 +176,7 @@ export function Sidebar(p: SidebarProps) {
   useEffect(() => {
     if (pinnedRef.current) return;
     forceHide();
-    const row = listBox.current?.querySelector('[data-i]:hover') as HTMLElement | null;
+    const row = listBox.current?.querySelector('[data-i]:hover, [data-i]:focus-visible') as HTMLElement | null;
     if (row) scheduleCard(row, CARD_DELAY);
   }, [lines]);
   // a box on the whole screen covers the list: its card goes too, and stays away
@@ -221,13 +221,20 @@ export function Sidebar(p: SidebarProps) {
     hideCard();
     suppressed.current = ((e.target as Element).closest?.('[data-i]') as HTMLElement | null)?.dataset.id;
   };
+  const onListLeave = () => {
+    suppressed.current = undefined;
+    hideCard();
+  };
   const onListFocus = (e: FocusEvent) => {
     const row = e.target as HTMLElement;
     if (row.dataset?.i === undefined) return;
     // the keyboard's position follows the focus, so the arrows go on from the row that has it
     const i = Number(row.dataset.i);
     if (i !== active) setActive(i);
-    if (!pinnedRef.current && row.matches(':focus-visible')) scheduleCard(row, CARD_DELAY);
+    if (!pinnedRef.current && row.matches(':focus-visible')) {
+      suppressed.current = undefined; // the keyboard asks for its card, whatever a click did before
+      scheduleCard(row, CARD_DELAY);
+    }
   };
 
   const toggle = (id: string) => {
@@ -374,7 +381,7 @@ export function Sidebar(p: SidebarProps) {
           )}
         </div>
       ) : (
-        <div class="rab-n-list" ref={listBox} onMouseOver={onListOver} onMouseLeave={hideCard} onMouseDown={onListDown}
+        <div class="rab-n-list" ref={listBox} onMouseOver={onListOver} onMouseLeave={onListLeave} onMouseDown={onListDown}
              onScrollCapture={hideCard} onFocusIn={onListFocus} onFocusOut={hideCard}>
         <VirtualList
           count={lines.length}

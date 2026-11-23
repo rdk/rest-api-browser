@@ -21,6 +21,38 @@ function server(handlers: { summary: () => Summary; index: (hash: string) => Ind
 
 const mods = [module('a', 'api/1')];
 
+describe('CatalogStore.rebuild', () => {
+  const answering = (status: number) => {
+    const calls: [string, string, string | null][] = [];
+    const fetchFn: FetchFn = (url, init) => {
+      calls.push([init?.method ?? 'GET', url, new Headers(init?.headers).get('X-Atlassian-Token')]);
+      if (url.endsWith('/catalog/refresh')) return Promise.resolve(new Response(null, { status }));
+      if (/\/index\//.test(url)) return json(index([], 'h1'));
+      return json(summary([module('a', 'api/1')]));
+    };
+    return { calls, fetchFn };
+  };
+
+  it('asks for the rebuild with the XSRF header, then loads the catalog to follow it', async () => {
+    const { calls, fetchFn } = answering(204);
+    const store = new CatalogStore('', fetchFn);
+    await store.rebuild();
+    expect(calls[0]).toEqual(['POST', '/rest/restbrowser/1/catalog/refresh', 'no-check']);
+    expect(calls[1][1]).toBe('/rest/restbrowser/1/catalog');
+    store.stop();
+  });
+
+  it('expires the store when the session has expired, and says why otherwise', async () => {
+    const expired = new CatalogStore('', answering(401).fetchFn);
+    await expect(expired.rebuild()).rejects.toThrow(/session has expired/);
+    expect(expired.error?.name).toBe('SessionExpired');
+    await expect(new CatalogStore('', answering(403).fetchFn).rebuild()).rejects.toThrow(/Only system administrators/);
+    await expect(new CatalogStore('', answering(500).fetchFn).rebuild()).rejects.toThrow(/could not be started \(HTTP 500\)/);
+    const offline = new CatalogStore('', () => Promise.reject(new TypeError('Failed to fetch')));
+    await expect(offline.rebuild()).rejects.toThrow(/could not be started: Failed to fetch/);
+  });
+});
+
 describe('CatalogStore.startModule', () => {
   const waiting = module('p:m', '/conf/1.0/', { state: 'failed', reason: 'not-started' });
   const started = module('p:m', 'conf/1.0', { opCount: 3 });
@@ -133,6 +165,50 @@ describe('CatalogStore.startModule', () => {
       await expectation;
       store.stop();
     });
+  });
+
+  it('says so when the catalog cannot be loaded after a start that worked', async () => {
+    const { fetchFn } = product(status(200, { state: 'ok', opCount: 3 }));
+    let asked = false;
+    const store = new CatalogStore('', (url, init) => {
+      if (url.includes('/catalog/started')) asked = true;
+      if (asked && url.endsWith('/catalog')) return Promise.resolve(new Response('', { status: 503 }));
+      return fetchFn(url, init);
+    });
+    await expect(store.startModule(waiting)).rejects.toThrow(/could not be loaded again/);
+    expect(store.startFailures.get('p:m')).toMatchObject({ notStarted: false });
+    store.stop();
+  });
+
+  it('starts nothing on a stopped store', async () => {
+    const calls: string[] = [];
+    const store = new CatalogStore('', (url) => {
+      calls.push(url);
+      return json({}, 404);
+    });
+    const changes = vi.fn();
+    store.onChange(changes);
+    store.stop();
+    await expect(store.startModule(waiting)).rejects.toBeInstanceOf(StartStopped);
+    expect(calls).toHaveLength(0);
+    expect(changes).not.toHaveBeenCalled();
+  });
+
+  it('forgets why a start failed once the module no longer waits', async () => {
+    let later = false;
+    const store = new CatalogStore('', (url) => {
+      if (url.includes('/catalog/started')) return json({ error: 'still-not-started' }, 409);
+      if (url.endsWith('/rest-api-browser-start')) return json({}, 404);
+      if (/\/index\//.test(url)) return json(index([], later ? 'h2' : 'h1'));
+      return json(summary([later ? started : waiting], { hash: later ? 'h2' : 'h1' }));
+    });
+    await store.load();
+    await expect(store.startModule(waiting)).rejects.toThrow(/did not start/);
+    expect(store.startFailures.has('p:m')).toBe(true);
+    later = true; // started meanwhile by another request (an OAuth one, another tab)
+    await store.load();
+    expect(store.startFailures.has('p:m')).toBe(false);
+    store.stop();
   });
 
   it('lets an expired session expire the store, and is not kept as the module\'s failure', async () => {
@@ -450,6 +526,24 @@ describe('CatalogStore second review', () => {
     const before = srv.calls.length;
     await vi.advanceTimersByTimeAsync(1000);
     expect(srv.calls.length).toBeGreaterThan(before);
+    store.stop();
+  });
+
+  it('asks again after a failure of load() also when the catalog was complete, and stops once it has it', async () => {
+    let fail = false;
+    let hash = 'h1';
+    const srv = server({ summary: () => summary(mods, { hash }), index: (h) => index([], h) });
+    const store = new CatalogStore('http://host/jira', (url, init) => (fail ? Promise.resolve(new Response('', { status: 502 })) : srv.fetchFn(url, init)));
+    await store.load();
+    expect(vi.getTimerCount()).toBe(0); // complete: nothing to poll
+    fail = true;
+    hash = 'h2'; // newer than what the page shows, and its load fails
+    await expect(store.refreshSoon()).rejects.toThrow('HTTP 502');
+    fail = false;
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(store.summary?.hash).toBe('h2');
+    expect(vi.getTimerCount()).toBe(0);
     store.stop();
   });
 

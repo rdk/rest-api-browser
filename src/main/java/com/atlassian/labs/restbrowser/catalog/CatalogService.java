@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.RejectedExecutionException;
@@ -137,6 +138,7 @@ public class CatalogService implements InitializingBean, DisposableBean {
         if (buildThread != null) {
             buildThread.shutdownNow();
         }
+        startedReads.values().forEach(read -> read.cancel(false)); // a request waiting for one answers at once
         if (describeThreads != null) {
             describeThreads.shutdownNow();
         }
@@ -242,7 +244,10 @@ public class CatalogService implements InitializingBean, DisposableBean {
             return new Started(StartOutcome.QUEUED, null);
         }
         try {
-            return new Started(StartOutcome.READ, read.get(waitMs, TimeUnit.MILLISECONDS));
+            ModuleEntry entry = read.get(waitMs, TimeUnit.MILLISECONDS);
+            return entry == null ? new Started(StartOutcome.UNKNOWN, null) : new Started(StartOutcome.READ, entry);
+        } catch (CancellationException e) {
+            return new Started(StartOutcome.FAILED, null); // shutting down
         } catch (TimeoutException e) {
             return new Started(StartOutcome.QUEUED, null); // it goes on, and publishes once done
         } catch (InterruptedException e) {
@@ -256,12 +261,23 @@ public class CatalogService implements InitializingBean, DisposableBean {
         }
     }
 
-    /** Runs on the build thread only: reads one module and publishes it (see publishDone). */
+    /**
+     * Runs on the build thread only: reads one module and publishes it (see publishDone). A module read meanwhile (by
+     * a build, or an earlier request's read) is not read again, and one that is gone (null) is not read at all; either
+     * way the catalog is published if it is incomplete, since a build or a read that ended while this one was queued
+     * left it so (moreQueued).
+     */
     private ModuleEntry readOne(RestModule module) {
+        List<RestModule> modules = discovery.discover(); // now, not the last build's: a plugin may have gone since
+        boolean gone = modules.stream().noneMatch(m -> m.id().equals(module.id()));
         Built previous = built.get(module.id());
-        if (previous != null && !waitingToStart(previous.entry())) {
-            startedReads.remove(module.id()); // read meanwhile, by an earlier request's read: nothing to do
-            return previous.entry();
+        if (gone || (previous != null && !waitingToStart(previous.entry()))) {
+            startedReads.remove(module.id());
+            CatalogSnapshot s = current.get();
+            if (s == null || !s.complete()) {
+                publishDone(modules);
+            }
+            return gone ? null : previous.entry();
         }
         try {
             Built b = describe(module);

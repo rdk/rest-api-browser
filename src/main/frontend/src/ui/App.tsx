@@ -285,29 +285,18 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
     setRefreshing(true);
     clearDetails();
     try {
-      const res = await fetch(baseUrl + '/rest/restbrowser/1/catalog/refresh', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'X-Atlassian-Token': 'no-check' },
-      });
-      if (!res.ok) {
-        setRefreshError(res.status === 403 ? 'Only system administrators can rebuild the catalog.' : `The rebuild could not be started (HTTP ${res.status}).`);
-        return;
-      }
-      try {
-        await store.refreshSoon();
-      } catch (e) {
-        setRefreshError('The rebuild started, but the catalog could not be read again: ' + message(e));
-      }
+      await store.rebuild();
     } catch (e) {
-      setRefreshError('The rebuild could not be started: ' + message(e));
+      // an expired session: the list's status line says so already
+      if (!isSessionExpired(e)) setRefreshError(message(e));
     } finally {
       setRefreshing(false);
     }
-  }, [baseUrl, store]);
+  }, [store]);
 
   // a deep link to an operation of a module that has not started: its key starts with the module's id
-  const linkWaiting = selectedKey && !op ? summary?.modules.find((m) => selectedKey.startsWith(m.id + ':') && isWaiting(m)) : undefined;
+  const linkWaiting = selectedKey && !op && !loadError
+    ? summary?.modules.find((m) => selectedKey.startsWith(m.id + ':') && isWaiting(m)) : undefined;
   const productLabel = summary ? `${summary.product.name} ${summary.product.version}` : product;
   // the header's tooltip about the project: on hover or keyboard focus of the brand, pinned with Alt+P
   const brandWrap = useRef<HTMLSpanElement>(null);
@@ -463,6 +452,7 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
               indexing={!!selectedKey && !op && !loadError && !summary?.complete && !linkWaiting}
               linkWaiting={linkWaiting}
               linkStarting={!!linkWaiting && starting.has(linkWaiting.id)}
+              linkFailure={linkWaiting && startFailures.get(linkWaiting.id)?.message}
               onStart={onStart}
             />
           )}
@@ -571,9 +561,9 @@ function prefill(op: Operation, draft: Draft, state: RouteState): Draft {
   };
 }
 
-function Welcome({ summary, missing, indexing, linkWaiting, linkStarting, onStart }: {
+function Welcome({ summary, missing, indexing, linkWaiting, linkStarting, linkFailure, onStart }: {
   summary: Summary | null; missing: boolean; indexing: boolean; linkWaiting?: Module; linkStarting: boolean;
-  onStart: (m: Module) => void;
+  linkFailure?: string; onStart: (m: Module) => void;
 }) {
   let ops = 0, failed = 0, waiting = 0; // modules left out on purpose (excluded, REST v1) are not failures
   for (const m of summary?.modules ?? []) {
@@ -590,9 +580,11 @@ function Welcome({ summary, missing, indexing, linkWaiting, linkStarting, onStar
           <div class="rab-n-banner" data-testid="link-waiting">
             The operation in the link is in <strong>{linkWaiting.path}</strong>, which has not started yet on this node; it opens
             once the module is read.{' '}
-            <button class="rab-n-link" onClick={() => onStart(linkWaiting)} disabled={linkStarting} aria-busy={linkStarting || undefined}>
-              {linkStarting ? 'Starting…' : 'Start it'}
+            <button class="rab-n-link" onClick={() => !linkStarting && onStart(linkWaiting)}
+                    aria-disabled={linkStarting || undefined} aria-busy={linkStarting || undefined}>
+              {linkStarting ? 'Starting…' : linkFailure ? 'Try again' : 'Start it'}
             </button>
+            {linkFailure && !linkStarting && <div class="rab-n-subtle">The last start: {linkFailure}.</div>}
           </div>
         )}
         {indexing && <div class="rab-n-banner">The catalog is still being built; the operation in the link opens when its module is ready.</div>}

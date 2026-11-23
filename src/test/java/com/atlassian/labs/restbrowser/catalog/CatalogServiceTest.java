@@ -8,6 +8,7 @@ import com.atlassian.labs.restbrowser.catalog.ModuleDiscovery.RestModule;
 import com.atlassian.labs.restbrowser.catalog.SpecSource.SpecException;
 import com.atlassian.plugin.ModuleDescriptor;
 import com.atlassian.plugin.Plugin;
+import com.atlassian.plugin.event.events.PluginDisabledEvent;
 import com.atlassian.plugin.event.events.PluginEnabledEvent;
 import org.junit.After;
 import org.junit.Before;
@@ -171,6 +172,49 @@ public class CatalogServiceTest {
         CatalogService.Started again = service.readStarted("b", 10_000); // a request that checked before the publish
         assertEquals(Model.State.ok, again.entry().state());
         assertEquals(calls, source.count("b"));
+    }
+
+    @Test
+    public void aReadQueuedBehindABuildThatReadTheModuleStillCompletesTheCatalog() throws Exception {
+        source.failures.put("b", new SpecSource.SpecException(JerseyModelSource.NOT_STARTED, "not started", null));
+        completeSnapshot();
+        source.failures.remove("b"); // a request started it
+        source.gate = new CountDownLatch(1);
+        service.refresh("b"); // a build reads b meanwhile; it is held while describing b
+        await(() -> source.count("b") == 2);
+        assertEquals(CatalogService.StartOutcome.QUEUED, service.readStarted("b", 100).outcome()); // behind the build
+        source.gate.countDown();
+        source.gate = null;
+        // the build ends with the read queued (incomplete); the read finds b read and must still complete the catalog
+        await(() -> service.current(null).complete());
+        assertEquals(Model.State.ok, entry(service.current(null), "b").state());
+        assertEquals(2, source.count("b")); // read once, by the build
+    }
+
+    @Test
+    public void aModuleGoneBeforeItsReadIsNotRead() throws Exception {
+        source.failures.put("b", new SpecSource.SpecException(JerseyModelSource.NOT_STARTED, "not started", null));
+        completeSnapshot();
+        source.failures.remove("b");
+        source.gate = new CountDownLatch(1);
+        service.refresh("a"); // holds the build thread while describing a
+        await(() -> source.count("a") == 2);
+        assertEquals(CatalogService.StartOutcome.QUEUED, service.readStarted("b", 100).outcome());
+        discovery.modules = List.of(module("a", "plugin.a"), module("c", "plugin.c")); // b's plugin goes away
+        service.onPluginDisabled(disabledEvent("plugin.b"));
+        source.gate.countDown();
+        source.gate = null;
+        await(() -> service.current(null).complete() && service.current(null).modules().size() == 2);
+        assertEquals(1, source.count("b")); // only the first build read it
+        assertEquals(CatalogService.StartOutcome.UNKNOWN, service.readStarted("b", 1_000).outcome());
+    }
+
+    private static PluginDisabledEvent disabledEvent(String key) {
+        PluginDisabledEvent event = mock(PluginDisabledEvent.class);
+        Plugin plugin = mock(Plugin.class);
+        when(plugin.getKey()).thenReturn(key);
+        when(event.getPlugin()).thenReturn(plugin);
+        return event;
     }
 
     @Test

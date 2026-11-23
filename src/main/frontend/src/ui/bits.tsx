@@ -118,8 +118,15 @@ export function useTip(wrap: { current: HTMLElement | null }) {
     document.addEventListener('keydown', onKey, true);
     return () => document.removeEventListener('keydown', onKey, true);
   }, []);
-  const back = () => setDismissed(false);
-  return { pinned, state: pinned ? ' pinned' : dismissed ? ' dismissed' : '', onMouseEnter: back, onFocusIn: back };
+  return {
+    pinned,
+    state: pinned ? ' pinned' : dismissed ? ' dismissed' : '',
+    onMouseEnter: () => setDismissed(false),
+    // keyboard focus only: a click that focuses it must not bring back what Escape hid
+    onFocusIn: (e: FocusEvent) => {
+      if ((e.target as Element | null)?.matches?.(':focus-visible')) setDismissed(false);
+    },
+  };
 }
 
 /**
@@ -130,8 +137,23 @@ export function RichTip({ tip, children, testId }: { tip: ComponentChildren; chi
   const id = useId();
   const wrap = useRef<HTMLSpanElement>(null);
   const { pinned, state, onMouseEnter, onFocusIn } = useTip(wrap);
+  // below and from the left edge, unless the app has no room there: then above, or ending at the right edge
+  const [side, setSide] = useState('');
+  const place = () => {
+    const el = wrap.current;
+    const box = el?.querySelector('.rab-n-tip') as HTMLElement | null;
+    const app = el?.closest('.rab-n');
+    if (!el || !box || !app) return;
+    const r = el.getBoundingClientRect();
+    const a = app.getBoundingClientRect();
+    const h = box.offsetHeight + 10;
+    const up = r.bottom + h > a.bottom && r.top - h >= a.top;
+    const end = r.left + box.offsetWidth > a.right - 6;
+    setSide((up ? ' above' : '') + (end ? ' end' : ''));
+  };
   return (
-    <span ref={wrap} class={'rab-n-tip-wrap' + state} onMouseEnter={onMouseEnter} onFocusIn={onFocusIn}>
+    <span ref={wrap} class={'rab-n-tip-wrap' + state + side}
+          onMouseEnter={() => { place(); onMouseEnter(); }} onFocusIn={(e) => { place(); onFocusIn(e); }}>
       <span class="rab-n-tip-target" tabIndex={0} aria-describedby={id}>{children}</span>
       <span id={id} class="rab-n-tip" role="tooltip" data-testid={testId}>
         {tip}
@@ -144,12 +166,12 @@ export function RichTip({ tip, children, testId }: { tip: ComponentChildren; chi
 /** The last line of a rich tooltip: how to pin it, or how to let it go. */
 export function PinHint({ pinned }: { pinned: boolean }) {
   return (
-    <div class={'rab-n-pin-hint' + (pinned ? ' pinned' : '')} data-testid="pin-hint">
+    <span class={'rab-n-pin-hint' + (pinned ? ' pinned' : '')} data-testid="pin-hint">
       <svg class="rab-n-svg" width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true">
         <path d="M6 2.5h4M7 2.5v4L4.5 9h7L9 6.5v-4M8 9v4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
       {pinned ? <span>Pinned: <kbd>Esc</kbd> or a click outside closes it</span> : <span><kbd>Alt</kbd>+<kbd>P</kbd> pins it</span>}
-    </div>
+    </span>
   );
 }
 

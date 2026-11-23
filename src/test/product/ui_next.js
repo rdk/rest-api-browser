@@ -575,6 +575,27 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         }
         await b.evaluate(`(document.querySelector('.rab-n-vlist').scrollTop = 0, true)`);
 
+        // a click holds a row's card back only while the pointer stays on it: out of the list and back, the card comes
+        await sleep(300);
+        const hr = await b.evaluate(`(() => { const m = document.querySelector('[data-testid=module][aria-expanded]'); if (!m) return null;
+            const r = m.getBoundingClientRect(), side = document.querySelector('.rab-n-sidebar').getBoundingClientRect();
+            return { x: r.left + 60, y: r.top + r.height / 2, out: side.right + 300 }; })()`);
+        if (hr) {
+            for (let n = 0; n < 2; n++) { // folds and unfolds it: as it was
+                await clickAt(hr.x, hr.y);
+                await sleep(300);
+            }
+            await sleep(600);
+            const heldBack = !await b.evaluate(`!!document.querySelector('[data-testid=row-card]')`);
+            await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: hr.out, y: hr.y });
+            await sleep(200);
+            await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: hr.x, y: hr.y });
+            const cardBack = await b.waitFor(`!!document.querySelector('[data-testid=row-card]')`, 3000);
+            await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: hr.out, y: hr.y });
+            c.check('a clicked row shows no card until the pointer leaves the list; back on the row, its card comes',
+                heldBack && cardBack, { heldBack, cardBack });
+        }
+
         // skins: Balanced by default; each one from the menu changes the header; the choice is kept (checked after the reload below)
         const skinOf = () => b.evaluate(`(() => { const r = document.querySelector('.rab-n'); const t = getComputedStyle(document.querySelector('.rab-n-topbar'));
             const band = document.querySelector('.rab-n-statusline'), pane = document.querySelector('.rab-n-tabpane, .rab-n-request');

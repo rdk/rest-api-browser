@@ -165,7 +165,7 @@ function StatusTip({ status, statusText }: { status: number; statusText: string 
   const info = statusInfo(status, statusText);
   return (
     <>
-      <span class="rab-n-tip-title">{[status, info.title].filter(Boolean).join(' ')}</span>{' '}
+      {(status > 0 || info.title) && <><span class="rab-n-tip-title">{[status || '', info.title].filter(Boolean).join(' ')}</span>{' '}</>}
       <span class="rab-n-tip-text">{info.text}</span>
     </>
   );

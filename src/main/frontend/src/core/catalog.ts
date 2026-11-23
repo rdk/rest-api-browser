@@ -4,10 +4,12 @@ import { reasonInfo } from './explain';
 
 /**
  * Starting a module (see startModule): an OPTIONS request to a path the module does not have (Jersey usually answers
- * it with a 404; it passes the module's filters like any request); how long a start the server queued is followed.
+ * it with a 404; it passes the module's filters like any request); how long a start the server queued is followed:
+ * longer than the server reads a module at most (CatalogService.MODULE_TIMEOUT_MS, 30 s), so that a read ends while it
+ * is followed. A read queued behind a build is shown by the store's own polling: the catalog is incomplete till then.
  */
 export const START_PATH = 'rest-api-browser-start';
-export const START_WAIT_MS = 30_000;
+export const START_WAIT_MS = 45_000;
 const START_POLL_MS = 1000;
 const DID_NOT_START = 'it did not start on that request; some modules start only for their own kind of login (OAuth tokens)';
 
@@ -111,7 +113,7 @@ export class CatalogStore {
     } catch (e) {
       if (generation === this.generation) {
         if (isSessionExpired(e)) this.expire(e as Error);
-        else this.schedulePoll();   // a transient failure: an incomplete catalog is still polled
+        else this.schedulePoll(true);   // a transient failure: asked again, also when the catalog was complete
       }
       throw e;
     }
@@ -125,6 +127,37 @@ export class CatalogStore {
   }
 
   /**
+   * Asks the server to rebuild the catalog (system administrators), then loads it to follow the rebuild. Rejects with
+   * a message for the user; an expired session expires the store, and the page says so.
+   */
+  async rebuild(): Promise<void> {
+    const path = '/rest/restbrowser/1/catalog/refresh';
+    let res: Response;
+    try {
+      res = await this.fetchFn(this.baseUrl + path, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'X-Atlassian-Token': 'no-check' },
+      });
+    } catch (e) {
+      throw new Error('The rebuild could not be started: ' + message(e));
+    }
+    if (isLoginAnswer(res)) {
+      const e = sessionExpired(path, res.status);
+      this.expire(e);
+      throw e;
+    }
+    if (res.status === 403) throw new Error('Only system administrators can rebuild the catalog.');
+    if (!res.ok) throw new Error(`The rebuild could not be started (HTTP ${res.status}).`);
+    try {
+      await this.load();
+    } catch (e) {
+      if (isSessionExpired(e)) throw e; // load() expired the store
+      throw new Error('The rebuild started, but the catalog could not be read again: ' + message(e));
+    }
+  }
+
+  /**
    * Starts a module that had not started (failed, reason not-started): Confluence starts a module's REST API on the
    * first request to it, on each node. A request to the module starts it on this node (the session sticks to one node
    * of a cluster); then the server checks that it runs and reads that module again, and answers how it went. One
@@ -132,6 +165,7 @@ export class CatalogStore {
    * startFailures keeps; with StartStopped when the store stopped meanwhile.
    */
   startModule(module: Module): Promise<void> {
+    if (this.stopped) return Promise.reject(new StartStopped());
     const running = this.starts.get(module.id);
     if (running) return running;
     const failures = (change: (m: Map<string, StartFailure>) => void) => {
@@ -193,6 +227,7 @@ export class CatalogStore {
     }
     if (res.status === 409) {
       const body = (await res.json().catch(() => ({}))) as { error?: string };
+      this.checkStopped();
       if (body.error === 'still-not-started') throw new Error(DID_NOT_START);
       await this.reload();
       throw new Error('it is not waiting to start any more');
@@ -236,13 +271,15 @@ export class CatalogStore {
     throw new Error('it is still being read: it shows when the catalog has read it');
   }
 
-  // Loads the catalog again; its own errors are its own (it polls again, or the session expired and the page says so).
+  // Loads the catalog again. A failure is said (the start may have worked, but the page does not show it yet; load()
+  // asks again by itself); an expired session is the page's to say, and stops the start.
   private async reload(): Promise<void> {
     this.checkStopped(); // load() would start a stopped store again
     try {
       await this.load();
-    } catch {
-      // see above
+    } catch (e) {
+      this.checkStopped();
+      throw new Error('the catalog could not be loaded again: ' + message(e));
     }
     this.checkStopped();
   }
@@ -306,6 +343,7 @@ export class CatalogStore {
     if (generation !== this.generation) return;
     this.summary = current;
     this.index = index;
+    this.pruneFailures();
     this.listeners.forEach((l) => l());
   }
 
@@ -313,11 +351,24 @@ export class CatalogStore {
   private update(summary: Summary): void {
     const changed = !this.summary || !sameView(this.summary, summary);
     this.summary = summary;
-    if (changed) this.listeners.forEach((l) => l());
+    if (changed) {
+      this.pruneFailures();
+      this.listeners.forEach((l) => l());
+    }
   }
 
-  private schedulePoll(): void {
-    if (this.stopped || !this.summary || this.summary.complete) return;
+  // The failure of a start says why a module is still waiting: it goes when the module is read, fails otherwise or is gone.
+  private pruneFailures(): void {
+    if (!this.startFailures.size || !this.summary) return;
+    const waiting = new Set(this.summary.modules.filter((m) => reasonInfo(m.reason).kind === 'waiting' && m.state === 'failed').map((m) => m.id));
+    if ([...this.startFailures.keys()].every((id) => waiting.has(id))) return;
+    this.startFailures = new Map([...this.startFailures].filter(([id]) => waiting.has(id)));
+  }
+
+  // Polls while the catalog is incomplete, and after a failure (`retry`) also when it is complete: what failed to load
+  // may be newer than what the page shows.
+  private schedulePoll(retry = false): void {
+    if (this.stopped || !this.summary || (this.summary.complete && !retry)) return;
     const delay = POLL_DELAYS_MS[Math.min(this.attempt, POLL_DELAYS_MS.length - 1)];
     this.attempt++;
     this.timer = setTimeout(() => void this.poll(), delay);
@@ -355,6 +406,7 @@ export class CatalogStore {
       if (generation !== this.generation) return;
       if (isSessionExpired(e)) return this.expire(e as Error);
       // Transient failure: keep what we have and try again on the next tick.
+      return this.schedulePoll(true);
     }
     this.schedulePoll();
   }

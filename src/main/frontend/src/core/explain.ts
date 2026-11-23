@@ -26,8 +26,8 @@ const known = (code: string, kind: ReasonKind, text: string): ReasonInfo => Obje
 
 const REASONS: Record<string, ReasonInfo> = Object.fromEntries([
   known('not-started', 'waiting',
-    'Confluence starts a module\'s REST API on the first request to it, on each node of a cluster; until then its '
-    + 'operations cannot be read. Select the module to start it: the browser sends one OPTIONS request to a path the '
+    'Some products (Confluence) start a module\'s REST API on the first request to it, on each node of a cluster; '
+    + 'until then its operations cannot be read. Select the module to start it: the browser sends one OPTIONS request to a path the '
     + 'module does not have, which starts it on this node, and the catalog reads it again. A few modules start only '
     + 'for their own kind of login (OAuth tokens): those stay not started.'),
   known('excluded', 'skipped',
@@ -70,7 +70,7 @@ export interface StatusInfo {
 }
 
 /** The colour of a status: ok, info (redirects, no answer), warn (refused), err (failed). */
-export const statusTone = (s: number | undefined) => (!s ? 'info' : s >= 500 ? 'err' : s >= 400 ? 'warn' : s >= 300 ? 'info' : 'ok');
+export const statusTone = (s: number | undefined) => (!s || s < 200 ? 'info' : s >= 500 ? 'err' : s >= 400 ? 'warn' : s >= 300 ? 'info' : 'ok');
 
 const REDIRECT = 'A redirect that the browser could not follow by itself (it follows the others): the Location response '
   + 'header, if any, says where.';
