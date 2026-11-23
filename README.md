@@ -2,21 +2,23 @@ REST API Browser
 ================
 
 > [!NOTE]
-> **Unofficial fork** of Atlassian's archived [REST API Browser](https://bitbucket.org/atlassian/rest-api-browser) 4.0.0 (Platform 8, Jakarta).
-> It builds again (against Platform 8.0.0 instead of the 8.0.0-m01 milestone, which no longer resolves) and is tested
-> on Jira 11.3.13 and Confluence 10.2.20; see [Testing](#testing). The crossed-out notice below is Atlassian's.
+> An unofficial, maintained fork of Atlassian's archived REST API Browser, for Jira 11, Confluence 10 and the other
+> Data Center products of Platform 8. See [About this fork](#about-this-fork).
 
 ![The new UI on Jira 11: the product's REST operations grouped by module on the left, an operation's form and its JSON response on the right](docs/images/new-ui.png)
 
-<sub>The new UI (a preview, since 4.2.0) on Jira 11.3, Balanced skin: every REST operation of the product and its apps, grouped by module, with the form and the response beside it.</sub>
-
-## ~~Archived notice~~
-
-~~This repository is no longer in active use. Branch `3.2.x` is still used together with Platform 7 and should EOL at the same time.~~
+<sub>The new UI (a preview, since 4.2.0) on Jira 11.3: every REST operation of the product and its apps, grouped by module, with the form and the response beside it.</sub>
 
 ## Description
 
-The REST API Browser add-on allows a developer to browse, discover, and test Atlassian's rich REST APIs.
+REST API Browser is an app for **Atlassian Data Center** products, the self-managed editions that run on your own
+servers (Jira, Confluence, Bitbucket, Bamboo, Crowd). It does not work on Atlassian Cloud: Cloud apps are built
+differently and Cloud's REST APIs are documented on [developer.atlassian.com](https://developer.atlassian.com).
+
+Installed in a product, it lists the REST APIs of that instance: the product's own, those of its bundled apps and
+those of the apps you installed, including private and undocumented ones. Pick an endpoint to see its parameters,
+fill them in and send the request from the browser, with your own session and permissions. It is meant for
+administrators and app developers who need to know what an instance really offers.
 
 ## Compatibility
 
@@ -43,8 +45,8 @@ Which release to install depends on the product's version:
   Atlassian does not support this change.
 - **Atlassian's 3.2.8** (July 2024) is Atlassian's last release. It is in Atlassian's Maven repository but no longer on
   the Marketplace. Its range starts at the oldest versions its build declares as supported and ends at the Platform 7
-  versions, which Atlassian's archived notice assigns to 3.2.x. Atlassian never released a final 4.0.0, the version
-  this fork is based on.
+  versions, which Atlassian's archived repository assigns to its `3.2.x` branch. Atlassian never released a final
+  4.0.0, the version this fork is based on.
 
 ## Install
 
@@ -83,6 +85,19 @@ module (`/rest/restbrowser/1/catalog/details`). Plan and status: [docs/NEW-UI-PL
 [TODO.md](TODO.md) is the short list of open work; each item has its own file in [docs/todo/](docs/todo/), and
 [docs/todo/README.md](docs/todo/README.md) has the conventions. The rest of `docs/` is listed in
 [docs/README.md](docs/README.md).
+
+## About this fork
+
+Atlassian archived [its repository](https://bitbucket.org/atlassian/rest-api-browser) at 4.0.0, a milestone for
+Platform 8 (Spring 6, Jakarta EE 10, Java 21) that was never released, with this notice: *"This repository is no longer
+in active use. Branch 3.2.x is still used together with Platform 7 and should EOL at the same time."* This fork starts
+from that 4.0.0:
+
+- It builds again, against Platform 8.0.0 instead of the 8.0.0-m01 milestone, which no longer resolves.
+- It is tested on Jira 11.3.13 and Confluence 10.2.20, including a two-node Jira Data Center; see [Testing](#testing).
+- It adds fixes for those products (Confluence 10, the classic page's path parameters and descriptions) and a
+  [new UI](#new-ui-preview).
+- It keeps Atlassian's plugin key and Apache License 2.0. It is not supported by Atlassian.
 
 ## Build
 
