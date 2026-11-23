@@ -402,7 +402,9 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
             const ACCESS = { UnrestrictedAccess: 'open', AnonymousSiteAccess: 'open', AnonymousAllowed: 'open',
                 UnlicensedSiteAccess: 'unlicensed', AdminOnly: 'admin', SystemAdminOnly: 'sysadmin' };
             const list = document.querySelector('.rab-n-vlist');
-            const tones = row => [...row.querySelectorAll('.rab-n-tick')].map(t => [...t.classList].find(c => c.startsWith('rab-n-tone-')).slice(11)).join(' ');
+            // the colour tones of a row: its ticks, and a module header's icon (none for an internal module)
+            const tones = row => [...row.querySelectorAll('.rab-n-tick, .rab-n-module-icon')]
+                .map(t => ([...t.classList].find(c => c.startsWith('rab-n-tone-')) || '').slice(11)).filter(Boolean).join(' ');
             const scan = async sel => {
                 const seen = new Map();
                 for (let top = 0; ; top += list.clientHeight) {
@@ -455,12 +457,28 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         // unfolding scrolls the list to the selected operation; the headers are at its top
         await b.evaluate(`(document.querySelector('.rab-n-vlist').scrollTop = 0, true)`);
         await b.waitFor(`!!document.querySelector('[data-testid=module]') && !!document.querySelector('[data-testid=op]')`, 3000);
-        const groups = await b.evaluate(`(() => { try { const m = document.querySelector('[data-testid=module]'), o = document.querySelector('[data-testid=op]');
-            const bg = e => { const st = getComputedStyle(e); return st.backgroundImage !== 'none' ? st.backgroundImage.slice(0, 80) : st.backgroundColor; };
-            return { module: m ? bg(m) : 'no module row', op: o ? bg(o) : 'no op row' }; } catch (e) { return { error: String(e) }; } })()`);
-        c.check('the module headers of the list have a background of their own', !!groups && !groups.error
-            && !/^no /.test(groups.module) && !/^no /.test(groups.op) && groups.module !== groups.op
-            && !/^rgba\(0, 0, 0, 0\)$/.test(groups.module), groups);
+        const groups = await b.evaluate(`(() => { try { const m = document.querySelector('[data-testid=module][aria-expanded]');
+            if (!m) return { error: 'no foldable module row' };
+            const st = getComputedStyle(m), chevron = m.querySelector('.rab-n-chevron svg'), icon = m.querySelector('.rab-n-module-icon svg');
+            return { fill: st.backgroundImage !== 'none' ? st.backgroundImage.slice(0, 60) : st.backgroundColor, chevron: !!chevron,
+                turned: chevron ? getComputedStyle(chevron).transform : null, expanded: m.getAttribute('aria-expanded'), icon: !!icon }; }
+            catch (e) { return { error: String(e) }; } })()`);
+        c.check('the module headers are tree nodes: a chevron that turns when open, a kind icon, no fill', !!groups && !groups.error
+            && groups.chevron && groups.icon && /^rgba\(0, 0, 0, 0\)$/.test(groups.fill)
+            && (groups.expanded === 'true') === (groups.turned !== 'none'), groups);
+
+        // the wheel scrolls the list to its end, and that end is inside the window (not under a banner added later)
+        const lb = await b.evaluate(`(() => { const l = document.querySelector('.rab-n-vlist'); l.scrollTop = 0; const r = l.getBoundingClientRect();
+            return { x: r.left + r.width / 2, y: r.top + Math.min(r.height / 2, 300) }; })()`);
+        for (let i = 0; i < 80; i++) {
+            await b.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: lb.x, y: lb.y, deltaX: 0, deltaY: 3000 });
+            await sleep(30);
+        }
+        await sleep(500);
+        const end = await b.evaluate(`(() => { const l = document.querySelector('.rab-n-vlist'), r = l.getBoundingClientRect();
+            return { top: Math.round(l.scrollTop), max: l.scrollHeight - l.clientHeight, bottom: Math.round(r.bottom), viewport: document.documentElement.clientHeight }; })()`);
+        c.check('the wheel scrolls the list to its end, and the end is inside the window', end.top >= end.max - 1 && end.bottom <= end.viewport, end);
+        await b.evaluate(`(document.querySelector('.rab-n-vlist').scrollTop = 0, true)`);
 
         // skins: Balanced by default; each one from the menu changes the header; the choice is kept (checked after the reload below)
         const skinOf = () => b.evaluate(`(() => { const r = document.querySelector('.rab-n'); const t = getComputedStyle(document.querySelector('.rab-n-topbar'));

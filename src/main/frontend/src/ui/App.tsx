@@ -236,11 +236,22 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
   useLayoutEffect(() => {
     const measure = () => {
       const top = root.current ? root.current.getBoundingClientRect().top + window.scrollY : 0;
-      setHeight(Math.max(420, window.innerHeight - top - 1));
+      // the viewport without the page's own scrollbars (clientHeight), so a horizontal one never hides the list's end
+      const viewport = document.documentElement.clientHeight || window.innerHeight;
+      setHeight(Math.max(420, viewport - top - 1));
     };
     measure();
     window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
+    window.addEventListener('load', measure);
+    // the product can add something above the app after it rendered (a banner, its navigation): measure again then,
+    // or the list's last rows would sit below the window, out of reach
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(document.body);
+    return () => {
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('load', measure);
+      observer?.disconnect();
+    };
   }, []);
 
   const [refreshing, setRefreshing] = useState(false);

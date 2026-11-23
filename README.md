@@ -6,6 +6,10 @@ REST API Browser
 > It builds again (against Platform 8.0.0 instead of the 8.0.0-m01 milestone, which no longer resolves) and is tested
 > on Jira 11.3.13 and Confluence 10.2.20; see [Testing](#testing). The crossed-out notice below is Atlassian's.
 
+![The new UI on Jira 11: the product's REST operations grouped by module on the left, an operation's form and its JSON response on the right](docs/images/new-ui.png)
+
+<sub>The new UI (coming in 4.2.0) on Jira 11.3, Balanced skin: every REST operation of the product and its apps, grouped by module, with the form and the response beside it.</sub>
+
 ## ~~Archived notice~~
 
 ~~This repository is no longer in active use. Branch `3.2.x` is still used together with Platform 7 and should EOL at the same time.~~

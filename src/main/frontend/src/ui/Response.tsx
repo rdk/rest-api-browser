@@ -454,10 +454,15 @@ function JsonView({ model, needle, step, onFound }: {
   useEffect(() => {
     if (activeLine >= 0 && activeRow < 0 && collapsed.size) setCollapsed(new Set());
   }, [activeLine, step.n]);
-  // the horizontal extent of the longest line, so the sideways scroll does not change as rows come and go
+  // the horizontal extent of the longest line (its indentation, its text up to the cut, the cut's note), so the
+  // sideways scroll does not change as rows come and go; no more than that, or a pane whose lines all fit would get
+  // a scrollbar for nothing
   const widest = useMemo(() => {
     let max = 0;
-    for (const l of model.lines) max = Math.max(max, l.depth * 2 + Math.min(l.text.trimStart().length, PRETTY_LINE + 60));
+    for (const l of model.lines) {
+      const len = l.text.trimStart().length;
+      max = Math.max(max, l.depth * 2 + (len > PRETTY_LINE ? PRETTY_LINE + 60 : len));
+    }
     return max;
   }, [model]);
   return (
@@ -468,7 +473,7 @@ function JsonView({ model, needle, step, onFound }: {
         rowHeight={LINE}
         activeIndex={activeRow >= 0 ? activeRow : undefined}
         revealKey={step.n}
-        innerMinWidth={`calc(${widest + 20}ch + 40px)`}
+        innerMinWidth={`calc(${widest}ch + 36px)`}
         focusable
         renderRow={(row) => {
           const i = visible[row];

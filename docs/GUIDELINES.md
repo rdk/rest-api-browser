@@ -72,6 +72,8 @@ helper or a CSS token behind it; use those rather than solving the same problem 
 - The same control looks and behaves the same everywhere: all copy buttons show done and failed, every icon in a
   toolbar is a `.rab-n-tool`, every count goes through `plural()`. A state class (done, failed, on) beats `:hover`:
   the pointer is still on the button that was just clicked.
+- The list's module headers are tree nodes (a chevron that turns, an icon in the module's kind colour, the path, a
+  plain count), not filled bands: most rows of a folded list are headers, and fills turn it into a block of colour.
 - Check a visual change in all three skins, in light and dark (`ui_next.js` switches them), at a narrow width.
 
 ## Before a commit

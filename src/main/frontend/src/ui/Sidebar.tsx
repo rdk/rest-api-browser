@@ -448,9 +448,22 @@ function ModuleRow({ index, module, count, collapsed, active, tabStop, described
       data-i={index}
       data-id={'module:' + module.id}
     >
-      <span class="rab-n-chevron" aria-hidden="true">{foldable ? (collapsed ? '▸' : '▾') : ''}</span>
+      <span class="rab-n-chevron" aria-hidden="true">
+        {foldable && (
+          <svg class="rab-n-svg" width="10" height="10" viewBox="0 0 16 16" fill="none">
+            <path d="M6 3.5L10.5 8L6 12.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </span>
+      {/* the module's kind (supported, app, bundled; none for the product's internal APIs) as the icon's colour */}
+      <span class={'rab-n-module-icon' + (kind ? ' rab-n-tone-' + kind.tone : '')} aria-hidden="true">
+        <svg class="rab-n-svg" width="14" height="14" viewBox="0 0 16 16" fill="none">
+          <path d="M8 2.2l5.8 2.9L8 8 2.2 5.1 8 2.2z" fill="currentColor" fillOpacity="0.2" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+          <path d="M2.2 8.1L8 11l5.8-2.9M2.2 11L8 13.9l5.8-2.9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </span>
       <span class="rab-n-module-path"><PathText path={module.path} rank={false} /></span>
-      <Ticks facts={kind ? [kind] : []} />
+      {kind && <span class="rab-n-sr">{kind.label}</span>}
       <span class="rab-n-count">
         {module.state === 'ok' ? count : module.state === 'pending' ? '…' : skipped ? 'not described' : 'failed: ' + (module.reason ?? 'error')}
       </span>
