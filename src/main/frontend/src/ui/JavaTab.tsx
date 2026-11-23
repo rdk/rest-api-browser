@@ -68,6 +68,22 @@ export function JavaTab({ baseUrl, opKey }: { baseUrl: string; opKey: string }) 
     { id: 'modules', label: 'Modules', count: plugin?.moduleCount, hidden: !plugin },
     { id: 'rest', label: 'REST module', failed: isError(details.module) },
   ];
+  // the page's tools, quiet, at the right of the page's first heading (they scroll with it, never over the content)
+  const tools = (
+    <span class="rab-n-java-tools">
+      <label class="rab-n-java-toggle" title="Show class names with their packages">
+        <input type="checkbox" checked={full} onChange={(e) => setFull((e.target as HTMLInputElement).checked)} /> Full names
+      </label>
+      {cls && <CopyButton quiet label="Copy class" text={() => cls.name} />}
+      {method && <CopyButton quiet label="Copy method" text={() => `${method.class}#${method.name}`} />}
+      <button class="rab-n-quiet" onClick={() => { forgetDetails(opKey); setReload((r) => r + 1); }} title="Read it again from the server">
+        <svg class="rab-n-svg" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M13 8a5 5 0 11-1.5-3.6M13 2.5v3h-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        Reload
+      </button>
+    </span>
+  );
   const shown = pages.filter((p) => !p.hidden);
   const current = shown.some((p) => p.id === page) ? page : 'method';
   const onNavKey = (e: KeyboardEvent) => {
@@ -96,18 +112,8 @@ export function JavaTab({ baseUrl, opKey }: { baseUrl: string; opKey: string }) 
         ))}
       </nav>
       <div ref={pageRef} id="rab-n-java-page" class="rab-n-java-page" role="tabpanel" aria-labelledby={'rab-n-java-tab-' + current} tabIndex={0}>
-        <div class="rab-n-java-tools">
-          <label class="rab-n-java-toggle">
-            <input type="checkbox" checked={full} onChange={(e) => setFull((e.target as HTMLInputElement).checked)} /> Full names
-          </label>
-          {cls && <CopyButton label="Copy class" text={() => cls.name} />}
-          {method && <CopyButton label="Copy method" text={() => `${method.class}#${method.name}`} />}
-          <button class="rab-n-button" onClick={() => { forgetDetails(opKey); setReload((r) => r + 1); }} title="Read it again from the server">
-            Reload
-          </button>
-        </div>
         {current === 'method' && (
-          <Block title="Method" testId="java-method" section={details.method}>
+          <Block title="Method" testId="java-method" section={details.method} tools={tools}>
             {(m) => (
               <>
                 <MethodCode m={m} n={n} />
@@ -132,14 +138,14 @@ export function JavaTab({ baseUrl, opKey }: { baseUrl: string; opKey: string }) 
         )}
         {current === 'class' && (
           <>
-            <Block title="Class" testId="java-class" section={details.resourceClass}>{(c) => <ClassFacts c={c} n={n} />}</Block>
+            <Block title="Class" testId="java-class" section={details.resourceClass} tools={tools}>{(c) => <ClassFacts c={c} n={n} />}</Block>
             {details.declaringClass && (
               <Block title="Declaring class" section={details.declaringClass}>{(c) => <ClassFacts c={c} n={n} />}</Block>
             )}
           </>
         )}
         {current === 'types' && (
-          <Block title="Types in the signature" testId="java-types" section={details.types}>
+          <Block title="Types in the signature" testId="java-types" section={details.types} tools={tools}>
             {(types) => (
               <Filtered rows={types} text={(t) => t.name + ' ' + t.from} head={['Type', 'From']}
                         row={(t) => [<code><Code tokens={tokenize(n(t.name))} /></code>, <span class="rab-n-subtle">{t.from}</span>]} />
@@ -147,12 +153,12 @@ export function JavaTab({ baseUrl, opKey }: { baseUrl: string; opKey: string }) 
           </Block>
         )}
         {current === 'bundle' && (
-          <Block title="OSGi bundle" testId="java-bundle" section={details.bundle}>
+          <Block title="OSGi bundle" testId="java-bundle" section={details.bundle} tools={tools}>
             {(b) => ('none' in b ? <div class="rab-n-subtle">Not in an OSGi bundle: {b.none}.</div> : <BundleFacts b={b} />)}
           </Block>
         )}
         {current === 'imports' && bundle?.imports && (
-          <Block title={`Imported packages (${bundle.importCount}) and the bundles that provide them`} testId="java-imports" section={bundle}>
+          <Block title={`Imported packages (${bundle.importCount}) and the bundles that provide them`} testId="java-imports" section={bundle} tools={tools}>
             {(b) => (
               <Filtered rows={b.imports!} total={b.importCount} text={(i) => `${i.package} ${i.from}`} head={['Package', 'Version', 'From']}
                         row={(i) => [<code>{i.package}</code>, <span class="rab-n-subtle">{i.version}</span>, <span>{i.from}</span>]} />
@@ -160,7 +166,7 @@ export function JavaTab({ baseUrl, opKey }: { baseUrl: string; opKey: string }) 
           </Block>
         )}
         {current === 'exports' && bundle?.exports && (
-          <Block title={`Exported packages (${bundle.exportCount}) and how many bundles use them`} section={bundle}>
+          <Block title={`Exported packages (${bundle.exportCount}) and how many bundles use them`} section={bundle} tools={tools}>
             {(b) => (
               <Filtered rows={b.exports!} total={b.exportCount} text={(e) => e.package} head={['Package', 'Version', 'Used by']}
                         row={(e) => [<code>{e.package}</code>, <span class="rab-n-subtle">{e.version}</span>, <span>{e.users} bundles</span>]} />
@@ -168,12 +174,12 @@ export function JavaTab({ baseUrl, opKey }: { baseUrl: string; opKey: string }) 
           </Block>
         )}
         {current === 'plugin' && (
-          <Block title="Plugin" testId="java-plugin" section={details.plugin}>
+          <Block title="Plugin" testId="java-plugin" section={details.plugin} tools={tools}>
             {(p) => (p ? <PluginFacts p={p} /> : <div class="rab-n-subtle">Unknown.</div>)}
           </Block>
         )}
         {current === 'modules' && plugin && (
-          <Block title={`The plugin's modules (${plugin.moduleCount})`} testId="java-modules" section={plugin}>
+          <Block title={`The plugin's modules (${plugin.moduleCount})`} testId="java-modules" section={plugin} tools={tools}>
             {(p) => (
               <Filtered rows={p.modules} total={p.moduleCount} text={(m) => `${m.key} ${m.type} ${m.name ?? ''}`} head={['Key', 'Type', 'State']}
                         row={(m) => [<code>{m.key}</code>, <span class="rab-n-subtle">{m.type}</span>,
@@ -181,7 +187,7 @@ export function JavaTab({ baseUrl, opKey }: { baseUrl: string; opKey: string }) 
             )}
           </Block>
         )}
-        {current === 'rest' && <Block title="REST module" testId="java-rest" section={details.module}>{(r) => <ModuleFacts r={r} />}</Block>}
+        {current === 'rest' && <Block title="REST module" testId="java-rest" section={details.module} tools={tools}>{(r) => <ModuleFacts r={r} />}</Block>}
       </div>
     </div>
   );
@@ -222,12 +228,15 @@ function Code({ tokens }: { tokens: Token[] }) {
   );
 }
 
-function Block<T>({ title, section, testId, children }: {
-  title: string; section: Section<T>; testId?: string; children: (value: T) => ComponentChildren;
+function Block<T>({ title, section, testId, tools, children }: {
+  title: string; section: Section<T>; testId?: string; tools?: ComponentChildren; children: (value: T) => ComponentChildren;
 }) {
   return (
     <section class="rab-n-java-block" data-testid={testId}>
-      <h3 class="rab-n-java-title">{title}</h3>
+      <div class="rab-n-java-head">
+        <h3 class="rab-n-java-title">{title}</h3>
+        {tools}
+      </div>
       {isError(section) ? <div class="rab-n-java-error">Could not be read: {section.error}</div> : children(section as T)}
     </section>
   );

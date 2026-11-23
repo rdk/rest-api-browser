@@ -552,6 +552,27 @@
   color: var(--rab-subtlest);
 }
 .rab-n-menu-check { margin-left: auto; color: var(--rab-link); }
+/* light, dark, system: three small buttons in a row */
+.rab-n-menu-choices { display: flex; gap: 4px; padding: 3px 6px 5px; }
+.rab-n-menu-choice {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 6px;
+  border: 1px solid var(--rab-border);
+  border-radius: var(--rab-radius-sm);
+  background: none;
+  color: var(--rab-subtle);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background var(--rab-ease), color var(--rab-ease), border-color var(--rab-ease);
+}
+.rab-n-menu-choice:hover, .rab-n-menu-choice:focus { background: var(--rab-hover); color: var(--rab-text); outline: none; }
+.rab-n-menu-choice:focus-visible { outline: 2px solid var(--rab-focus); outline-offset: -1px; }
+.rab-n-menu-choice.checked { border-color: var(--ds-border-selected, #0c66e4); background: var(--ds-background-selected, #e9f2ff); color: var(--ds-text-selected, #0c66e4); }
 
 /* Main split layout */
 .rab-n-body-row { display: flex; flex: 1; min-height: 0; }
@@ -1516,9 +1537,28 @@
   color: var(--rab-subtle);
 }
 .rab-n-java-nav-failed { color: var(--rab-danger); font-weight: 700; }
-/* the page's tools, top right: they stay in reach whatever the page */
-.rab-n-java-tools { float: right; display: flex; align-items: center; gap: 6px; margin: 0 0 6px 12px; }
-.rab-n-java-toggle { display: inline-flex; align-items: center; gap: 5px; padding: 2px 4px; color: var(--rab-subtle); cursor: pointer; }
+/* the page's head: its title, and the page's quiet tools at the right (in the flow, never over the content) */
+.rab-n-java-head { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; margin-bottom: 8px; }
+.rab-n-java-head .rab-n-java-title { margin: 0; }
+.rab-n-java-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; margin-left: auto; font-size: 12px; }
+/* a quiet button: text and icon in the subtle colour, a background only on hover */
+.rab-n-quiet {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--rab-radius-sm);
+  background: none;
+  color: var(--rab-subtle);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background var(--rab-ease), color var(--rab-ease);
+}
+.rab-n-quiet:hover { background: var(--rab-hover); color: var(--rab-text); }
+.rab-n-quiet.copied { color: var(--rab-success); }
+.rab-n-java-toggle { display: inline-flex; align-items: center; gap: 5px; padding: 2px 6px; color: var(--rab-subtle); font-size: 12px; cursor: pointer; }
 .rab-n-java-page { flex: 1; min-width: 0; overflow: auto; padding: 8px 14px 16px; }
 .rab-n-java-page:focus-visible { outline: 2px solid var(--rab-focus); outline-offset: -2px; }
 .rab-n-java-block + .rab-n-java-block { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--rab-border-subtle); }

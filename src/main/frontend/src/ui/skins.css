@@ -1,9 +1,8 @@
 /*
  * Skins of the new UI, chosen in the header's menu (Theme) and kept per user: the root carries data-skin.
  *   vivid     the base styles (styles.css): bold multi-colour gradients
- *   balanced  the default: blue to indigo, soft gradients of one hue family, colour where it means something
- *   calm      flat and quiet: the product's surfaces, neutral borders, a light header
- *   navy      calm with a deep navy header
+ *   balanced  the default: blue through indigo to violet, soft gradients of one hue family, colour where it means something
+ *   navy      "Calm": flat and quiet, the product's surfaces and neutral borders, with a deep navy header
  * Every skin only redefines the tokens of styles.css and a few rules, with Atlassian design tokens, so light and
  * dark both work. Scoped as "html .rab-n[data-skin=…]" to win over the dark theme's "[data-color-mode=dark] .rab-n".
  */
@@ -12,7 +11,8 @@
 
 html .rab-n[data-skin="balanced"] {
   --rab-indigo: color-mix(in srgb, var(--rab-brand) 62%, var(--rab-discovery-bold));
-  --rab-topbar-bg: linear-gradient(115deg, var(--rab-brand) 0%, var(--rab-indigo) 100%);
+  --rab-violet: color-mix(in srgb, var(--rab-brand) 30%, var(--rab-discovery-bold));
+  --rab-topbar-bg: linear-gradient(115deg, var(--rab-brand) 0%, var(--rab-indigo) 55%, var(--rab-violet) 100%);
   --rab-grad-side: linear-gradient(180deg, color-mix(in srgb, var(--rab-bg-info) 34%, var(--rab-sunken)) 0%, var(--rab-sunken) 46%);
   --rab-grad-brand: linear-gradient(180deg, color-mix(in srgb, var(--rab-brand) 86%, #fff), var(--rab-brand));
   --rab-grad-brand-hover: linear-gradient(180deg, var(--rab-brand), var(--rab-brand-hover));
@@ -42,10 +42,12 @@ html .rab-n[data-skin="balanced"] {
 /* dark: the same blue-to-indigo family, from the product's dark accents */
 [data-color-mode="dark"] .rab-n[data-skin="balanced"] {
   --rab-indigo: color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 55%, var(--ds-background-accent-purple-subtle, #5e4db2));
+  --rab-violet: color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 28%, var(--ds-background-accent-purple-subtle, #5e4db2));
   --rab-topbar-bg: linear-gradient(
     115deg,
-    color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 66%, var(--rab-surface)),
-    color-mix(in srgb, var(--rab-indigo) 66%, var(--rab-surface))
+    color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 66%, var(--rab-surface)) 0%,
+    color-mix(in srgb, var(--rab-indigo) 66%, var(--rab-surface)) 55%,
+    color-mix(in srgb, var(--rab-violet) 66%, var(--rab-surface)) 100%
   );
   --rab-grad-side: linear-gradient(180deg, color-mix(in srgb, var(--rab-bg-info) 40%, var(--rab-sunken)) 0%, var(--rab-sunken) 46%);
   --rab-grad-brand: linear-gradient(180deg, var(--ds-background-accent-blue-subtle, #0055cc), color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 82%, #000));
@@ -95,9 +97,9 @@ html .rab-n[data-skin="balanced"] .rab-n-find input:focus {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--rab-brand) 18%, transparent);
 }
 
-/* ---------------- calm and navy: flat, quiet, the product's own surfaces ---------------- */
+/* ---------------- navy ("Calm"): flat, quiet, the product's own surfaces ---------------- */
 
-html .rab-n:is([data-skin="calm"], [data-skin="navy"]) {
+html .rab-n[data-skin="navy"] {
   --flat-brand: var(--ds-background-brand-bold, #0c66e4);
   --flat-brand-hover: var(--ds-background-brand-bold-hovered, #0055cc);
   --rab-topbar-bg: var(--ds-surface, #fff);
@@ -130,38 +132,38 @@ html .rab-n:is([data-skin="calm"], [data-skin="navy"]) {
   --rab-shadow-card-hover: var(--ds-shadow-overlay, 0 8px 12px rgba(9, 30, 66, 0.15), 0 0 1px rgba(9, 30, 66, 0.31));
   --rab-shadow-hero: var(--ds-shadow-raised, 0 1px 1px rgba(9, 30, 66, 0.25), 0 0 1px rgba(9, 30, 66, 0.31));
 }
-html .rab-n:is([data-skin="calm"], [data-skin="navy"]) .rab-n-topbar { box-shadow: none; border-bottom: 1px solid var(--ds-border, #dcdfe4); }
-html .rab-n:is([data-skin="calm"], [data-skin="navy"]) .rab-n-brand-mark { background: var(--flat-brand); border-color: transparent; color: var(--ds-text-inverse, #fff); }
-html .rab-n:is([data-skin="calm"], [data-skin="navy"]) a.rab-n-version { background: none; }
-html .rab-n:is([data-skin="calm"], [data-skin="navy"]) :is(.rab-n-send, .rab-n-send:hover:not(:disabled), .rab-n-send.write,
+html .rab-n[data-skin="navy"] .rab-n-topbar { box-shadow: none; border-bottom: 1px solid var(--ds-border, #dcdfe4); }
+html .rab-n[data-skin="navy"] .rab-n-brand-mark { background: var(--flat-brand); border-color: transparent; color: var(--ds-text-inverse, #fff); }
+html .rab-n[data-skin="navy"] a.rab-n-version { background: none; }
+html .rab-n[data-skin="navy"] :is(.rab-n-send, .rab-n-send:hover:not(:disabled), .rab-n-send.write,
   .rab-n-send.write:hover:not(:disabled), .rab-n-send.write.danger, .rab-n-send.write.danger:hover:not(:disabled)) { box-shadow: none; }
-html .rab-n:is([data-skin="calm"], [data-skin="navy"]) :is(.rab-n-url-group:focus-within, .rab-n-search:focus, .rab-n-find input:focus) {
+html .rab-n[data-skin="navy"] :is(.rab-n-url-group:focus-within, .rab-n-search:focus, .rab-n-find input:focus) {
   background: var(--rab-input);
   border-color: var(--ds-border-focused, #388bff);
   box-shadow: 0 0 0 1px var(--ds-border-focused, #388bff);
 }
-html .rab-n:is([data-skin="calm"], [data-skin="navy"]) :is(.rab-n-statusline, .rab-n-statusline.is-ok, .rab-n-statusline.is-info,
+html .rab-n[data-skin="navy"] :is(.rab-n-statusline, .rab-n-statusline.is-ok, .rab-n-statusline.is-info,
   .rab-n-statusline.is-warn, .rab-n-statusline.is-err) { background: var(--ds-surface, #fff); }
-html .rab-n:is([data-skin="calm"], [data-skin="navy"]) .rab-n-status-code { box-shadow: none; border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }
-html .rab-n:is([data-skin="calm"], [data-skin="navy"]) .rab-n-status-code.ok { background: var(--ds-background-success, #dcfff1); color: var(--ds-text-success, #216e4e); }
-html .rab-n:is([data-skin="calm"], [data-skin="navy"]) .rab-n-status-code.info { background: var(--ds-background-information, #e9f2ff); color: var(--ds-text-information, #0055cc); }
-html .rab-n:is([data-skin="calm"], [data-skin="navy"]) .rab-n-status-code.warn { background: var(--ds-background-warning, #fff7d6); color: var(--ds-text-warning, #a54800); }
-html .rab-n:is([data-skin="calm"], [data-skin="navy"]) .rab-n-status-code.err { background: var(--ds-background-danger, #ffeceb); color: var(--ds-text-danger, #ae2e24); }
-html .rab-n:is([data-skin="calm"], [data-skin="navy"]) :is(.rab-n-tab.on, .rab-n-tab[aria-selected="true"]) { background: none; }
-html .rab-n:is([data-skin="calm"], [data-skin="navy"]) :is(.rab-n-tab.on, .rab-n-tab[aria-selected="true"])::after { height: 2px; }
-html .rab-n:is([data-skin="calm"], [data-skin="navy"]) :is(.rab-n-tabs, .rab-n-tabbar) { background: var(--ds-surface, #fff); }
-html .rab-n:is([data-skin="calm"], [data-skin="navy"]) .rab-n-sidebar-head { background: var(--ds-surface-sunken, #f7f8f9); }
-html .rab-n:is([data-skin="calm"], [data-skin="navy"]) .rab-n-op.selected::before { width: 2px; }
-html .rab-n:is([data-skin="calm"], [data-skin="navy"]) :is(.rab-n-pill.on, .rab-n-pill.on:hover) {
+html .rab-n[data-skin="navy"] .rab-n-status-code { box-shadow: none; border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }
+html .rab-n[data-skin="navy"] .rab-n-status-code.ok { background: var(--ds-background-success, #dcfff1); color: var(--ds-text-success, #216e4e); }
+html .rab-n[data-skin="navy"] .rab-n-status-code.info { background: var(--ds-background-information, #e9f2ff); color: var(--ds-text-information, #0055cc); }
+html .rab-n[data-skin="navy"] .rab-n-status-code.warn { background: var(--ds-background-warning, #fff7d6); color: var(--ds-text-warning, #a54800); }
+html .rab-n[data-skin="navy"] .rab-n-status-code.err { background: var(--ds-background-danger, #ffeceb); color: var(--ds-text-danger, #ae2e24); }
+html .rab-n[data-skin="navy"] :is(.rab-n-tab.on, .rab-n-tab[aria-selected="true"]) { background: none; }
+html .rab-n[data-skin="navy"] :is(.rab-n-tab.on, .rab-n-tab[aria-selected="true"])::after { height: 2px; }
+html .rab-n[data-skin="navy"] :is(.rab-n-tabs, .rab-n-tabbar) { background: var(--ds-surface, #fff); }
+html .rab-n[data-skin="navy"] .rab-n-sidebar-head { background: var(--ds-surface-sunken, #f7f8f9); }
+html .rab-n[data-skin="navy"] .rab-n-op.selected::before { width: 2px; }
+html .rab-n[data-skin="navy"] :is(.rab-n-pill.on, .rab-n-pill.on:hover) {
   background: var(--ds-background-selected, #e9f2ff);
   color: var(--ds-text-selected, #0c66e4);
   border-color: var(--ds-border-selected, #0c66e4);
   box-shadow: none;
 }
-html .rab-n:is([data-skin="calm"], [data-skin="navy"]) .rab-n-banner { background: var(--ds-background-warning, #fff7d6); }
-html .rab-n:is([data-skin="calm"], [data-skin="navy"]) :is(.rab-n-welcome-card, .rab-n-welcome-card:hover) { transform: none; }
+html .rab-n[data-skin="navy"] .rab-n-banner { background: var(--ds-background-warning, #fff7d6); }
+html .rab-n[data-skin="navy"] :is(.rab-n-welcome-card, .rab-n-welcome-card:hover) { transform: none; }
 
-/* navy: the calm skin with a deep navy header (one hue, a slight shade change) */
+/* its header: a deep navy (one hue, a slight shade change) */
 html .rab-n[data-skin="navy"] {
   --rab-topbar-bg: linear-gradient(180deg, #22345e, #1b2a4c);
   --rab-topbar-fg: #fff;

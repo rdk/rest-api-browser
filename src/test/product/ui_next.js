@@ -234,6 +234,13 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         java.cls = await javaPage('class', '[data-testid=java-class]');
         java.bundle = await javaPage('bundle', '[data-testid=java-bundle]');
         java.plugin = await javaPage('plugin', '[data-testid=java-plugin]');
+        // the page's tools sit in its heading row, never over the content
+        await click('[data-testid=java-nav-method]');
+        await b.waitFor(`!!document.querySelector('[data-testid=java-signature]')`, 3000);
+        java.tools = await b.evaluate(`(() => { const t = document.querySelector('.rab-n-java-tools'), code = document.querySelector('[data-testid=java-signature]');
+            if (!t || !code) return null; return { inHead: !!t.closest('.rab-n-java-head'), clear: t.getBoundingClientRect().bottom <= code.getBoundingClientRect().top + 1,
+                floats: getComputedStyle(t).float !== 'none' || getComputedStyle(t).position === 'absolute' }; })()`);
+        await click('[data-testid=java-nav-plugin]');
         // the menu fills the tab's height, and a page opens at its top even after another one was scrolled
         java.layout = await b.evaluate(`(() => { const nav = document.querySelector('.rab-n-java-nav').getBoundingClientRect();
             const all = document.querySelector('.rab-n-java').getBoundingClientRect(); return { navFills: Math.abs(nav.height - all.height) <= 1 }; })()`);
@@ -248,6 +255,7 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         c.check('the Java tab: a menu of pages (method, class, bundle, plugin, …), the method with coloured annotations',
             !java.error && java.signature.includes('(') && java.colored && java.pages.length >= 6
             && java.layout.navFills && java.layout.pageAtTop !== false
+            && !!java.tools && java.tools.inHead && java.tools.clear && !java.tools.floats
             && /Name/.test(java.cls) && /Symbolic name|Not in an OSGi bundle/.test(java.bundle)
             && java.plugin.includes(java.key.split(':')[0]) && unknown === 404,
             { ...java, signature: java.signature.slice(0, 200), bundle: java.bundle.slice(0, 120), plugin: java.plugin.slice(0, 120), unknown });
@@ -440,11 +448,29 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         const pickSkin = async id => { await click('[data-testid=menu-button]'); await b.waitFor(`!!document.querySelector('[data-testid=skin-${id}]')`, 3000);
             await click(`[data-testid=skin-${id}]`); await sleep(200); return skinOf(); };
         const skins = { balanced: await skinOf() };
-        for (const id of ['vivid', 'calm', 'navy']) skins[id] = await pickSkin(id);
-        c.check('the menu switches the skin: Balanced by default, Vivid, Calm (flat header), Calm with a navy header',
+        for (const id of ['vivid', 'navy']) skins[id] = await pickSkin(id);
+        c.check('the menu switches the skin: Balanced by default, Vivid, Calm (a navy header)',
             skins.balanced.skin === 'balanced' && /gradient/.test(skins.balanced.image) && skins.vivid.skin === 'vivid'
             && /gradient/.test(skins.vivid.image) && skins.vivid.image !== skins.balanced.image
-            && skins.calm.skin === 'calm' && skins.calm.image === 'none' && skins.navy.skin === 'navy' && /gradient/.test(skins.navy.image), skins);
+            && skins.navy.skin === 'navy' && /gradient/.test(skins.navy.image) && skins.navy.image !== skins.balanced.image, skins);
+
+        // the colour mode: light, dark and system in a row of the menu; the product's colours follow on this page
+        const modeOf = () => b.evaluate(`(() => { const h = document.documentElement;
+            return { mode: h.getAttribute('data-color-mode'), auto: h.hasAttribute('data-color-mode-auto'),
+                surface: getComputedStyle(document.querySelector('.rab-n')).getPropertyValue('--ds-surface').trim() }; })()`);
+        const pickMode = async m => {
+            if (!await b.evaluate(`!!document.querySelector('[data-testid=menu]')`)) await click('[data-testid=menu-button]');
+            await b.waitFor(`!!document.querySelector('[data-testid=mode-${m}]')`, 3000);
+            await click(`[data-testid=mode-${m}]`);
+            await sleep(250);
+            return { ...await modeOf(), pressed: await b.evaluate(`document.querySelector('[data-testid=mode-${m}]').getAttribute('aria-checked')`) };
+        };
+        const modes = { dark: await pickMode('dark'), light: await pickMode('light'), system: await pickMode('system') };
+        await press('Escape');
+        c.check('the menu switches light, dark and system: the product\'s colours follow on this page',
+            modes.dark.mode === 'dark' && !modes.dark.auto && modes.light.mode === 'light' && !modes.light.auto
+            && modes.dark.surface !== modes.light.surface && modes.system.auto
+            && [modes.dark, modes.light, modes.system].every(x => x.pressed === 'true'), modes);
 
         // supported only narrows the list
         await type('[data-testid=search]', '');

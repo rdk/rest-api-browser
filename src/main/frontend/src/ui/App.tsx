@@ -26,10 +26,65 @@ interface Props {
 const SKINS = [
   { id: 'balanced', label: 'Balanced', hint: 'Blue to indigo, soft gradients' },
   { id: 'vivid', label: 'Vivid', hint: 'Bold gradients in many colours' },
-  { id: 'calm', label: 'Calm', hint: 'Flat and quiet, a light header' },
-  { id: 'navy', label: 'Calm, navy header', hint: 'Flat and quiet, a deep navy header' },
+  { id: 'navy', label: 'Calm', hint: 'Flat and quiet, a deep navy header' },
 ];
-const skinOf = (s: string | undefined) => (SKINS.some((k) => k.id === s) ? s! : SKINS[0].id);
+/** A stored skin, or the default; "calm" (a light header, dropped) becomes the navy one. */
+const skinOf = (s: string | undefined) => (s === 'calm' ? 'navy' : SKINS.some((k) => k.id === s) ? s! : SKINS[0].id);
+
+type Mode = 'light' | 'dark' | 'system';
+/**
+ * The product's own colour mode when the page loaded, before any choice here: its <html> carries data-color-mode
+ * (light or dark) and, when it follows the system, data-color-mode-auto. Read once, at load.
+ */
+const PRODUCT_MODE: Mode = (() => {
+  const h = typeof document !== 'undefined' ? document.documentElement : null;
+  if (!h) return 'light';
+  if (h.hasAttribute('data-color-mode-auto')) return 'system';
+  return h.getAttribute('data-color-mode') === 'dark' ? 'dark' : 'light';
+})();
+const isMode = (m: unknown): m is Mode => m === 'light' || m === 'dark' || m === 'system';
+
+/**
+ * Applies a colour mode to this page: the product's design tokens switch on <html>'s data-color-mode (both its light
+ * and dark themes are loaded), "system" follows the browser's preference and its changes. Returns the clean-up.
+ */
+function applyMode(mode: Mode): () => void {
+  const h = document.documentElement;
+  const theme = h.getAttribute('data-theme') ?? '';
+  for (const t of ['dark:dark', 'light:light']) if (!theme.split(/\s+/).includes(t)) h.setAttribute('data-theme', (h.getAttribute('data-theme') + ' ' + t).trim());
+  if (mode !== 'system') {
+    h.removeAttribute('data-color-mode-auto');
+    h.setAttribute('data-color-mode', mode);
+    return () => undefined;
+  }
+  const media = matchMedia('(prefers-color-scheme: dark)');
+  const follow = () => h.setAttribute('data-color-mode', media.matches ? 'dark' : 'light');
+  h.setAttribute('data-color-mode-auto', '');
+  follow();
+  media.addEventListener('change', follow);
+  return () => media.removeEventListener('change', follow);
+}
+
+const MODE_ICONS: Record<Mode, preact.JSX.Element> = {
+  light: (
+    <svg class="rab-n-svg" width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="8" cy="8" r="3" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"
+            stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  ),
+  dark: (
+    <svg class="rab-n-svg" width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M13.2 9.6A5.6 5.6 0 016.4 2.8a5.6 5.6 0 106.8 6.8z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+    </svg>
+  ),
+  system: (
+    <svg class="rab-n-svg" width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="1.8" y="2.5" width="12.4" height="8.5" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M5.5 14h5M8 11v3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  ),
+};
 
 /** The project's home, its releases and its issues. */
 const REPO = 'https://github.com/rdk/rest-api-browser';
@@ -77,9 +132,13 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl }: Props) {
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_WIDTH);
   const [split, setSplit] = useState(SPLIT);
   const [skin, setSkin] = useState(SKINS[0].id);
+  // the colour mode: the product's until the user chooses one here
+  const [mode, setMode] = useState<Mode | null>(null);
+  useEffect(() => (mode ? applyMode(mode) : undefined), [mode]);
   useEffect(() => {
     userStore.prefs().then((p) => {
       setSkin(skinOf(p.skin));
+      if (isMode(p.mode)) setMode(p.mode);
       if (p.supportedOnly !== undefined) setSupportedOnly(p.supportedOnly);
       if (p.collapsed) setCollapsed(new Set(p.collapsed));
       if (p.sidebarWidth) setSidebarWidth(p.sidebarWidth);
@@ -220,13 +279,28 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl }: Props) {
           group: true,
         }]
       : []),
-    ...SKINS.map((k, i) => ({
+    {
+      id: 'mode',
+      label: 'Colour mode',
+      section: 'Theme',
+      group: true,
+      choices: (['light', 'dark', 'system'] as Mode[]).map((m) => ({
+        id: m,
+        label: m === 'light' ? 'Light' : m === 'dark' ? 'Dark' : 'System',
+        icon: MODE_ICONS[m],
+        checked: (mode ?? PRODUCT_MODE) === m,
+        testId: 'mode-' + m,
+        onSelect: () => {
+          setMode(m);
+          save({ mode: m });
+        },
+      })),
+    },
+    ...SKINS.map((k) => ({
       id: 'skin-' + k.id,
       label: k.label,
       hint: k.hint,
       checked: skin === k.id,
-      section: i === 0 ? 'Theme' : undefined,
-      group: i === 0,
       testId: 'skin-' + k.id,
       onSelect: () => {
         setSkin(k.id);

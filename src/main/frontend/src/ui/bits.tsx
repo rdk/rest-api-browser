@@ -151,7 +151,7 @@ export function Tabs<T extends string>({ tabs, value, onChange }: {
   );
 }
 
-export function CopyButton({ text, label, testId }: { text: () => string; label: string; testId?: string }) {
+export function CopyButton({ text, label, testId, quiet }: { text: () => string; label: string; testId?: string; quiet?: boolean }) {
   const [state, setState] = useState<'idle' | 'done' | 'failed'>('idle');
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
@@ -178,7 +178,7 @@ export function CopyButton({ text, label, testId }: { text: () => string; label:
     timer.current = setTimeout(() => setState('idle'), 1500);
   };
   return (
-    <button class={'rab-n-button rab-n-copy' + (state === 'done' ? ' copied' : '')} onClick={copy} data-testid={testId}>
+    <button class={(quiet ? 'rab-n-quiet' : 'rab-n-button') + ' rab-n-copy' + (state === 'done' ? ' copied' : '')} onClick={copy} data-testid={testId}>
       {state === 'done' ? (
         <svg class="rab-n-svg" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
           <path d="M3.2 8.4l3 3 6.6-6.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />

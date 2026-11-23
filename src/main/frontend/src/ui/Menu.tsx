@@ -1,4 +1,4 @@
-import { Fragment } from 'preact';
+import { Fragment, type ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
 export interface MenuItem {
@@ -17,6 +17,8 @@ export interface MenuItem {
   section?: string;
   /** One of a set of choices: shown with a check mark when chosen (a menu item radio). */
   checked?: boolean;
+  /** A row of small choices with icons instead of one item (light, dark, system); label and onSelect are unused. */
+  choices?: { id: string; label: string; icon: ComponentChildren; checked: boolean; onSelect: () => void; testId?: string }[];
 }
 
 /**
@@ -94,7 +96,18 @@ export function Menu({ label, items }: { label: string; items: MenuItem[] }) {
             <Fragment key={it.id}>
               {it.group && <div class="rab-n-menu-sep" role="separator" />}
               {it.section && <div class="rab-n-menu-section" role="presentation">{it.section}</div>}
-              {it.href ? (
+              {it.choices ? (
+                <div class="rab-n-menu-choices" role="group" aria-label={it.label}>
+                  {it.choices.map((c) => (
+                    <button key={c.id} role="menuitemradio" aria-checked={c.checked} tabIndex={-1}
+                            class={'rab-n-menu-choice' + (c.checked ? ' checked' : '')} title={c.label}
+                            onClick={() => c.onSelect()} data-testid={c.testId}>
+                      {c.icon}
+                      <span>{c.label}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : it.href ? (
                 <a role="menuitem" class="rab-n-menu-item" href={it.href} tabIndex={-1} data-testid={it.testId}
                    target={it.newTab ? '_blank' : undefined} rel={it.newTab ? 'noopener noreferrer' : undefined}
                    onClick={() => setOpen(false)}>

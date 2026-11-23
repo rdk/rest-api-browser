@@ -23,6 +23,8 @@ export interface Prefs {
   supportedOnly?: boolean;
   /** The skin chosen in the menu (see skins.css). */
   skin?: string;
+  /** The colour mode chosen in the menu: light, dark or system; absent, the product's. */
+  mode?: string;
 }
 
 const PER_OP = 20;
