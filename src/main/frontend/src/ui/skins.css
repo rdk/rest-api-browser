@@ -16,7 +16,7 @@ html .rab-n[data-skin="balanced"] {
     115deg,
     color-mix(in srgb, var(--rab-brand) 82%, #000) 0%,
     color-mix(in srgb, var(--rab-indigo) 80%, #000) 55%,
-    color-mix(in srgb, var(--rab-violet) 76%, #000) 100%
+    color-mix(in srgb, var(--rab-violet) 85%, #000) 100%
   );
   --rab-grad-side: linear-gradient(180deg, color-mix(in srgb, var(--rab-bg-info) 34%, var(--rab-sunken)) 0%, var(--rab-sunken) 46%);
   --rab-grad-brand: linear-gradient(180deg, color-mix(in srgb, var(--rab-brand) 86%, #fff), var(--rab-brand));
@@ -52,7 +52,7 @@ html .rab-n[data-skin="balanced"] {
     115deg,
     color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 56%, var(--rab-surface)) 0%,
     color-mix(in srgb, var(--rab-indigo) 56%, var(--rab-surface)) 55%,
-    color-mix(in srgb, var(--rab-violet) 58%, var(--rab-surface)) 100%
+    color-mix(in srgb, var(--rab-violet) 65%, var(--rab-surface)) 100%
   );
   --rab-grad-side: linear-gradient(180deg, color-mix(in srgb, var(--rab-bg-info) 40%, var(--rab-sunken)) 0%, var(--rab-sunken) 46%);
   --rab-grad-brand: linear-gradient(180deg, var(--ds-background-accent-blue-subtle, #0055cc), color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 82%, #000));

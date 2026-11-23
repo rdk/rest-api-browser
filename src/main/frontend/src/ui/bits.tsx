@@ -151,28 +151,32 @@ export function Tabs<T extends string>({ tabs, value, onChange }: {
   );
 }
 
+/** Copies text: the Clipboard API, else an invisible textarea (older browsers, no permission); true when it worked. */
+export async function copyText(value: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(value);
+    return true;
+  } catch {
+    const focused = document.activeElement as HTMLElement | null;
+    const area = document.createElement('textarea');
+    area.value = value;
+    area.setAttribute('readonly', '');
+    area.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none';
+    document.body.appendChild(area);
+    area.select();
+    const ok = document.execCommand('copy');
+    area.remove();
+    focused?.focus();
+    return ok;
+  }
+}
+
 export function CopyButton({ text, label, testId, quiet }: { text: () => string; label: string; testId?: string; quiet?: boolean }) {
   const [state, setState] = useState<'idle' | 'done' | 'failed'>('idle');
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
   const copy = async () => {
-    const value = text();
-    let ok = true;
-    try {
-      await navigator.clipboard.writeText(value);
-    } catch {
-      // older browsers or a page without clipboard permission: an invisible textarea, focus given back afterwards
-      const focused = document.activeElement as HTMLElement | null;
-      const area = document.createElement('textarea');
-      area.value = value;
-      area.setAttribute('readonly', '');
-      area.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none';
-      document.body.appendChild(area);
-      area.select();
-      ok = document.execCommand('copy');
-      area.remove();
-      focused?.focus();
-    }
+    const ok = await copyText(text());
     setState(ok ? 'done' : 'failed');
     clearTimeout(timer.current);
     timer.current = setTimeout(() => setState('idle'), 1500);

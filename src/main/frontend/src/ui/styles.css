@@ -1814,7 +1814,24 @@
   background: none;
   border: 0;
 }
-.rab-n-tabbar-response .rab-n-find input { width: 220px; max-width: 32vw; min-width: 90px; }
+.rab-n-tabbar-response .rab-n-find input { width: 180px; max-width: 30vw; min-width: 90px; }
+/* quiet in the tab bar: no frame or fill until hovered or used */
+.rab-n-tabbar-response .rab-n-find { padding: 0 2px 0 6px; gap: 6px; }
+.rab-n-tabbar-response .rab-n-find input {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--rab-surface) 55%, transparent);
+  font-size: 12px;
+  padding-top: 1px;
+  padding-bottom: 1px;
+}
+.rab-n-tabbar-response .rab-n-find input:hover:not(:focus) { border-color: var(--rab-border); }
+.rab-n-tabbar-response .rab-n-find input:focus {
+  background: var(--rab-input);
+  border-color: var(--ds-border-focused, #388bff);
+  box-shadow: 0 0 0 1px var(--ds-border-focused, #388bff);
+}
+.rab-n-tabbar-response .rab-n-find-icon { color: var(--rab-subtlest); opacity: 0.8; }
+.rab-n-tool.done { color: var(--rab-success); }
 .rab-n-find-wrap { position: relative; display: flex; align-items: center; min-width: 0; }
 .rab-n-find-icon { position: absolute; left: 9px; color: var(--rab-subtlest); pointer-events: none; }
 .rab-n-find input {

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { downloadBlob, fetchEcho, type RunResult } from './runner';
 import { buildLines, find, visibleLines, type LineModel } from '../core/jsonlines';
 import { VirtualList } from './VirtualList';
-import { MaximizeButton, Tabs, download, formatBytes } from './bits';
+import { MaximizeButton, Tabs, copyText, download, formatBytes } from './bits';
 
 const LINE = 20;
 /** Longer lines are split into rows (raw text) or cut (JSON): one DOM text node of megabytes freezes the tab. */
@@ -97,12 +97,13 @@ export function ResponseView({ result, running, onCancel, maximized, onMaximize,
             { id: 'sent', label: 'Request headers' },
           ]}
         />
+        <span class="rab-n-spacer" />
         {(view === 'pretty' || view === 'raw') && result.kind !== 'binary' && result.kind !== 'empty' && (
           <FindBox initial={needle} onFind={setNeedle} onStep={(dir) => setStep((st) => ({ n: st.n + 1, dir }))}
                    count={found.count} index={found.index} />
         )}
-        <span class="rab-n-spacer" />
         <div class="rab-n-form-tools">
+          <CopyContentButton view={view} result={result} baseUrl={baseUrl} />
           <DownloadButton view={view} result={result} baseUrl={baseUrl} />
         </div>
       </div>
@@ -141,30 +142,77 @@ const EXTENSIONS: Record<string, string> = { json: '.json', xml: '.xml', html: '
  * What the open tab downloads: Pretty the body formatted (JSON indented), Raw the body as received, the headers tabs
  * their headers as text. Null when there is nothing to save (an empty body).
  */
-async function downloadOf(view: View, result: RunResult, baseUrl: string): Promise<{ blob: Blob; name: string } | null> {
-  const ext = EXTENSIONS[result.kind] ?? '';
+/**
+ * What the open tab shows, as text: the headers as "name: value" lines, Pretty a JSON body indented, else the body
+ * as received. Null for a body that is empty or not text (binary).
+ */
+async function textOf(view: View, result: RunResult, baseUrl: string): Promise<string | null> {
   const lines = (pairs: [string, string][]) => pairs.map(([k, v]) => `${k}: ${v}`).join('\n');
-  if (view === 'headers') {
-    const text = `HTTP ${result.status} ${result.statusText}\n${lines(result.headers)}\n`;
-    return { blob: new Blob([text], { type: 'text/plain' }), name: 'response-headers.txt' };
-  }
+  if (view === 'headers') return `HTTP ${result.status} ${result.statusText}\n${lines(result.headers)}\n`;
   if (view === 'sent') {
     const own = result.requestHeaders ?? [];
     const ownNames = new Set(own.map(([k]) => k.toLowerCase()));
     const added = (await fetchEcho(baseUrl, result).catch(() => [] as [string, string][])).filter(([k]) => !ownNames.has(k.toLowerCase()));
-    const text = `${result.method} ${result.url}\n${lines(own)}\n${lines(added)}\n`;
-    return { blob: new Blob([text], { type: 'text/plain' }), name: 'request-headers.txt' };
+    return `${result.method} ${result.url}\n${lines(own)}\n${lines(added)}\n`;
   }
-  if (view === 'pretty' && result.kind === 'json' && result.text && !result.truncated) {
+  if (result.size === 0 || result.text === undefined) return null;
+  if (view === 'pretty' && result.kind === 'json' && !result.truncated) {
     try {
-      const text = JSON.stringify(JSON.parse(result.text), null, 2) + '\n';
-      return { blob: new Blob([text], { type: 'application/json' }), name: 'response.json' };
+      return JSON.stringify(JSON.parse(result.text), null, 2) + '\n';
     } catch {
-      // not valid JSON after all: saved as received
+      // not valid JSON after all: as received
     }
   }
+  return result.text;
+}
+
+/** The open tab as a file: its text, or a binary body as received. Null when there is nothing to save. */
+async function downloadOf(view: View, result: RunResult, baseUrl: string): Promise<{ blob: Blob; name: string } | null> {
+  if (view === 'headers' || view === 'sent') {
+    const text = await textOf(view, result, baseUrl);
+    return text === null ? null : { blob: new Blob([text], { type: 'text/plain' }), name: view === 'headers' ? 'response-headers.txt' : 'request-headers.txt' };
+  }
+  if (view === 'pretty' && result.kind === 'json') {
+    const text = await textOf(view, result, baseUrl);
+    if (text !== null && text !== result.text) return { blob: new Blob([text], { type: 'application/json' }), name: 'response.json' };
+  }
   const blob = downloadBlob(result);
-  return blob && result.size > 0 ? { blob, name: 'response' + ext } : null;
+  return blob && result.size > 0 ? { blob, name: 'response' + (EXTENSIONS[result.kind] ?? '') } : null;
+}
+
+/** One quiet icon left of Download: copies what the open tab shows, as text; a check mark says it worked. */
+function CopyContentButton({ view, result, baseUrl }: { view: View; result: RunResult; baseUrl: string }) {
+  const [state, setState] = useState<'idle' | 'done' | 'failed'>('idle');
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const body = view === 'pretty' || view === 'raw';
+  const off = body && (result.size === 0 || result.kind === 'binary');
+  const what = view === 'headers' ? 'the response\'s headers' : view === 'sent' ? 'the request\'s headers'
+    : view === 'pretty' && result.kind === 'json' ? 'the body, formatted' : 'the body';
+  const label = off ? (result.kind === 'binary' ? 'A binary body cannot be copied: download it' : 'Nothing to copy: the body is empty')
+    : state === 'done' ? 'Copied' : state === 'failed' ? 'The browser did not allow copying' : 'Copy ' + what;
+  return (
+    <button class={'rab-n-tool' + (state === 'done' ? ' done' : '')} disabled={off} title={label} aria-label={label}
+            data-testid="copy-content" data-state={state}
+            onClick={async () => {
+              const text = await textOf(view, result, baseUrl);
+              const ok = text !== null && (await copyText(text));
+              setState(ok ? 'done' : 'failed');
+              clearTimeout(timer.current);
+              timer.current = setTimeout(() => setState('idle'), 1500);
+            }}>
+      {state === 'done' ? (
+        <svg class="rab-n-svg" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M3.2 8.4l3 3 6.6-6.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      ) : (
+        <svg class="rab-n-svg" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <rect x="5.5" y="5.5" width="7.5" height="7.5" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
+          <path d="M10.5 5.5V4a1.5 1.5 0 00-1.5-1.5H4A1.5 1.5 0 002.5 4v5A1.5 1.5 0 004 10.5h1.5" stroke="currentColor" strokeWidth="1.4" />
+        </svg>
+      )}
+    </button>
+  );
 }
 
 /** One quiet icon at the end of the tab bar: downloads what the open tab shows. */
