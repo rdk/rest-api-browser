@@ -262,7 +262,7 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
             <span class="rab-n-tool-sep" aria-hidden="true" />
             <MaximizeButton on={max === 'top'} onToggle={() => setMax(max === 'top' ? null : 'top')} what="request" testId="max-top" />
           </div>
-          <div class="rab-n-tabpane">
+          <div class={'rab-n-tabpane' + (tab === 'java' ? ' is-java' : '')}>
             {tab === 'params' && (
               <ParamsTab params={visibleParams} formParams={formParams} values={draft.values} onValues={setValues} regexes={regexes} />
             )}

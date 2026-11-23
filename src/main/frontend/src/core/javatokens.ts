@@ -130,7 +130,8 @@ const nl = (indent: number) => tok('\n' + ' '.repeat(indent), 'space');
 /** `indent` is the indentation of the current line, `col` the column the node starts at (after "name = "). */
 function layout(n: Node, indent: number, col: number, max: number): Token[] {
   const f = flat(n);
-  if (col + width(f) <= max || n.t === 'atom') return f;
+  if (col + width(f) <= max) return f;
+  if (n.t === 'atom') return n.tokens.length === 1 && n.tokens[0].kind === 'str' ? splitString(n.tokens[0].text, col) : f;
   const inner = indent + 4;
   if (n.t === 'arr') {
     const out: Token[] = [tok('{', 'punct')];
@@ -146,6 +147,39 @@ function layout(n: Node, indent: number, col: number, max: number): Token[] {
     if (i < n.members!.length - 1) out.push(tok(',', 'punct'));
   });
   return [...out, nl(indent), tok(')', 'punct')];
+}
+
+/**
+ * A long string literal with line breaks (\n escapes) as Java source would lay it out: one concatenated part per
+ * line, aligned at the column it starts at. Without breaks, or clipped (no closing quote), it stays one token.
+ */
+function splitString(text: string, col: number): Token[] {
+  if (text.length < 2 || !text.endsWith('"')) return [tok(text, 'str')];
+  const parts = text.slice(1, -1).split(/(?<=(?<!\\)\\n)/).filter(Boolean);
+  if (parts.length < 2) return [tok(text, 'str')];
+  const out: Token[] = [];
+  parts.forEach((part, i) => {
+    if (i) out.push(tok(' +', 'punct'), nl(col));
+    out.push(tok('"' + part + '"', 'str'));
+  });
+  return out;
+}
+
+/**
+ * Tokens as lines: split where a space token holds a line break, each line with the indentation it starts with
+ * (taken off its tokens), so a renderer can wrap a long line with a hanging indent instead of at column 0.
+ */
+export function toLines(tokens: Token[]): { indent: number; tokens: Token[] }[] {
+  const lines: { indent: number; tokens: Token[] }[] = [{ indent: 0, tokens: [] }];
+  for (const t of tokens) {
+    if (t.kind === 'space' && t.text.includes('\n')) {
+      const after = t.text.slice(t.text.lastIndexOf('\n') + 1);
+      lines.push({ indent: after.length, tokens: [] });
+    } else {
+      lines[lines.length - 1].tokens.push(t);
+    }
+  }
+  return lines;
 }
 
 /**

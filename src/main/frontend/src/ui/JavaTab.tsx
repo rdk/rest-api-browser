@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import {
   DetailsError, fetchDetails, forgetDetails, isError, shortJava,
   type BundleInfo, type JavaClass, type JavaMethod, type OperationDetails, type PluginInfo, type RestModuleInfo, type Section,
 } from '../core/details';
-import { annotationTokens, tokenize, type Token } from '../core/javatokens';
+import { annotationTokens, toLines, tokenize, type Token } from '../core/javatokens';
 import { CopyButton } from './bits';
 
 type Page = 'method' | 'class' | 'types' | 'bundle' | 'imports' | 'exports' | 'plugin' | 'modules' | 'rest';
@@ -26,6 +26,11 @@ export function JavaTab({ baseUrl, opKey }: { baseUrl: string; opKey: string }) 
     lastPage = p;
     setPageState(p);
   };
+  // every page opens at its top
+  const pageRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (pageRef.current) pageRef.current.scrollTop = 0;
+  }, [page, opKey]);
   useEffect(() => {
     let live = true;
     setDetails(null);
@@ -80,7 +85,8 @@ export function JavaTab({ baseUrl, opKey }: { baseUrl: string; opKey: string }) 
     <div class="rab-n-java" data-testid="java">
       <nav class="rab-n-java-nav" role="tablist" aria-orientation="vertical" aria-label="The Java behind the operation" onKeyDown={onNavKey}>
         {shown.map((p) => (
-          <button key={p.id} role="tab" aria-selected={p.id === current} tabIndex={p.id === current ? 0 : -1}
+          <button key={p.id} id={'rab-n-java-tab-' + p.id} role="tab" aria-selected={p.id === current} aria-controls="rab-n-java-page"
+                  tabIndex={p.id === current ? 0 : -1}
                   class={'rab-n-java-nav-item' + (p.id === current ? ' on' : '')} onClick={() => setPage(p.id)}
                   data-testid={'java-nav-' + p.id}>
             <span>{p.label}</span>
@@ -89,7 +95,7 @@ export function JavaTab({ baseUrl, opKey }: { baseUrl: string; opKey: string }) 
           </button>
         ))}
       </nav>
-      <div class="rab-n-java-page" role="tabpanel">
+      <div ref={pageRef} id="rab-n-java-page" class="rab-n-java-page" role="tabpanel" aria-labelledby={'rab-n-java-tab-' + current} tabIndex={0}>
         <div class="rab-n-java-tools">
           <label class="rab-n-java-toggle">
             <input type="checkbox" checked={full} onChange={(e) => setFull((e.target as HTMLInputElement).checked)} /> Full names
@@ -191,6 +197,22 @@ function describe(e: unknown): string {
   return 'The request failed: ' + (e instanceof Error ? e.message : String(e));
 }
 
+/**
+ * An annotation laid out in lines (one member per line when long); a line too long for the box wraps with a hanging
+ * indent under its own start, not at the left edge.
+ */
+function Annotation({ text, max }: { text: string; max?: number }) {
+  return (
+    <div class="rab-n-jc-ann-block">
+      {toLines(annotationTokens(text, max)).map((l, i) => (
+        <div key={i} class="rab-n-jc-line" style={{ paddingLeft: l.indent + 4 + 'ch', textIndent: '-4ch' }}>
+          <Code tokens={l.tokens} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** Coloured Java tokens: annotations, members, types, keywords, strings, numbers and punctuation. */
 function Code({ tokens }: { tokens: Token[] }) {
   return (
@@ -253,7 +275,7 @@ function Filtered<T>({ rows, total, text, head, row }: {
 function MethodCode({ m, n }: { m: JavaMethod; n: (s: string) => string }) {
   return (
     <pre class="rab-n-java-code" data-testid="java-signature">
-      {m.annotations.map((a, i) => <div key={i}><Code tokens={annotationTokens(n(a))} /></div>)}
+      {m.annotations.map((a, i) => <Annotation key={i} text={n(a)} />)}
       <Code tokens={tokenize(m.modifiers)} />{m.modifiers && ' '}
       <Code tokens={tokenize(n(m.returns))} /> <span class="rab-n-jc-method">{m.name}</span>
       <span class="rab-n-jc-punct">(</span>
@@ -283,7 +305,7 @@ function ClassFacts({ c, n }: { c: JavaClass; n: (s: string) => string }) {
       {c.annotations.length > 0 && (
         <Fact name="Annotations">
           <pre class="rab-n-java-code rab-n-java-code-small">
-            {c.annotations.map((a, i) => <div key={i}><Code tokens={annotationTokens(n(a))} /></div>)}
+            {c.annotations.map((a, i) => <Annotation key={i} text={n(a)} max={70} />)}
           </pre>
         </Fact>
       )}

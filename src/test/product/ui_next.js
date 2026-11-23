@@ -205,10 +205,20 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         java.cls = await javaPage('class', '[data-testid=java-class]');
         java.bundle = await javaPage('bundle', '[data-testid=java-bundle]');
         java.plugin = await javaPage('plugin', '[data-testid=java-plugin]');
+        // the menu fills the tab's height, and a page opens at its top even after another one was scrolled
+        java.layout = await b.evaluate(`(() => { const nav = document.querySelector('.rab-n-java-nav').getBoundingClientRect();
+            const all = document.querySelector('.rab-n-java').getBoundingClientRect(); return { navFills: Math.abs(nav.height - all.height) <= 1 }; })()`);
+        if (await click('[data-testid=java-nav-imports]')) {
+            await b.evaluate(`(() => { const p = document.querySelector('.rab-n-java-page'); p.scrollTop = 400; return p.scrollTop; })()`);
+            await click('[data-testid=java-nav-plugin]');
+            await sleep(100);
+            java.layout.pageAtTop = await b.evaluate(`document.querySelector('.rab-n-java-page').scrollTop === 0`);
+        }
         const unknown = await b.evaluate(`fetch(${q(CONTEXT)} + '/rest/restbrowser/1/catalog/details?op=' + encodeURIComponent('no.such:module:GET:x'),
             { credentials: 'same-origin' }).then(r => r.status)`);
         c.check('the Java tab: a menu of pages (method, class, bundle, plugin, …), the method with coloured annotations',
             !java.error && java.signature.includes('(') && java.colored && java.pages.length >= 6
+            && java.layout.navFills && java.layout.pageAtTop !== false
             && /Name/.test(java.cls) && /Symbolic name|Not in an OSGi bundle/.test(java.bundle)
             && java.plugin.includes(java.key.split(':')[0]) && unknown === 404,
             { ...java, signature: java.signature.slice(0, 200), bundle: java.bundle.slice(0, 120), plugin: java.plugin.slice(0, 120), unknown });

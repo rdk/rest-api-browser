@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { annotationTokens, tokenize, type Token } from './javatokens';
+import { annotationTokens, toLines, tokenize, type Token } from './javatokens';
 
 const show = (ts: Token[]) => ts.map((t) => (t.kind === 'space' ? t.text : `${t.kind}:${t.text}`)).join('|');
 const text = (ts: Token[]) => ts.map((t) => t.text).join('');
@@ -36,6 +36,25 @@ describe('javatokens', () => {
     ].join('\n'));
     const kinds = new Set(annotationTokens(s, 70).map((t) => t.kind));
     expect([...kinds].sort()).toEqual(['ann', 'kw', 'member', 'punct', 'space', 'str', 'type']);
+  });
+
+  it('breaks a long string at its \n escapes into concatenated parts, aligned', () => {
+    const s = '@Operation(description="First line.\\nSecond line, which is longer.\\nThird.", summary="S")';
+    expect(text(annotationTokens(s, 40))).toBe([
+      '@Operation(',
+      '    description = "First line.\\n" +',
+      '                  "Second line, which is longer.\\n" +',
+      '                  "Third."',
+      '    summary = "S"',
+      ')',
+    ].join('\n').replace('"Third."\n', '"Third.",\n'));
+    // short enough, or without breaks: one token
+    expect(text(annotationTokens('@Op(description="a\\nb")'))).toBe('@Op(description = "a\\nb")');
+  });
+
+  it('turns tokens into lines with their indentation', () => {
+    const lines = toLines(annotationTokens('@A(x="1", y="2")', 10));
+    expect(lines.map((l) => [l.indent, text(l.tokens)])).toEqual([[0, '@A('], [4, 'x = "1",'], [4, 'y = "2"'], [0, ')']]);
   });
 
   it('gives back text it cannot read as plain tokens', () => {

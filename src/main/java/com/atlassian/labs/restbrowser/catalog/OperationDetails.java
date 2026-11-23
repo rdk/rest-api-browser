@@ -457,6 +457,7 @@ public class OperationDetails {
         } catch (RuntimeException | LinkageError e) {
             // older plugin types do not know their dependencies
         }
+        optional.removeAll(mandatory); // a plugin can list one twice; it is a mandatory one then
         j.strings("dependsOn", mandatory).strings("optionallyDependsOn", optional);
         List<ModuleDescriptor<?>> modules = new ArrayList<>(p.getModuleDescriptors());
         modules.sort(Comparator.comparing(ModuleDescriptor::getKey, Comparator.nullsFirst(Comparator.naturalOrder())));

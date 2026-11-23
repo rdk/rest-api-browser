@@ -1194,6 +1194,8 @@
   box-shadow: var(--rab-shadow-card);
 }
 .rab-n-op-title { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+/* when the row wraps in a narrow window, Copy curl stays at the right end */
+.rab-n-op-title > .rab-n-copy { margin-left: auto; }
 .rab-n-op-fullpath {
   font: 700 14px/1.35 var(--rab-mono);
   letter-spacing: -0.01em;
@@ -1453,7 +1455,10 @@
 
 /* Java tab: a menu of pages on the left (method, class, types, bundle, imports, exports, plugin, modules, REST
    module), the page on the right */
-.rab-n-java { display: flex; min-height: 100%; font-size: 12.5px; }
+/* the tab pane holds the Java tab as two scroll areas of its own: the menu always fills the height, a page scrolls
+   on its own and opens at its top */
+.rab-n-tabpane.is-java { position: relative; overflow: hidden; }
+.rab-n-java { position: absolute; inset: 0; display: flex; font-size: 12.5px; }
 .rab-n-java-nav {
   flex: none;
   display: flex;
@@ -1461,12 +1466,9 @@
   gap: 1px;
   width: 150px;
   padding: 8px 6px;
+  overflow-y: auto;
   border-right: 1px solid var(--rab-border-subtle);
   background: color-mix(in srgb, var(--rab-sunken) 60%, var(--rab-surface));
-  position: sticky;
-  top: 0;
-  align-self: flex-start;
-  min-height: 100%;
 }
 .rab-n-java-nav-item {
   display: flex;
@@ -1509,7 +1511,8 @@
 /* the page's tools, top right: they stay in reach whatever the page */
 .rab-n-java-tools { float: right; display: flex; align-items: center; gap: 6px; margin: 0 0 6px 12px; }
 .rab-n-java-toggle { display: inline-flex; align-items: center; gap: 5px; padding: 2px 4px; color: var(--rab-subtle); cursor: pointer; }
-.rab-n-java-page { flex: 1; min-width: 0; padding: 8px 14px 16px; }
+.rab-n-java-page { flex: 1; min-width: 0; overflow: auto; padding: 8px 14px 16px; }
+.rab-n-java-page:focus-visible { outline: 2px solid var(--rab-focus); outline-offset: -2px; }
 .rab-n-java-block + .rab-n-java-block { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--rab-border-subtle); }
 .rab-n-java-title {
   margin: 0 0 8px;
@@ -1542,6 +1545,7 @@
 .rab-n-jc-method { color: var(--rab-text); font-weight: 700; }
 .rab-n-jc-pname { color: var(--rab-text); }
 .rab-n-jc-param { padding-left: 4ch; }
+.rab-n-jc-line { white-space: pre-wrap; }
 .rab-n-java-facts {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
@@ -1785,7 +1789,7 @@
   background: none;
   border: 0;
 }
-.rab-n-tabbar-response .rab-n-find input { width: 220px; max-width: 32vw; }
+.rab-n-tabbar-response .rab-n-find input { width: 220px; max-width: 32vw; min-width: 90px; }
 .rab-n-find-wrap { position: relative; display: flex; align-items: center; min-width: 0; }
 .rab-n-find-icon { position: absolute; left: 9px; color: var(--rab-subtlest); pointer-events: none; }
 .rab-n-find input {
@@ -1812,6 +1816,8 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--rab-brand) 22%, transparent);
 }
 .rab-n-find-count {
+  flex: none;
+  white-space: nowrap;
   padding: 1px 8px;
   border-radius: var(--rab-radius-pill);
   background: var(--rab-neutral);
