@@ -25,7 +25,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -83,6 +86,30 @@ public class CatalogService implements InitializingBean, DisposableBean {
 
     private record Built(ModuleEntry entry, List<Operation> operations) {
     }
+
+    /** What asking to read a started module gave (see {@link #readStarted}). */
+    public enum StartOutcome {
+        /** Read again; the entry says how (ok, or failed for another reason). */
+        READ,
+        /** Its Jersey application still does not run on this node: nothing was read. */
+        STILL_NOT_STARTED,
+        /** The build thread is busy: the read is queued and finishes after the running build. */
+        QUEUED,
+        /** No such module (any more). */
+        UNKNOWN,
+        /** The read failed, or the catalog is shutting down: nothing is queued. */
+        FAILED
+    }
+
+    public record Started(StartOutcome outcome, ModuleEntry entry) {
+    }
+
+    /** Reads of started modules, per module id, so a second request for the same module waits for the same read. */
+    private final Map<String, Future<ModuleEntry>> startedReads = new ConcurrentHashMap<>();
+    /** Requests that wait for such a read; more answer at once (202) and the page follows the module instead. */
+    private final Semaphore startWaiters = new Semaphore(4);
+    /** The modules of the last build, by id: a start looks its module up here, not with a discovery per request. */
+    private volatile Map<String, RestModule> known = Map.of();
 
     public CatalogService(ModuleDiscovery discovery, List<SpecSource> sources, ProductAdapter product,
                           EventPublisher eventPublisher, Supplier<String> ownVersion) {
@@ -165,16 +192,118 @@ public class CatalogService implements InitializingBean, DisposableBean {
      * so a client that reads the catalog right after the request sees the rebuild and follows it.
      */
     public void refresh(String moduleId) {
-        synchronized (stalePlugins) {
+        synchronized (stalePlugins) { // with the work queued, so that publishDone cannot say complete in between
             if (moduleId == null) {
                 rebuildAll = true;
             } else {
                 stalePlugins.add("module:" + moduleId);
             }
+            if (started) {
+                current.updateAndGet(s -> s == null ? null : s.incomplete(ownVersion.get()));
+            }
         }
         if (started) {
-            current.updateAndGet(s -> s == null ? null : s.incomplete(ownVersion.get()));
             schedule(0);
+        }
+    }
+
+    /**
+     * Reads one module again that had not started, once a request has started it (Confluence starts a module's REST
+     * API on the first request to it, on each node). It checks first that the module's Jersey application now runs on
+     * this node: a module still not started costs nothing more. Then it reads that module alone, on the build thread,
+     * and publishes it without marking the catalog incomplete, so nothing else is read again and the clients keep
+     * the rest of what they have. Waits up to waitMs for the read (queued behind a running build), and only a few
+     * requests wait at a time: the others answer QUEUED at once and the page follows the module.
+     */
+    public Started readStarted(String moduleId, long waitMs) {
+        RestModule module = known.get(moduleId);
+        if (module == null) { // not in the last build: a module that came since
+            module = discovery.discover().stream().filter(m -> m.id().equals(moduleId)).findFirst().orElse(null);
+        }
+        if (module == null) {
+            return new Started(StartOutcome.UNKNOWN, null);
+        }
+        JerseyModelSource jersey = jersey();
+        if (jersey != null && !jersey.started(module)) {
+            return new Started(StartOutcome.STILL_NOT_STARTED, null);
+        }
+        ScheduledExecutorService thread = buildThread;
+        if (thread == null || thread.isShutdown()) {
+            return new Started(StartOutcome.FAILED, null);
+        }
+        RestModule target = module;
+        Future<ModuleEntry> read;
+        try {
+            read = startedReads.computeIfAbsent(moduleId, id -> thread.submit(() -> readOne(target)));
+        } catch (RejectedExecutionException e) {
+            return new Started(StartOutcome.FAILED, null); // shutting down
+        }
+        if (!startWaiters.tryAcquire()) {
+            return new Started(StartOutcome.QUEUED, null);
+        }
+        try {
+            return new Started(StartOutcome.READ, read.get(waitMs, TimeUnit.MILLISECONDS));
+        } catch (TimeoutException e) {
+            return new Started(StartOutcome.QUEUED, null); // it goes on, and publishes once done
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return new Started(StartOutcome.QUEUED, null);
+        } catch (ExecutionException e) {
+            LOGGER.warn("Reading the started module {} failed", moduleId, e.getCause());
+            return new Started(StartOutcome.FAILED, null);
+        } finally {
+            startWaiters.release();
+        }
+    }
+
+    /** Runs on the build thread only: reads one module and publishes it (see publishDone). */
+    private ModuleEntry readOne(RestModule module) {
+        Built previous = built.get(module.id());
+        if (previous != null && !waitingToStart(previous.entry())) {
+            startedReads.remove(module.id()); // read meanwhile, by an earlier request's read: nothing to do
+            return previous.entry();
+        }
+        try {
+            Built b = describe(module);
+            built.put(module.id(), b);
+            return b.entry();
+        } finally {
+            startedReads.remove(module.id());
+            publishDone(discovery.discover());
+        }
+    }
+
+    private static boolean waitingToStart(ModuleEntry e) {
+        return e.state() == State.failed && JerseyModelSource.NOT_STARTED.equals(e.reason());
+    }
+
+    /**
+     * Publishes the end of a build or of a read: complete when every module is read and no work is queued. The
+     * snapshot is built first (the slow part), then set under the lock that refresh() marks incomplete in, so a
+     * refresh that came meanwhile is never overwritten.
+     */
+    private void publishDone(List<RestModule> modules) {
+        int done = 0;
+        for (RestModule m : modules) {
+            if (built.containsKey(m.id())) {
+                done++;
+            }
+        }
+        boolean all = done == modules.size();
+        CatalogSnapshot snapshot = snapshotOf(modules, done, all);
+        synchronized (stalePlugins) {
+            if (!all || !moreQueued()) {
+                current.set(snapshot);
+                return;
+            }
+        }
+        publish(modules, done, false); // work came meanwhile: it runs next
+    }
+
+    /** Work that a build or a read queued after the running one will do: the catalog is not complete before. */
+    private boolean moreQueued() {
+        synchronized (stalePlugins) {
+            return rebuildAll || !stalePlugins.isEmpty() || !startedReads.isEmpty();
         }
     }
 
@@ -239,9 +368,12 @@ public class CatalogService implements InitializingBean, DisposableBean {
         boolean changed = all || current.get() == null || !current.get().complete();
         List<RestModule> modules = discovery.discover();
         Set<String> present = new HashSet<>();
+        Map<String, RestModule> byId = new HashMap<>();
         for (RestModule m : modules) {
             present.add(m.id());
+            byId.put(m.id(), m);
         }
+        known = Map.copyOf(byId);
         changed |= built.keySet().removeIf(id -> !present.contains(id));
         // a module being rebuilt keeps its previous operations until the new ones are ready, so they never vanish
         // from the catalog (and from an open page) in between
@@ -272,7 +404,7 @@ public class CatalogService implements InitializingBean, DisposableBean {
             }
             pause();
         }
-        publish(modules, done, true);
+        publishDone(modules);
     }
 
     /** Asks the sources in order; the first that describes the module wins, failures fall through to the next. */
@@ -341,6 +473,10 @@ public class CatalogService implements InitializingBean, DisposableBean {
     }
 
     private void publish(List<RestModule> modules, int done, boolean complete) {
+        current.set(snapshotOf(modules, done, complete));
+    }
+
+    private CatalogSnapshot snapshotOf(List<RestModule> modules, int done, boolean complete) {
         List<ModuleEntry> entries = new ArrayList<>();
         List<Operation> operations = new ArrayList<>();
         for (RestModule m : modules) {
@@ -352,7 +488,7 @@ public class CatalogService implements InitializingBean, DisposableBean {
                 operations.addAll(b.operations());
             }
         }
-        current.set(CatalogSnapshot.of(entries, operations, complete, done, modules.size(), ownVersion.get()));
+        return CatalogSnapshot.of(entries, operations, complete, done, modules.size(), ownVersion.get());
     }
 
     private static void pause() {

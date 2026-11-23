@@ -20,6 +20,11 @@ helper or a CSS token behind it; use those rather than solving the same problem 
   same component in the same place otherwise share the state.
 - Effects list everything they read, or read it through a ref on purpose. Values the first paint needs (skin, colour
   mode, layout) are read synchronously in `useState` initialisers, not in an effect.
+- An action a user can repeat runs once at a time (one promise per id, `CatalogStore.startModule`), and a wait follows
+  the thing itself (that module's entry) against a real-time deadline, never a global flag such as `complete`.
+  Nothing restarts a stopped store.
+- A pending timer cleared because the data changed takes its guard with it, or is scheduled again (the list's card
+  after its rows change); a guard left behind blocks the next attempt.
 
 ## Keyboard, focus, accessibility
 
@@ -29,7 +34,8 @@ helper or a CSS token behind it; use those rather than solving the same problem 
   request, then a box on the whole screen. Whatever handles it stops it (capture phase on `document` for menus and
   tooltips), and a search box clears itself explicitly; browsers differ there.
 - What an overlay covers is `inert`, and what is covered takes no keys (a pinned tooltip lets go). A tooltip can be
-  dismissed with Escape. A list has one tab stop (roving `tabIndex`, kept rendered while the list scrolls), the
+  dismissed with Escape. Rich tooltips use `useTip` (`bits.tsx`): pinnable, shown on hover or `:focus-visible` (not a
+  click), never inside a live region. A list has one tab stop (roving `tabIndex`, kept rendered while the list scrolls), the
   keyboard's position follows the focus, and rows have stable keys (`keyOf`), so the focus stays on its row when
   rows are added above it.
 - Every control has an accessible name: `aria-label` when its label is in another cell. Tabs point to their panel
@@ -46,7 +52,10 @@ helper or a CSS token behind it; use those rather than solving the same problem 
   are sent. A URL kept for later (history) is built from the template (`historyUrl`), never by searching the built
   URL for a value.
 - Pointer handlers start a drag on the primary button only, and one drag at a time.
-- A failed module and a module left out on purpose (`excluded`, `rest-v1`; `isSkipped`) look different.
+- A failed module, a module left out on purpose (`excluded`, `rest-v1`) and one waiting to start look different: one
+  classifier, `moduleReason` in `core/explain.ts`, gives the kind; every explanation shown lives there.
+- An endpoint any licensed user may call is cheap and narrow: it checks first (does the module run now?) and then does
+  only what was asked; it never reuses an administrator's operation that rebuilds or invalidates for everyone.
 
 ## Secrets
 

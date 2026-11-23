@@ -12,6 +12,7 @@ import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.mock;
 
 public class JerseyModelSourceTest {
@@ -60,6 +61,48 @@ public class JerseyModelSourceTest {
         JerseyModelSource source = new JerseyModelSource(() -> null, () -> null);
         assertFalse(source.describe(v1).isPresent());
         assertEquals("jersey", source.id());
+    }
+
+    /** Jersey's ServletContainer: getApplicationHandler throws until the application runs. */
+    public static class FakeContainer {
+        private final Object handler;
+
+        FakeContainer(Object handler) {
+            this.handler = handler;
+        }
+
+        public Object getApplicationHandler() {
+            if (handler == null) {
+                throw new IllegalStateException("not initialized");
+            }
+            return handler;
+        }
+    }
+
+    /** The REST module's filter, which holds the container. */
+    public static class FakeFilter {
+        @SuppressWarnings("unused")
+        private final Object servletContainer;
+
+        FakeFilter(Object servletContainer) {
+            this.servletContainer = servletContainer;
+        }
+    }
+
+    private static RestModule restV2(Object filter) {
+        ModuleDescriptor<?> descriptor = mock(ModuleDescriptor.class);
+        org.mockito.Mockito.doReturn(filter).when(descriptor).getModule();
+        return new RestModule("p:m", "api/1", "/api", "1", true, "p", "P", "1", null, null, descriptor);
+    }
+
+    @Test
+    public void startedTellsWhetherTheModulesApplicationRunsNow() {
+        JerseyModelSource source = new JerseyModelSource(() -> null, () -> null);
+        assertTrue(source.started(restV2(new FakeFilter(new FakeContainer("handler")))));
+        assertFalse(source.started(restV2(new FakeFilter(new FakeContainer(null))))); // not started yet
+        assertFalse(source.started(restV2(new Object()))); // no container: cannot be told
+        assertFalse(source.started(new RestModule("p:v1", "api/1", "/api", "1", false, "p", "P", "1", null, null,
+                mock(ModuleDescriptor.class))));
     }
 
     @Test

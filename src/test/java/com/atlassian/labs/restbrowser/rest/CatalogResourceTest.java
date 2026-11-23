@@ -322,26 +322,60 @@ public class CatalogResourceTest {
     }
 
     @Test
-    public void startedReadsAModuleThatHadNotStartedAgain() {
+    public void startedReadsAModuleThatHadNotStartedAgainAndSaysHow() {
         login(false, false); // any licensed user
         when(request.getHeader("X-Atlassian-Token")).thenReturn("no-check");
         snapshot = withModules(failedModule("p:waiting", "not-started"));
+        ModuleEntry read = CatalogTestSupport.module("p:waiting", "x/1", State.ok, "1.0");
+        when(catalog.readStarted("p:waiting", CatalogResource.STARTED_WAIT_MS))
+                .thenReturn(new CatalogService.Started(CatalogService.StartOutcome.READ, read));
         Response r = resource.started("p:waiting", request);
-        assertEquals(202, r.getStatus());
+        assertEquals(200, r.getStatus());
         assertEquals("no-store", r.getHeaderString("Cache-Control"));
-        verify(catalog).refresh("p:waiting");
+        assertEquals("{\"state\":\"ok\",\"reason\":null,\"opCount\":" + read.opCount() + "}", r.getEntity());
+        verify(catalog, never()).refresh(any()); // the catalog is not marked incomplete
     }
 
     @Test
-    public void startedDoesNothingForAModuleThatIsDescribedOrFailedForAnotherReason() {
+    public void startedAnswersEachOutcomeOfTheRead() {
         login(false, false);
         when(request.getHeader("X-Atlassian-Token")).thenReturn("no-check");
-        snapshot = withModules(CatalogTestSupport.module("p:ok", "ok/1", State.ok, "1.0"), failedModule("p:excluded", "excluded"));
+        snapshot = withModules(failedModule("p:waiting", "not-started"));
+        when(catalog.readStarted(any(), org.mockito.ArgumentMatchers.anyLong()))
+                .thenReturn(new CatalogService.Started(CatalogService.StartOutcome.STILL_NOT_STARTED, null))
+                .thenReturn(new CatalogService.Started(CatalogService.StartOutcome.QUEUED, null))
+                .thenReturn(new CatalogService.Started(CatalogService.StartOutcome.UNKNOWN, null))
+                .thenReturn(new CatalogService.Started(CatalogService.StartOutcome.FAILED, null));
+        Response still = resource.started("p:waiting", request);
+        assertEquals(409, still.getStatus());
+        assertEquals("{\"error\":\"still-not-started\"}", still.getEntity());
+        assertEquals(202, resource.started("p:waiting", request).getStatus());
+        assertEquals(404, resource.started("p:waiting", request).getStatus());
+        Response failed = resource.started("p:waiting", request);
+        assertEquals(500, failed.getStatus());
+        assertEquals("{\"error\":\"read-failed\"}", failed.getEntity());
+    }
+
+    @Test
+    public void startedDoesNothingForAModuleThatIsDescribedPendingOrFailedForAnotherReason() {
+        login(false, false);
+        when(request.getHeader("X-Atlassian-Token")).thenReturn("no-check");
+        ModuleEntry pending = new ModuleEntry("p:pending", "x/1", "product", "internal", null, State.pending, null, null, 0, "p", "P", "1");
+        snapshot = withModules(CatalogTestSupport.module("p:ok", "ok/1", State.ok, "1.0"), failedModule("p:excluded", "excluded"), pending);
         assertEquals(204, resource.started("p:ok", request).getStatus());
-        assertEquals(409, resource.started("p:excluded", request).getStatus());
+        assertEquals(202, resource.started("p:pending", request).getStatus()); // being read anyway
+        Response other = resource.started("p:excluded", request);
+        assertEquals(409, other.getStatus());
+        assertEquals("{\"error\":\"not-waiting-to-start\"}", other.getEntity());
         assertEquals(404, resource.started("p:none", request).getStatus());
         assertEquals(404, resource.started(null, request).getStatus());
-        verify(catalog, never()).refresh(any());
+        verify(catalog, never()).readStarted(any(), org.mockito.ArgumentMatchers.anyLong());
+    }
+
+    @Test
+    public void entryJsonKeepsOnlySafeCharactersOfTheReason() {
+        ModuleEntry e = new ModuleEntry("p:x", "x/1", "product", "internal", null, State.failed, "model-unavailable\"<x>", "e", 0, "p", "P", "1");
+        assertEquals("{\"state\":\"failed\",\"reason\":\"model-unavailablex\",\"opCount\":0}", CatalogResource.entryJson(e));
     }
 
     @Test
@@ -354,7 +388,7 @@ public class CatalogResourceTest {
         Response r = resource.started("p:waiting", request);
         assertEquals(403, r.getStatus());
         assertTrue(((String) r.getEntity()).contains("xsrf"));
-        verify(catalog, never()).refresh(any());
+        verify(catalog, never()).readStarted(any(), org.mockito.ArgumentMatchers.anyLong());
     }
 
     @Test

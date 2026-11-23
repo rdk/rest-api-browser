@@ -4,8 +4,9 @@ import { groupRows, search, type GroupRow, type SearchRow } from '../core/search
 import { VirtualList } from './VirtualList';
 import { MethodBadge, PathText, plural, usePin } from './bits';
 import { searchWords } from '../core/pathparts';
-import { isWaiting, moduleFact, rowTicks, type Fact } from './facts';
-import { reasonInfo } from '../core/explain';
+import { moduleFact, rowTicks, type Fact } from './facts';
+import { isWaiting, moduleReason, rowLabel } from '../core/explain';
+import type { StartFailure } from '../core/catalog';
 import { RowCard, type CardTarget } from './RowCard';
 
 const ROW = 24;
@@ -26,9 +27,11 @@ export interface SidebarProps {
   collapsed: Set<string>;
   onCollapsed: (c: Set<string>) => void;
   loadError?: string;
-  /** Starts a module that has not started yet (a click on it); the ids being started show "starting…". */
+  /** Starts a module that has not started yet (Enter or a click on it); see CatalogStore.startModule. */
   onStart?: (m: Module) => void;
-  starting?: Set<string>;
+  /** The modules being started, and why the last start of a module failed. */
+  starting?: ReadonlySet<string>;
+  startFailures?: ReadonlyMap<string, StartFailure>;
 }
 
 type Line = { kind: 'module'; module: Module; count: number } | { kind: 'op'; op: Operation; module?: Module };
@@ -149,7 +152,10 @@ export function Sidebar(p: SidebarProps) {
   const [card, setCard] = useState<{ id: string; target: CardTarget; left: number; top: number } | null>(null);
   const cardTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const cardFor = useRef<string | undefined>(undefined);
+  // the row clicked last: no card for it until the pointer moves on to another row
+  const suppressed = useRef<string | undefined>(undefined);
   const cardBox = useRef<HTMLDivElement | null>(null);
+  const listBox = useRef<HTMLDivElement>(null);
   const forceHide = () => {
     clearTimeout(cardTimer.current);
     cardFor.current = undefined;
@@ -165,11 +171,13 @@ export function Sidebar(p: SidebarProps) {
     if (!pinnedRef.current) forceHide();
   };
   useEffect(() => () => clearTimeout(cardTimer.current), []);
+  // other rows (a search, a fold, the catalog updated): the card goes, and the row the pointer rests on gets its card
+  // again, as a pending one would have (its timer went with the old rows)
   useEffect(() => {
     if (pinnedRef.current) return;
-    const keep = cardFor.current;
     forceHide();
-    if (keep && lines.some((l) => idOf(l) === keep)) cardFor.current = keep;
+    const row = listBox.current?.querySelector('[data-i]:hover') as HTMLElement | null;
+    if (row) scheduleCard(row, CARD_DELAY);
   }, [lines]);
   // a box on the whole screen covers the list: its card goes too, and stays away
   const covered = () => !!input.current?.closest('[inert]');
@@ -186,7 +194,8 @@ export function Sidebar(p: SidebarProps) {
   }, []);
   const scheduleCard = (row: HTMLElement, delay: number) => {
     const id = row.dataset.id;
-    if (!id || cardFor.current === id) return;
+    if (!id || cardFor.current === id || suppressed.current === id) return;
+    suppressed.current = undefined;
     cardFor.current = id;
     clearTimeout(cardTimer.current);
     cardTimer.current = setTimeout(() => {
@@ -210,7 +219,7 @@ export function Sidebar(p: SidebarProps) {
   // a click closes the card, and it stays closed until the pointer moves on to another row
   const onListDown = (e: MouseEvent) => {
     hideCard();
-    cardFor.current = ((e.target as Element).closest?.('[data-i]') as HTMLElement | null)?.dataset.id;
+    suppressed.current = ((e.target as Element).closest?.('[data-i]') as HTMLElement | null)?.dataset.id;
   };
   const onListFocus = (e: FocusEvent) => {
     const row = e.target as HTMLElement;
@@ -226,6 +235,12 @@ export function Sidebar(p: SidebarProps) {
     if (next.has(id)) next.delete(id);
     else next.add(id);
     p.onCollapsed(next);
+  };
+  // what Enter or a click does on a row: opens an operation, folds a module, starts one that has not started
+  const activate = (l: Line) => {
+    if (l.kind === 'op') p.onSelect(l.op);
+    else if (foldable(l.module)) toggle(l.module.id);
+    else if (isWaiting(l.module) && !p.starting?.has(l.module.id)) p.onStart?.(l.module);
   };
 
   // keys for the list, from the search box or the list itself; the filter buttons keep their own Enter
@@ -265,10 +280,7 @@ export function Sidebar(p: SidebarProps) {
       }
     } else if (e.key === 'Enter' && inSearch && active >= 0 && active < lines.length) {
       e.preventDefault();
-      const l = lines[active];
-      if (l.kind === 'op') p.onSelect(l.op);
-      else if (foldable(l.module)) toggle(l.module.id);
-      else if (isWaiting(l.module)) p.onStart?.(l.module);
+      activate(lines[active]);
     } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && inList && active >= 0 && active < lines.length) {
       const l = lines[active];
       if (l.kind === 'module' && foldable(l.module) && p.collapsed.has(l.module.id) === (e.key === 'ArrowRight')) toggle(l.module.id);
@@ -362,7 +374,7 @@ export function Sidebar(p: SidebarProps) {
           )}
         </div>
       ) : (
-        <div class="rab-n-list" onMouseOver={onListOver} onMouseLeave={hideCard} onMouseDown={onListDown}
+        <div class="rab-n-list" ref={listBox} onMouseOver={onListOver} onMouseLeave={hideCard} onMouseDown={onListDown}
              onScrollCapture={hideCard} onFocusIn={onListFocus} onFocusOut={hideCard}>
         <VirtualList
           count={lines.length}
@@ -387,10 +399,10 @@ export function Sidebar(p: SidebarProps) {
                   tabStop={i === tabStop}
                   described={card?.id === idOf(l)}
                   starting={!!p.starting?.has(l.module.id)}
+                  failure={p.startFailures?.get(l.module.id)}
                   onClick={() => {
                     setActive(i);
-                    if (foldable(l.module)) toggle(l.module.id);
-                    else if (isWaiting(l.module)) p.onStart?.(l.module);
+                    activate(l);
                   }}
                 />
               );
@@ -405,7 +417,7 @@ export function Sidebar(p: SidebarProps) {
                 aria-describedby={card?.id === l.op.key ? CARD_ID : undefined}
                 onClick={() => {
                   setActive(i);
-                  p.onSelect(l.op);
+                  activate(l);
                 }}
                 data-testid="op"
                 data-method={l.op.method}
@@ -425,32 +437,33 @@ export function Sidebar(p: SidebarProps) {
         </div>
       )}
       {card && <RowCard id={CARD_ID} target={card.target} left={card.left} top={card.top} rowHeight={ROW}
+                        startFailure={card.target.kind === 'module' ? p.startFailures?.get(card.target.module.id)?.message : undefined}
                         pinned={pinned} boxRef={cardBox} />}
     </div>
   );
 }
 
-function ModuleRow({ index, module, count, collapsed, active, tabStop, described, starting, onClick }: {
+function ModuleRow({ index, module, count, collapsed, active, tabStop, described, starting, failure, onClick }: {
   index: number; module: Module; count: number; collapsed: boolean; active: boolean; tabStop: boolean; described: boolean;
-  starting: boolean; onClick: () => void;
+  starting: boolean; failure?: StartFailure; onClick: () => void;
 }) {
   const kind = moduleFact(module);
   // a pending or failed module has no operations to fold: no chevron, no expanded state
   const foldable = module.state === 'ok';
-  // why a module could not be read: waiting to start (a click starts it), left out on purpose, or failed
-  const reason = module.state === 'failed' ? reasonInfo(module.reason) : null;
+  // why a module could not be read, as its class: waiting (Enter or a click starts it), skipped on purpose, failed
+  const reason = moduleReason(module);
   return (
     <button
       class={
         'rab-n-module' +
         (module.stability === 'supported' ? ' supported' : '') +
         (active ? ' active' : '') +
-        (module.state !== 'ok' ? ' ' + module.state : '') +
-        (reason && reason.kind !== 'failed' ? ' ' + reason.kind : '') +
+        (reason ? ' ' + reason.kind : module.state === 'pending' ? ' pending' : '') +
         (starting ? ' starting' : '')
       }
       onClick={onClick}
       tabIndex={tabStop ? 0 : -1}
+      aria-busy={starting || undefined}
       aria-expanded={foldable ? !collapsed : undefined}
       aria-describedby={described ? CARD_ID : undefined}
       data-testid="module"
@@ -474,8 +487,15 @@ function ModuleRow({ index, module, count, collapsed, active, tabStop, described
       <span class="rab-n-module-path"><PathText path={module.path} rank={false} /></span>
       {kind && <span class="rab-n-sr">{kind.label}</span>}
       <span class="rab-n-count">
-        {module.state === 'ok' ? count : module.state === 'pending' ? '…' : starting ? <><span class="rab-n-spinner" aria-hidden="true" /> starting…</>
-          : reason!.kind === 'waiting' ? 'not started · click to start' : reason!.label}
+        {!reason ? (module.state === 'ok' ? count : '…')
+          : starting ? <><span class="rab-n-spinner" aria-hidden="true" /> starting…</>
+          : reason.kind === 'waiting'
+            ? <>
+                {!failure ? rowLabel(reason) : failure.notStarted ? 'did not start' : 'start failed'}
+                <span class="rab-n-count-sep" aria-hidden="true">·</span><span class="rab-n-sr">, </span>
+                <span class="rab-n-count-action">{failure ? 'try again' : 'start'}</span>
+              </>
+            : rowLabel(reason)}
       </span>
     </button>
   );

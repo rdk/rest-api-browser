@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { memo } from 'preact/compat';
 import type { Index, Module, Operation, Summary } from '../core/types';
-import { CatalogStore } from '../core/catalog';
+import { CatalogStore, StartStopped, isSessionExpired } from '../core/catalog';
 import { clearDetails } from '../core/details';
 import { buildRows } from '../core/search';
 import { formatState, parseState, type RouteState } from '../core/router';
@@ -11,8 +11,8 @@ import { UserStore, isCredentialHeader } from './userstore';
 import { Sidebar } from './Sidebar';
 import { OperationView, emptyDraft, type Draft } from './Operation';
 import { Menu, type MenuItem } from './Menu';
-import { PinHint, plural, usePin } from './bits';
-import { isSkipped, isWaiting } from './facts';
+import { PinHint, plural, useTip } from './bits';
+import { isWaiting, moduleReason } from '../core/explain';
 
 interface Props {
   baseUrl: string;
@@ -111,11 +111,15 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
   const [summary, setSummary] = useState<Summary | null>(null);
   const [index, setIndex] = useState<Index | null>(null);
   const [loadError, setLoadError] = useState<string | undefined>();
+  const [starting, setStarting] = useState(store.starting);
+  const [startFailures, setStartFailures] = useState(store.startFailures);
   useEffect(() => {
     const sync = () => {
       setSummary(store.summary);
       setIndex(store.index);
       setLoadError(store.error ? describeError(store.error) : undefined);
+      setStarting(store.starting);
+      setStartFailures(store.startFailures);
     };
     const off = store.onChange(sync);
     let live = true; // a store replaced before its first load ends must not write over the new one
@@ -254,27 +258,22 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
     };
   }, []);
 
-  // modules being started (Confluence starts a module's REST API on its first request): a click in the list
-  const [starting, setStarting] = useState<Set<string>>(() => new Set());
-  const collapsedRef = useRef(shownCollapsed);
-  collapsedRef.current = shownCollapsed;
-  const onStart = useCallback((m: Module) => {
-    setStarting((s) => (s.has(m.id) ? s : new Set(s).add(m.id)));
-    store.startModule(m).then(
-      () => {
-        // read: show its operations at once
-        const next = new Set(collapsedRef.current);
-        if (next.delete(m.id)) onCollapsed(next);
-      },
-      (e) => setRefreshError(`Could not start ${m.path}: ${e instanceof Error ? e.message : String(e)}`),
-    ).finally(() => setStarting((s) => {
-      const next = new Set(s);
-      next.delete(m.id);
-      return next;
-    }));
-  }, [store, onCollapsed]);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | undefined>();
+  // Enter or a click on a module that has not started (Confluence starts a module's REST API on the first request to
+  // it): unfolded now, so its operations show once read; the store keeps the starts, and why one failed
+  const onStart = useCallback((m: Module) => {
+    setRefreshError(undefined);
+    if (shownCollapsed.has(m.id)) {
+      const next = new Set(shownCollapsed);
+      next.delete(m.id);
+      onCollapsed(next);
+    }
+    store.startModule(m).catch((e: unknown) => {
+      // stopped: the page went away; an expired session: the list's status line says so already
+      if (!(e instanceof StartStopped) && !isSessionExpired(e)) setRefreshError(`Could not start ${m.path}: ${message(e)}`);
+    });
+  }, [store, shownCollapsed, onCollapsed]);
   // a failed rebuild says so in the list's status line for a while, then the counts come back
   useEffect(() => {
     if (!refreshError) return;
@@ -285,7 +284,6 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
     setRefreshError(undefined);
     setRefreshing(true);
     clearDetails();
-    const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
     try {
       const res = await fetch(baseUrl + '/rest/restbrowser/1/catalog/refresh', {
         method: 'POST',
@@ -308,29 +306,12 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
     }
   }, [baseUrl, store]);
 
+  // a deep link to an operation of a module that has not started: its key starts with the module's id
+  const linkWaiting = selectedKey && !op ? summary?.modules.find((m) => selectedKey.startsWith(m.id + ':') && isWaiting(m)) : undefined;
   const productLabel = summary ? `${summary.product.name} ${summary.product.version}` : product;
   // the header's tooltip about the project: on hover or keyboard focus of the brand, pinned with Alt+P
   const brandWrap = useRef<HTMLSpanElement>(null);
-  // Escape hides it even while the pointer rests on it (it comes back when the pointer or the focus comes back)
-  const [aboutDismissed, setAboutDismissed] = useState(false);
-  const dismissedRef = useRef(false);
-  dismissedRef.current = aboutDismissed;
-  const aboutShown = () => {
-    const el = brandWrap.current;
-    return !!el && !dismissedRef.current && !el.closest('[inert]') && (el.matches(':hover') || !!el.querySelector(':focus-visible'));
-  };
-  const aboutPinned = usePin(aboutShown, brandWrap, () => setAboutDismissed(true));
-  useEffect(() => {
-    // in the capture phase, and only when it hides the tooltip: then it is that Escape's only effect
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || !aboutShown()) return;
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      setAboutDismissed(true);
-    };
-    document.addEventListener('keydown', onKey, true);
-    return () => document.removeEventListener('keydown', onKey, true);
-  }, []);
+  const about = useTip(brandWrap);
   const site = siteUrl.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').replace(/\/+$/, '');
   const siteHost = site.split('/')[0];
   const menu: MenuItem[] = [
@@ -399,15 +380,14 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
     <div class="rab-n" ref={root} style={{ height: height + 'px' }} data-skin={skin}>
       <div class="rab-n-topbar">
         <div class="rab-n-top-left">
-        <span ref={brandWrap} class={'rab-n-brand-wrap' + (aboutPinned ? ' pinned' : aboutDismissed ? ' dismissed' : '')}
-              onMouseEnter={() => setAboutDismissed(false)} onFocusIn={() => setAboutDismissed(false)}>
+        <span ref={brandWrap} class={'rab-n-brand-wrap' + about.state} onMouseEnter={about.onMouseEnter} onFocusIn={about.onFocusIn}>
           <a class="rab-n-brand" href={REPO} target="_blank" rel="noopener noreferrer" aria-describedby="rab-n-about" data-testid="brand">
             <span class="rab-n-brand-mark" aria-hidden="true">
               <BrandIcon size={15} />
             </span>
             <strong class="rab-n-topbar-title">REST API Browser</strong>
           </a>
-          <About version={version} product={productLabel} operations={rows.length} modules={summary?.modules.length} pinned={aboutPinned} />
+          <About version={version} product={productLabel} operations={rows.length} modules={summary?.modules.length} pinned={about.pinned} />
         </span>
         {version && (
           <a class="rab-n-version" href={`${REPO}/releases`} target="_blank" rel="noopener noreferrer"
@@ -458,6 +438,7 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
             loadError={loadError ?? refreshError}
             onStart={onStart}
             starting={starting}
+            startFailures={startFailures}
           />
         </div>
         <SideHandle width={sidebarWidth} onWidth={setSidebarWidth} onDone={(w) => save({ sidebarWidth: w })} />
@@ -478,8 +459,11 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
           ) : (
             <Welcome
               summary={summary}
-              missing={!!selectedKey && !!index && !op && !!summary?.complete}
-              indexing={!!selectedKey && !op && !loadError && !summary?.complete}
+              missing={!!selectedKey && !!index && !op && !!summary?.complete && !linkWaiting}
+              indexing={!!selectedKey && !op && !loadError && !summary?.complete && !linkWaiting}
+              linkWaiting={linkWaiting}
+              linkStarting={!!linkWaiting && starting.has(linkWaiting.id)}
+              onStart={onStart}
             />
           )}
         </div>
@@ -550,6 +534,8 @@ function issueBody(version: string, product: string): string {
   ].join('\n');
 }
 
+const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
 function describeError(e: unknown): string {
   if (e instanceof Error && e.name === 'SessionExpired') return 'Your session has expired: reload the page to log in again.';
   return 'Could not load the catalog: ' + (e instanceof Error ? e.message : String(e));
@@ -585,15 +571,30 @@ function prefill(op: Operation, draft: Draft, state: RouteState): Draft {
   };
 }
 
-function Welcome({ summary, missing, indexing }: { summary: Summary | null; missing: boolean; indexing: boolean }) {
-  const ops = summary ? summary.modules.reduce((n, m) => n + m.opCount, 0) : 0;
-  // modules left out on purpose (excluded, REST v1) are not failures
-  const failed = summary ? summary.modules.filter((m) => m.state === 'failed' && !isSkipped(m) && !isWaiting(m)).length : 0;
-  const waiting = summary ? summary.modules.filter(isWaiting).length : 0;
+function Welcome({ summary, missing, indexing, linkWaiting, linkStarting, onStart }: {
+  summary: Summary | null; missing: boolean; indexing: boolean; linkWaiting?: Module; linkStarting: boolean;
+  onStart: (m: Module) => void;
+}) {
+  let ops = 0, failed = 0, waiting = 0; // modules left out on purpose (excluded, REST v1) are not failures
+  for (const m of summary?.modules ?? []) {
+    ops += m.opCount;
+    const kind = moduleReason(m)?.kind;
+    if (kind === 'failed') failed++;
+    else if (kind === 'waiting') waiting++;
+  }
   return (
     <div class="rab-n-welcome" data-testid="welcome">
       <div class="rab-n-welcome-inner">
         {missing && <div class="rab-n-banner">The operation in the link no longer exists on this instance.</div>}
+        {linkWaiting && (
+          <div class="rab-n-banner" data-testid="link-waiting">
+            The operation in the link is in <strong>{linkWaiting.path}</strong>, which has not started yet on this node; it opens
+            once the module is read.{' '}
+            <button class="rab-n-link" onClick={() => onStart(linkWaiting)} disabled={linkStarting} aria-busy={linkStarting || undefined}>
+              {linkStarting ? 'Starting…' : 'Start it'}
+            </button>
+          </div>
+        )}
         {indexing && <div class="rab-n-banner">The catalog is still being built; the operation in the link opens when its module is ready.</div>}
         <div class="rab-n-welcome-hero">
           <span class="rab-n-welcome-icon" aria-hidden="true">
@@ -633,9 +634,9 @@ function Welcome({ summary, missing, indexing }: { summary: Summary | null; miss
           </li>
         </ul>
         {waiting > 0 && (
-          <p class="rab-n-subtle rab-n-welcome-note" data-testid="waiting-note">
-            {plural(waiting, 'module')} {waiting === 1 ? 'has' : 'have'} not started yet on this node: the product starts a module's REST
-            API on its first request. Click one in the list to start it and see its operations.
+          <p class="rab-n-subtle rab-n-welcome-note">
+            {plural(waiting, 'module')} {waiting === 1 ? 'has' : 'have'} not started yet on this node; select one in the list to
+            start it (its hover card says more).
           </p>
         )}
         {failed > 0 && (

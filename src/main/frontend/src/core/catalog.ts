@@ -1,10 +1,29 @@
 import type { Index, Module, Summary } from './types';
 import { trimModulePath } from './template';
+import { reasonInfo } from './explain';
 
-/** A path no module has: the GET that starts a module answers 404, and nothing of the module runs. */
+/**
+ * Starting a module (see startModule): an OPTIONS request to a path the module does not have (Jersey usually answers
+ * it with a 404; it passes the module's filters like any request); how long a start the server queued is followed.
+ */
 export const START_PATH = 'rest-api-browser-start';
-/** How long starting a module waits for the catalog to read it again. */
 export const START_WAIT_MS = 30_000;
+const START_POLL_MS = 1000;
+const DID_NOT_START = 'it did not start on that request; some modules start only for their own kind of login (OAuth tokens)';
+
+/** Why the last start of a module failed: `notStarted` when the product did not start it on that request. */
+export interface StartFailure {
+  message: string;
+  notStarted: boolean;
+}
+
+/** A start that ended because the store was stopped (the page went away, the session expired): nothing to show. */
+export class StartStopped extends Error {
+  constructor() {
+    super('stopped');
+    this.name = 'StartStopped';
+  }
+}
 
 export type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -47,12 +66,17 @@ function sameView(a: Summary, b: Summary): boolean {
   });
 }
 
-const isSessionExpired = (e: unknown) => e instanceof Error && e.name === 'SessionExpired';
+export const isSessionExpired = (e: unknown) => e instanceof Error && e.name === 'SessionExpired';
+const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export class CatalogStore {
   summary: Summary | null = null;
   index: Index | null = null;
   error: Error | null = null;   // set when the session expired; polling has stopped
+  /** The modules being started, and why the last start of a module failed (this page only); new objects on change. */
+  starting: ReadonlySet<string> = new Set();
+  startFailures: ReadonlyMap<string, StartFailure> = new Map();
 
   private listeners = new Set<() => void>();
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -60,6 +84,7 @@ export class CatalogStore {
   private stopped = false;
   private generation = 0;
   private waitingForVisible = false;
+  private starts = new Map<string, Promise<void>>();
 
   constructor(
     private readonly baseUrl: string,
@@ -100,40 +125,130 @@ export class CatalogStore {
   }
 
   /**
-   * Starts a module that had not started (failed, reason not-started): some products (Confluence) start a module's
-   * REST API on its first request, on each node. A GET to a path the module does not have starts it on this node
-   * (the session sticks to one node of a cluster), then the catalog is asked to read the module again, and followed
-   * until it has. Rejects with the reason when the server refuses (a session that expired, a module that failed for
-   * another reason).
+   * Starts a module that had not started (failed, reason not-started): Confluence starts a module's REST API on the
+   * first request to it, on each node. A request to the module starts it on this node (the session sticks to one node
+   * of a cluster); then the server checks that it runs and reads that module again, and answers how it went. One
+   * start per module at a time: a second call gets the first one's promise. Rejects with what went wrong, which
+   * startFailures keeps; with StartStopped when the store stopped meanwhile.
    */
-  async startModule(module: Module): Promise<void> {
-    try {
-      await this.fetchFn(`${this.baseUrl}/rest/${trimModulePath(module.path)}/${START_PATH}`, {
-        credentials: 'same-origin',
-        headers: { Accept: 'application/json' },
-      });
-    } catch {
-      // the answer does not matter, only that the request reached the module
+  startModule(module: Module): Promise<void> {
+    const running = this.starts.get(module.id);
+    if (running) return running;
+    const failures = (change: (m: Map<string, StartFailure>) => void) => {
+      const next = new Map(this.startFailures);
+      change(next);
+      this.startFailures = next;
+    };
+    const start = this.start(module).then(
+      () => failures((m) => m.delete(module.id)),
+      (e: unknown) => {
+        if (!(e instanceof StartStopped) && !isSessionExpired(e)) {
+          failures((m) => m.set(module.id, { message: message(e), notStarted: message(e) === DID_NOT_START }));
+        }
+        throw e;
+      },
+    ).finally(() => {
+      this.starts.delete(module.id);
+      this.starting = new Set(this.starts.keys());
+      this.listeners.forEach((l) => l());
+    });
+    this.starts.set(module.id, start);
+    this.starting = new Set(this.starts.keys());
+    this.listeners.forEach((l) => l());
+    return start;
+  }
+
+  private async start(module: Module): Promise<void> {
+    const segments = trimModulePath(module.path).split('/');
+    if (!segments.some((s) => s === '' || s === '.' || s === '..')) {
+      try {
+        await this.fetchFn(`${this.baseUrl}/rest/${segments.map(encodeURIComponent).join('/')}/${START_PATH}`, {
+          method: 'OPTIONS',
+          credentials: 'same-origin',
+          redirect: 'manual',
+        });
+      } catch {
+        // the answer does not matter (a 404), only that the request reached the module
+      }
     }
+    this.checkStopped();
     const path = '/rest/restbrowser/1/catalog/started?module=' + encodeURIComponent(module.id);
     const res = await this.fetchFn(this.baseUrl + path, {
       method: 'POST',
       credentials: 'same-origin',
       headers: { Accept: 'application/json', 'X-Atlassian-Token': 'no-check' },
     });
-    if (isLoginAnswer(res)) throw sessionExpired(path, res.status);
-    if (res.status === 409) throw new Error('it failed for another reason, which starting it does not fix');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    await this.load();
-    // the catalog reads the module again in the background: wait for it, then tell whether the module started
-    for (let waited = 0; this.summary && !this.summary.complete && waited < START_WAIT_MS; waited += 250) {
-      await new Promise((r) => setTimeout(r, 250));
+    this.checkStopped();
+    if (isLoginAnswer(res, true)) {
+      const e = sessionExpired(path, res.status);
+      this.expire(e);
+      throw e;
     }
-    const now = this.summary?.modules.find((m) => m.id === module.id);
-    if (now && now.state === 'failed' && now.reason === 'not-started') {
-      throw new Error('the product did not start it on that request (some modules start only for their own kind of '
-        + 'login, OAuth tokens for example)');
+    if (res.status === 200) return this.outcome((await res.json()) as { state: string; reason?: string });
+    if (res.status === 204) return this.reload();
+    if (res.status === 202) return this.follow(module.id);
+    if (res.status === 404) {
+      await this.reload();
+      throw new Error('it is no longer on this instance');
     }
+    if (res.status === 409) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (body.error === 'still-not-started') throw new Error(DID_NOT_START);
+      await this.reload();
+      throw new Error('it is not waiting to start any more');
+    }
+    throw new Error(`HTTP ${res.status}`);
+  }
+
+  // The read module: shown at once (the catalog stays complete, so this load is what brings it), or why it failed.
+  private async outcome(entry: { state: string; reason?: string }): Promise<void> {
+    await this.reload();
+    if (entry.state === 'ok') return;
+    const reason = reasonInfo(entry.reason);
+    throw new Error(reason.kind === 'waiting' ? DID_NOT_START : `it started, but could not be read (${reason.code})`);
+  }
+
+  // A read the server queued behind a running build: follow this module's entry (not the whole catalog) until it
+  // changes, for START_WAIT_MS of real time (timers of a hidden tab run late).
+  private async follow(id: string): Promise<void> {
+    const deadline = Date.now() + START_WAIT_MS;
+    while (Date.now() < deadline) {
+      await sleep(START_POLL_MS);
+      this.checkStopped();
+      let summary: Summary;
+      try {
+        summary = await this.fetchSummary();
+      } catch (e) {
+        if (!isSessionExpired(e)) continue; // a transient failure: ask again
+        this.expire(e as Error);
+        throw e;
+      }
+      this.checkStopped();
+      const now = summary.modules.find((m) => m.id === id);
+      if (!now) {
+        await this.reload();
+        throw new Error('it is no longer on this instance');
+      }
+      if (now.state === 'ok') return this.reload();
+      if (now.state === 'failed' && reasonInfo(now.reason).kind !== 'waiting') return this.outcome(now);
+    }
+    await this.reload();
+    throw new Error('it is still being read: it shows when the catalog has read it');
+  }
+
+  // Loads the catalog again; its own errors are its own (it polls again, or the session expired and the page says so).
+  private async reload(): Promise<void> {
+    this.checkStopped(); // load() would start a stopped store again
+    try {
+      await this.load();
+    } catch {
+      // see above
+    }
+    this.checkStopped();
+  }
+
+  private checkStopped(): void {
+    if (this.stopped) throw new StartStopped();
   }
 
   private expire(e: Error): void {

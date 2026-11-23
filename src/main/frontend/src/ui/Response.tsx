@@ -4,7 +4,7 @@ import { buildLines, find, formatJson, visibleLines, type LineModel } from '../c
 import { findRows, rowEnd, wrapRows } from '../core/textrows';
 import { VirtualList } from './VirtualList';
 import { MaximizeButton, RichTip, Tabs, copyText, download, formatBytes, plural, tabId, useFlash } from './bits';
-import { statusInfo } from '../core/explain';
+import { statusInfo, statusTone } from '../core/explain';
 
 const LINE = 20;
 /** Pretty cuts a longer line (one DOM text node of megabytes freezes the tab); up to this, it scrolls sideways. */
@@ -76,7 +76,7 @@ export function ResponseView({ result, running, onCancel, maximized, onMaximize,
       </div>
     );
   }
-  const statusClass = result.status >= 500 ? 'err' : result.status >= 400 ? 'warn' : result.status >= 300 ? 'info' : 'ok';
+  const statusClass = statusTone(result.status);
   const id = idOf(result);
   return (
     <div class={'rab-n-response tone-' + statusClass} data-testid="response">
@@ -89,13 +89,14 @@ export function ResponseView({ result, running, onCancel, maximized, onMaximize,
         </div>
       )}
       <div class="rab-n-statusline">
+        {/* the code explained (what it means here, and what to try), outside the live region below */}
+        <RichTip testId="status-tip" tip={<StatusTip status={result.status} statusText={result.statusText} />}>
+          <span class={'rab-n-status-code ' + statusClass} data-testid="response-status">
+            {result.status} {result.statusText}
+          </span>
+        </RichTip>
         <span class="rab-n-status-text" role="status">
-          {/* the code explained: what it means here, and what to try */}
-          <RichTip id="rab-n-status-tip" testId="status-tip" tip={<StatusTip status={result.status} statusText={result.statusText} />}>
-            <span class={'rab-n-status-code ' + statusClass} data-testid="response-status" tabIndex={0} aria-describedby="rab-n-status-tip">
-              {result.status} {result.statusText}
-            </span>
-          </RichTip>
+          <span class="rab-n-sr">{result.status} {result.statusText}</span>
           <span class="rab-n-metric">{Math.round(result.durationMs)} ms</span>
           <span class="rab-n-metric">{formatBytes(result.size)}{result.truncated ? ' (truncated)' : ''}</span>
           <span class="rab-n-subtle rab-n-status-url">{result.method} {result.url}</span>
@@ -164,7 +165,7 @@ function StatusTip({ status, statusText }: { status: number; statusText: string 
   const info = statusInfo(status, statusText);
   return (
     <>
-      <span class="rab-n-tip-title">{status} {info.title}</span>
+      <span class="rab-n-tip-title">{[status, info.title].filter(Boolean).join(' ')}</span>{' '}
       <span class="rab-n-tip-text">{info.text}</span>
     </>
   );

@@ -60,9 +60,30 @@ public class JerseyModelSource implements SpecSource {
         this.servletContext = servletContext;
     }
 
+    /**
+     * The reason of a module whose Jersey application has not started yet: Confluence starts one on the first request
+     * to the module, on each node. The catalog's clients can start it with such a request (CatalogResource.started).
+     */
+    public static final String NOT_STARTED = "not-started";
+
     @Override
     public String id() {
         return "jersey";
+    }
+
+    /**
+     * Whether the module's Jersey application runs on this node now (a request has started it); false when it does not
+     * or cannot be told. Cheap: a field and a getter, nothing is initialized.
+     */
+    public boolean started(RestModule module) {
+        if (!module.restV2()) {
+            return false;
+        }
+        try {
+            return applicationHandlerOrNull(field(module.descriptor().getModule(), "servletContainer")) != null;
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            return false;
+        }
     }
 
     @Override
@@ -140,7 +161,7 @@ public class JerseyModelSource implements SpecSource {
             handler = applicationHandlerOrNull(container);
         }
         if (handler == null) {
-            throw new SpecException("not-started", "The module's Jersey application is not initialized; " + tried, null);
+            throw new SpecException(NOT_STARTED, "The module's Jersey application is not initialized; " + tried, null);
         }
         return handler;
     }

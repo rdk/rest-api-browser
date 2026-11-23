@@ -101,6 +101,11 @@ public final class CatalogSnapshot {
         return total;
     }
 
+    /** The module with this id, if the catalog has it. */
+    public java.util.Optional<ModuleEntry> module(String id) {
+        return modules.stream().filter(m -> m.id().equals(id)).findFirst();
+    }
+
     public List<ModuleEntry> modules() {
         return modules;
     }

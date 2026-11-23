@@ -10,6 +10,7 @@ import { historyUrl, type HistoryEntry, type UserStore } from './userstore';
 import { CheckMark, CopyButton, MaximizeButton, MethodBadge, PathText, Tabs, WarnGlyph, WRITE_METHODS, formatBytes, tabId } from './bits';
 import { ResponseView } from './Response';
 import { JavaTab } from './JavaTab';
+import { statusTone } from '../core/explain';
 
 /** What the user has typed for one operation; kept per operation while the page is open. */
 export interface Draft {
@@ -632,12 +633,11 @@ function HistoryTab({ entries, onRestore, onClear }: { entries: HistoryEntry[]; 
   if (!entries.length) {
     return <div class="rab-n-subtle rab-n-pad">No requests yet. With no documentation in the WADLs, the request that worked last time is the best example; it will be listed here.</div>;
   }
-  const statusClass = (s?: number) => (!s ? 'info' : s >= 500 ? 'err' : s >= 400 ? 'warn' : s >= 300 ? 'info' : 'ok');
   return (
     <div class="rab-n-history" data-testid="history">
       {entries.map((e) => (
         <button key={e.id} class="rab-n-history-row" onClick={() => onRestore(e)} title={historyTitle(e)}>
-          <span class={'rab-n-status-code ' + statusClass(e.status)}>{e.status ?? '?'}</span>
+          <span class={'rab-n-status-code ' + statusTone(e.status)}>{e.status ?? '?'}</span>
           <span class="rab-n-subtle rab-n-history-time">{new Date(e.at).toLocaleString()}</span>
           <span class="rab-n-ellipsis rab-n-history-url">{e.url}</span>
           {(e.bodyTruncated || e.redacted) && (

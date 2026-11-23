@@ -159,6 +159,7 @@
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
+  overflow: clip; /* a hidden tooltip below a short pane must not add a scrollbar to the page */
   color: var(--rab-text);
   background: var(--rab-surface);
   font-size: 14px;
@@ -274,7 +275,7 @@
 .rab-n *, .rab-n *::before, .rab-n *::after { box-sizing: border-box; }
 /* :where keeps this at zero specificity, so link, icon and row colors win */
 .rab-n :where(button) { font: inherit; color: inherit; }
-.rab-n :where(button, a, [role="separator"], input, select, textarea):focus-visible {
+.rab-n :where(button, a, [role="separator"], input, select, textarea, .rab-n-tip-target):focus-visible {
   outline: 2px solid var(--rab-focus);
   outline-offset: 2px;
 }
@@ -407,7 +408,7 @@
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--rab-focus) 45%, transparent),
     var(--rab-shadow-overlay);
 }
-.rab-n-brand-wrap.pinned .rab-n-about { user-select: text; }
+.rab-n-brand-wrap.pinned .rab-n-about, .rab-n-tip-wrap.pinned > .rab-n-tip { user-select: text; }
 .rab-n-pin-hint {
   display: flex;
   align-items: center;
@@ -428,15 +429,12 @@
   color: var(--rab-subtle);
 }
 
-/* The tooltip about the project, below the brand, after a short rest of the pointer (or keyboard focus) */
-.rab-n-about {
+/* The rich tooltips (useTip): the about below the brand and RichTip, after a short rest of the pointer or on keyboard
+   focus; pinned with Alt+P, hidden with Escape */
+.rab-n-about, .rab-n-tip {
   position: absolute;
-  top: calc(100% + 9px);
-  left: -4px;
   z-index: 60;
-  width: 360px;
   max-width: calc(100vw - 32px);
-  padding: 12px 14px 10px;
   border-radius: var(--rab-radius-md);
   border: 1px solid var(--rab-border);
   background: var(--ds-surface-overlay, var(--rab-raised));
@@ -450,7 +448,8 @@
   transform: translateY(-3px);
   transition: opacity 110ms ease, transform 110ms ease, visibility 0s linear 110ms;
 }
-.rab-n-about::before {
+.rab-n-about { top: calc(100% + 9px); left: -4px; width: 360px; padding: 12px 14px 10px; }
+.rab-n-about::before, .rab-n-tip::before {
   content: '';
   position: absolute;
   inset: -1px -1px auto;
@@ -458,14 +457,15 @@
   border-radius: var(--rab-radius-md) var(--rab-radius-md) 0 0;
   background: var(--rab-grad-accent);
 }
-.rab-n-brand-wrap:hover .rab-n-about, .rab-n-brand:focus-visible + .rab-n-about {
+.rab-n-brand-wrap:hover .rab-n-about, .rab-n-brand:focus-visible + .rab-n-about,
+.rab-n-tip-wrap:hover > .rab-n-tip, .rab-n-tip-wrap:has(:focus-visible) > .rab-n-tip {
   visibility: visible;
   opacity: 1;
   transform: none;
   transition: opacity 140ms ease 350ms, transform 140ms ease 350ms, visibility 0s linear 350ms;
 }
 /* pinned: at once, with the ring of a pinned card; dismissed with Escape: hidden even under the pointer */
-.rab-n-brand-wrap.pinned .rab-n-about {
+.rab-n-brand-wrap.pinned .rab-n-about, .rab-n-tip-wrap.pinned > .rab-n-tip {
   visibility: visible;
   opacity: 1;
   transform: none;
@@ -473,7 +473,7 @@
   transition: none;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--rab-focus) 45%, transparent), var(--rab-shadow-overlay);
 }
-.rab-n-brand-wrap.dismissed .rab-n-about { visibility: hidden; opacity: 0; transition: none; }
+.rab-n-brand-wrap.dismissed .rab-n-about, .rab-n-tip-wrap.dismissed > .rab-n-tip { visibility: hidden; opacity: 0; transition: none; }
 .rab-n-about-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .rab-n-about-mark {
   display: inline-flex;
@@ -1080,7 +1080,7 @@
 .rab-n .rab-n-module:hover { background: var(--rab-hover); }
 .rab-n-module.failed .rab-n-count { color: var(--rab-danger); font-weight: 500; }
 /* left out on purpose (excluded, REST v1): a quiet note, not an error */
-.rab-n-module.skipped .rab-n-count { color: var(--rab-subtlest); font-weight: 400; }
+.rab-n-module:is(.skipped, .waiting) .rab-n-count { color: var(--rab-subtlest); font-weight: 400; }
 .rab-n-module.pending { opacity: 0.65; }
 .rab-n-module-path { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .rab-n-chevron { width: 12px; flex: none; display: inline-flex; justify-content: center; color: var(--rab-subtlest); }
@@ -2011,7 +2011,7 @@
   }
   .rab-n .rab-n-welcome-card:hover { transform: none; }
   .rab-n .rab-n-card, .rab-n .rab-n-check { animation: none; }
-  .rab-n .rab-n-about { transform: none; }
+  .rab-n :is(.rab-n-about, .rab-n-tip) { transform: none; }
   .rab-n .rab-n-spinner { animation-duration: 1.8s; }
 }
 
@@ -2078,45 +2078,30 @@ body.rab-next-page #footer {
 /* the scroll views that take the keyboard (tabIndex 0) show where the focus is */
 .rab-n .rab-n-vlist:focus-visible, .rab-n .rab-n-headers:focus-visible { outline: 2px solid var(--rab-focus); outline-offset: -2px; }
 
-/* A module waiting to start (Confluence starts a module's REST API on its first request): quiet, a click starts it */
-.rab-n-module.waiting .rab-n-count, .rab-n-module.starting .rab-n-count { color: var(--rab-subtlest); font-weight: 400; }
-.rab-n-module.waiting:hover .rab-n-count { color: var(--rab-link); }
+/* A module waiting to start (core/explain.ts, not-started): its action after a dot (read as a comma) */
+.rab-n-count-sep { margin: 0 5px; }
+.rab-n-count-action { color: var(--rab-link); font-weight: 500; }
 .rab-n-module.starting .rab-n-count { display: inline-flex; align-items: center; gap: 5px; }
-/* the hover card's reason: its code, what it means, the details */
-.rab-n-card-strong { font-weight: 600; color: var(--rab-text); }
-.rab-n-card-explain { margin-top: 3px; color: var(--rab-subtle); line-height: 1.45; }
+/* the hover card's reason: its code, what it means, the last start */
+.rab-n-card-strong { font-weight: 600; }
+.rab-n-card-explain { margin-top: 3px; color: var(--rab-subtle); }
 
-/* A small rich tooltip (RichTip): below what it wraps, after a short rest of the pointer, or on keyboard focus */
+/* RichTip: a small tooltip below what it wraps (the box and its states are the about's, above) */
 .rab-n-tip-wrap { position: relative; display: inline-flex; }
+.rab-n-tip-target { display: inline-flex; border-radius: 3px; }
 .rab-n-tip {
-  position: absolute;
   top: calc(100% + 7px);
   left: 0;
-  z-index: 50;
   display: flex;
   flex-direction: column;
   gap: 4px;
   width: max-content;
-  max-width: 340px;
-  padding: 9px 11px;
-  border-radius: var(--rab-radius-md);
-  border: 1px solid var(--rab-border);
-  background: var(--rab-raised);
+  max-width: min(340px, calc(100vw - 32px));
+  padding: 10px 11px 8px;
   color: var(--rab-subtle);
-  box-shadow: var(--rab-shadow-overlay);
-  font: 400 12.5px/1.45 var(--ds-font-family-body, inherit);
+  font-weight: 400;
   white-space: normal;
   text-align: left;
-  visibility: hidden;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 120ms ease, visibility 0s linear 120ms;
 }
-.rab-n-tip-wrap:hover > .rab-n-tip, .rab-n-tip-wrap:focus-within > .rab-n-tip {
-  visibility: visible;
-  opacity: 1;
-  transition: opacity 120ms ease 300ms, visibility 0s linear 300ms;
-}
-.rab-n-tip-wrap.dismissed > .rab-n-tip { visibility: hidden; opacity: 0; transition: none; }
 .rab-n-tip-title { font-weight: 700; color: var(--rab-text); }
-.rab-n-status-code:focus-visible { outline: 2px solid var(--rab-focus); outline-offset: 2px; }
+.rab-n-tip .rab-n-pin-hint { margin-top: 2px; }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useId, useRef, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import { pathParts } from '../core/pathparts';
 import type { Check } from '../core/validate';
@@ -88,31 +88,55 @@ export function usePin(shown: () => boolean, box: { current: HTMLElement | null 
 }
 
 /**
- * A small rich tooltip on hover or keyboard focus of what it wraps (give that a tabIndex and aria-describedby={id}).
- * Escape hides it, and only that, until the pointer or the focus leaves.
+ * How a rich tooltip behaves (the header's about, RichTip): CSS shows it after a short rest of the pointer on `wrap`
+ * or on keyboard focus (:focus-visible) inside it; Escape hides it, and only that, until the pointer or the focus
+ * comes back; Alt+P pins it (usePin). `state` is the class to add to `wrap`: " pinned", " dismissed" or "".
  */
-export function RichTip({ id, tip, children, testId }: { id: string; tip: ComponentChildren; children: ComponentChildren; testId?: string }) {
+export function useTip(wrap: { current: HTMLElement | null }) {
   const [dismissed, setDismissed] = useState(false);
-  const [hovered, setHovered] = useState(false);
-  const wrap = useRef<HTMLSpanElement>(null);
+  const dismissedRef = useRef(false);
+  dismissedRef.current = dismissed;
+  // showing now: hovered or focused, not behind a box on the whole screen, and past its delay (the tooltip visible)
+  const shown = () => {
+    const el = wrap.current;
+    const tip = el?.querySelector('[role="tooltip"]');
+    return !!el && !dismissedRef.current && !el.closest('[inert]') && (el.matches(':hover') || !!el.querySelector(':focus-visible'))
+      && (!tip || getComputedStyle(tip).visibility !== 'hidden');
+  };
+  const pinned = usePin(shown, wrap, () => setDismissed(true));
+  const pinnedRef = useRef(false);
+  pinnedRef.current = pinned;
   useEffect(() => {
-    if (dismissed) return;
+    // in the capture phase, and only when it hides the tooltip: then it is that Escape's only effect; a pinned one is
+    // usePin's to let go
     const onKey = (e: KeyboardEvent) => {
-      const el = wrap.current;
-      if (e.key !== 'Escape' || !el || !(hovered || el.contains(document.activeElement))) return;
+      if (e.key !== 'Escape' || pinnedRef.current || !shown()) return;
       e.preventDefault();
-      e.stopImmediatePropagation(); // it closes the tooltip, nothing behind it
+      e.stopImmediatePropagation();
       setDismissed(true);
     };
     document.addEventListener('keydown', onKey, true);
     return () => document.removeEventListener('keydown', onKey, true);
-  }, [dismissed, hovered]);
+  }, []);
+  const back = () => setDismissed(false);
+  return { pinned, state: pinned ? ' pinned' : dismissed ? ' dismissed' : '', onMouseEnter: back, onFocusIn: back };
+}
+
+/**
+ * A small rich tooltip below `children`, which it makes focusable and described by it. It lives outside any live
+ * region of the caller (it is a sibling of what it wraps, inside its own span).
+ */
+export function RichTip({ tip, children, testId }: { tip: ComponentChildren; children: ComponentChildren; testId?: string }) {
+  const id = useId();
+  const wrap = useRef<HTMLSpanElement>(null);
+  const { pinned, state, onMouseEnter, onFocusIn } = useTip(wrap);
   return (
-    <span ref={wrap} class={'rab-n-tip-wrap' + (dismissed ? ' dismissed' : '')}
-          onMouseEnter={() => setHovered(true)} onMouseLeave={() => { setHovered(false); setDismissed(false); }}
-          onFocusOut={() => setDismissed(false)}>
-      {children}
-      <span id={id} class="rab-n-tip" role="tooltip" data-testid={testId}>{tip}</span>
+    <span ref={wrap} class={'rab-n-tip-wrap' + state} onMouseEnter={onMouseEnter} onFocusIn={onFocusIn}>
+      <span class="rab-n-tip-target" tabIndex={0} aria-describedby={id}>{children}</span>
+      <span id={id} class="rab-n-tip" role="tooltip" data-testid={testId}>
+        {tip}
+        <PinHint pinned={pinned} />
+      </span>
     </span>
   );
 }

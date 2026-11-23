@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CatalogStore, isLoginAnswer, RETRY_DELAYS_MS, type FetchFn } from './catalog';
+import { CatalogStore, isLoginAnswer, RETRY_DELAYS_MS, START_WAIT_MS, StartStopped, type FetchFn } from './catalog';
 import { index, module, summary } from './fixtures';
-import type { Index, Summary } from './types';
+import type { Index, Module, Summary } from './types';
 
 const json = (body: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(body), { status }));
 
@@ -22,44 +22,137 @@ function server(handlers: { summary: () => Summary; index: (hash: string) => Ind
 const mods = [module('a', 'api/1')];
 
 describe('CatalogStore.startModule', () => {
-  it('sends a GET to the module, asks the catalog to read it again, then reloads', async () => {
+  const waiting = module('p:m', '/conf/1.0/', { state: 'failed', reason: 'not-started' });
+  const started = module('p:m', 'conf/1.0', { opCount: 3 });
+  // a product whose /catalog/started answers `answer`; the summary shows `after` once the start was asked for
+  function product(answer: () => Response, after: Module[] = [started]) {
     const calls: [string, string][] = [];
+    let asked = false;
     const fetchFn: FetchFn = (url, init) => {
       calls.push([init?.method ?? 'GET', url]);
       if (url.endsWith('/rest-api-browser-start')) return json({}, 404);
-      if (url.includes('/catalog/started')) return Promise.resolve(new Response(null, { status: 202 }));
-      if (/\/index\//.test(url)) return json(index([], 'h2'));
-      return json(summary(mods, { hash: 'h2' }));
+      if (url.includes('/catalog/started')) {
+        asked = true;
+        return Promise.resolve(answer());
+      }
+      const mods = asked ? after : [waiting];
+      const hash = asked ? 'h2' : 'h1';
+      if (/\/index\//.test(url)) return json(index([], hash));
+      return json(summary(mods, { hash }));
     };
+    return { calls, fetchFn };
+  }
+  const status = (code: number, body?: unknown) => () =>
+    new Response(body === undefined ? null : JSON.stringify(body), { status: code });
+
+  it('sends an OPTIONS request to the module, asks the server to read it, then loads the catalog with it', async () => {
+    const { calls, fetchFn } = product(status(200, { state: 'ok', reason: null, opCount: 3 }));
     const store = new CatalogStore('http://host/wiki', fetchFn);
-    await store.startModule(module('p:m', '/conf/1.0/', { state: 'failed', reason: 'not-started' }));
+    await store.startModule(waiting);
     expect(calls.slice(0, 3)).toEqual([
-      ['GET', 'http://host/wiki/rest/conf/1.0/rest-api-browser-start'],
+      ['OPTIONS', 'http://host/wiki/rest/conf/1.0/rest-api-browser-start'],
       ['POST', 'http://host/wiki/rest/restbrowser/1/catalog/started?module=p%3Am'],
       ['GET', 'http://host/wiki/rest/restbrowser/1/catalog'],
     ]);
+    expect(store.summary?.modules[0].state).toBe('ok');
+    expect(store.starting.size).toBe(0);
+    expect(store.startFailures.size).toBe(0);
     store.stop();
   });
 
-  it('says so when the module did not start on that request', async () => {
-    const waiting = module('p:m', 'token-auth/x', { state: 'failed', reason: 'not-started' });
-    const fetchFn: FetchFn = (url) => {
-      if (url.includes('/catalog/started')) return Promise.resolve(new Response(null, { status: 202 }));
-      if (/\/index\//.test(url)) return json(index([], 'h3'));
-      if (url.endsWith('/rest-api-browser-start')) return json({}, 401);
-      return json(summary([waiting], { hash: 'h3' }));
-    };
-    const store = new CatalogStore('', fetchFn);
-    await expect(store.startModule(waiting)).rejects.toThrow(/did not start/);
+  it('encodes the module path, and sends nothing to a path that would leave it', async () => {
+    const { calls, fetchFn } = product(status(204));
+    await new CatalogStore('', fetchFn).startModule(module('p:x', 'a b/1.0', { state: 'failed', reason: 'not-started' }));
+    expect(calls[0]).toEqual(['OPTIONS', '/rest/a%20b/1.0/rest-api-browser-start']);
+    const other = product(status(204));
+    await new CatalogStore('', other.fetchFn).startModule(module('p:y', 'x/../admin', { state: 'failed', reason: 'not-started' }));
+    expect(other.calls[0][0]).toBe('POST');
+  });
+
+  it('runs one start per module: a second call gets the first one\'s promise', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const { calls, fetchFn } = product(status(200, { state: 'ok', opCount: 3 }));
+    const store = new CatalogStore('', (url, init) => (url.includes('/catalog/started') ? gate.then(() => fetchFn(url, init)) : fetchFn(url, init)));
+    const changes: string[][] = [];
+    store.onChange(() => changes.push([...store.starting]));
+    const first = store.startModule(waiting);
+    expect(store.startModule(waiting)).toBe(first);
+    expect(store.starting.has('p:m')).toBe(true);
+    release();
+    await first;
+    expect(calls.filter(([m, u]) => m === 'POST' && u.includes('/catalog/started'))).toHaveLength(1);
+    expect(changes[0]).toEqual(['p:m']);
+    expect(changes.at(-1)).toEqual([]);
     store.stop();
   });
 
-  it('says why when the server refuses', async () => {
-    const answer = (status: number): FetchFn => (url) =>
-      url.includes('/catalog/started') ? Promise.resolve(new Response(null, { status })) : json({}, 404);
-    await expect(new CatalogStore('', answer(409)).startModule(module('a', 'api/1'))).rejects.toThrow(/another reason/);
-    await expect(new CatalogStore('', answer(401)).startModule(module('a', 'api/1'))).rejects.toThrow(/session has expired/);
-    await expect(new CatalogStore('', answer(500)).startModule(module('a', 'api/1'))).rejects.toThrow(/HTTP 500/);
+  it('tells why it did not start, and keeps it for the row', async () => {
+    const store = new CatalogStore('', product(status(409, { error: 'still-not-started' })).fetchFn);
+    await expect(store.startModule(waiting)).rejects.toThrow(/did not start on that request/);
+    expect(store.startFailures.get('p:m')).toMatchObject({ notStarted: true, message: expect.stringMatching(/did not start/) });
+    expect(store.starting.size).toBe(0);
+  });
+
+  it('tells a module that started but failed, one that is gone and one that failed for another reason apart', async () => {
+    const read = product(status(200, { state: 'failed', reason: 'model-unavailable', opCount: 0 }));
+    await expect(new CatalogStore('', read.fetchFn).startModule(waiting)).rejects.toThrow(/started, but could not be read \(model-unavailable\)/);
+    await expect(new CatalogStore('', product(status(404)).fetchFn).startModule(waiting)).rejects.toThrow(/no longer on this instance/);
+    await expect(new CatalogStore('', product(status(409, { error: 'not-waiting-to-start' })).fetchFn).startModule(waiting))
+      .rejects.toThrow(/not waiting to start/);
+    const failing = new CatalogStore('', product(status(500)).fetchFn);
+    await expect(failing.startModule(waiting)).rejects.toThrow(/HTTP 500/);
+    expect(failing.startFailures.get('p:m')).toMatchObject({ notStarted: false }); // "start failed", not "did not start"
+  });
+
+  describe('with a read the server queued (202)', () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    it('follows that module, not the whole catalog, until it is read', async () => {
+      let polls = 0;
+      const queued = product(status(202), [waiting]);
+      const store = new CatalogStore('', (url, init) => {
+        // the catalog is complete all along; the module is read on the third look
+        if (url.endsWith('/catalog') && polls++ >= 3) return json(summary([started], { hash: 'h3' }));
+        if (url.endsWith('/index/h3')) return json(index([], 'h3'));
+        return queued.fetchFn(url, init);
+      });
+      const done = store.startModule(waiting);
+      await vi.advanceTimersByTimeAsync(5_000);
+      await done;
+      expect(store.summary?.modules[0].state).toBe('ok');
+      store.stop();
+    });
+
+    it('gives up after START_WAIT_MS of real time, saying it is still being read', async () => {
+      const store = new CatalogStore('', product(status(202), [waiting]).fetchFn);
+      const done = store.startModule(waiting);
+      const expectation = expect(done).rejects.toThrow(/still being read/);
+      await vi.advanceTimersByTimeAsync(START_WAIT_MS + 2_000);
+      await expectation;
+      store.stop();
+    });
+  });
+
+  it('lets an expired session expire the store, and is not kept as the module\'s failure', async () => {
+    const store = new CatalogStore('', product(status(401)).fetchFn);
+    await expect(store.startModule(waiting)).rejects.toThrow(/session has expired/);
+    expect(store.error?.name).toBe('SessionExpired');
+    expect(store.startFailures.size).toBe(0);
+  });
+
+  it('ends quietly when the store stops meanwhile, without starting it again', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const { calls, fetchFn } = product(status(200, { state: 'ok', opCount: 3 }));
+    const store = new CatalogStore('', (url, init) => (url.includes('/catalog/started') ? gate.then(() => fetchFn(url, init)) : fetchFn(url, init)));
+    const done = store.startModule(waiting);
+    store.stop();
+    release();
+    await expect(done).rejects.toBeInstanceOf(StartStopped);
+    expect(calls.some(([, u]) => u.endsWith('/catalog'))).toBe(false); // no load(), which would start the store again
+    expect(store.startFailures.size).toBe(0);
   });
 });
 

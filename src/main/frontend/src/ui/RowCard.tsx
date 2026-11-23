@@ -3,7 +3,7 @@ import type { ComponentChildren } from 'preact';
 import type { Module, Operation } from '../core/types';
 import { MethodBadge, PathText, PinHint } from './bits';
 import { accessFact, moduleFact, originLabel, paramSummary, sourceLabel, stabilityLabel, type Fact } from './facts';
-import { reasonInfo } from '../core/explain';
+import { KIND_TEXT, moduleReason } from '../core/explain';
 
 export type CardTarget = { kind: 'op'; op: Operation; module?: Module } | { kind: 'module'; module: Module; count: number };
 
@@ -11,9 +11,9 @@ export type CardTarget = { kind: 'op'; op: Operation; module?: Module } | { kind
  * The hover card of a list row: everything the row's ticks stand for, spelled out, with the app's full name and
  * what else helps to pick an operation. It sits beside the list, aligned with the row, and never takes the pointer.
  */
-export function RowCard({ id, target, left, top, rowHeight, pinned, boxRef }: {
+export function RowCard({ id, target, left, top, rowHeight, pinned, boxRef, startFailure }: {
   id?: string; target: CardTarget; left: number; top: number; rowHeight: number; pinned: boolean;
-  boxRef: { current: HTMLDivElement | null };
+  boxRef: { current: HTMLDivElement | null }; startFailure?: string;
 }) {
   const ref = boxRef;
   // keep the card inside the app: it moves up when it would overflow the bottom and left when it would overflow
@@ -37,7 +37,7 @@ export function RowCard({ id, target, left, top, rowHeight, pinned, boxRef }: {
          style={{ left: left + 'px', top: top + 'px' }}>
       {/* the content scrolls when the card is taller than the app; the card itself keeps its arrow and accent */}
       <div class="rab-n-card-body">
-        {target.kind === 'op' ? <OpFacts op={target.op} m={target.module} /> : <ModuleFacts m={target.module} count={target.count} />}
+        {target.kind === 'op' ? <OpFacts op={target.op} m={target.module} /> : <ModuleFacts m={target.module} count={target.count} startFailure={startFailure} />}
         <PinHint pinned={pinned} />
       </div>
     </div>
@@ -68,9 +68,9 @@ function OpFacts({ op, m }: { op: Operation; m?: Module }) {
   );
 }
 
-function ModuleFacts({ m, count }: { m: Module; count: number }) {
+function ModuleFacts({ m, count, startFailure }: { m: Module; count: number; startFailure?: string }) {
   const source = sourceLabel(m.source);
-  const reason = m.state === 'failed' ? reasonInfo(m.reason) : null;
+  const reason = moduleReason(m);
   return (
     <>
       <div class="rab-n-card-head">
@@ -81,13 +81,13 @@ function ModuleFacts({ m, count }: { m: Module; count: number }) {
         <AppRows m={m} />
         <Row name="Operations">
           {m.state === 'ok' ? (count === m.opCount ? m.opCount.toLocaleString() : `${count.toLocaleString()} of ${m.opCount.toLocaleString()} shown`)
-            : m.state === 'pending' ? 'Being read…' : reason!.kind === 'waiting' ? 'Not started yet on this node'
-            : reason!.kind === 'skipped' ? 'Not described (left out on purpose)' : 'Could not be described'}
+            : reason ? KIND_TEXT[reason.kind].card : 'Being read…'}
         </Row>
         {reason && (
           <Row name="Reason">
-            <span class={reason.kind === 'failed' ? 'rab-n-card-error' : 'rab-n-card-strong'} data-testid="card-reason">{m.reason ?? 'error'}</span>
+            <span class={reason.kind === 'failed' ? 'rab-n-card-error' : 'rab-n-card-strong'}>{reason.code}</span>
             <div class="rab-n-card-explain">{reason.text}</div>
+            {startFailure && <div class="rab-n-card-explain">The last start: {startFailure}.</div>}
             {m.error && <div class="rab-n-card-mono rab-n-card-note">{clip(m.error, 300)}</div>}
           </Row>
         )}

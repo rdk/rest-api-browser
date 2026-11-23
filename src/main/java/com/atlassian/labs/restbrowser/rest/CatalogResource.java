@@ -4,6 +4,7 @@ import com.atlassian.annotations.security.LicensedOnly;
 import com.atlassian.annotations.security.SystemAdminOnly;
 import com.atlassian.labs.restbrowser.catalog.CatalogService;
 import com.atlassian.labs.restbrowser.catalog.CatalogSnapshot;
+import com.atlassian.labs.restbrowser.catalog.JerseyModelSource;
 import com.atlassian.labs.restbrowser.catalog.Model.ModuleEntry;
 import com.atlassian.labs.restbrowser.catalog.Model.State;
 import com.atlassian.labs.restbrowser.catalog.OperationDetails;
@@ -31,8 +32,8 @@ import jakarta.ws.rs.core.StreamingOutput;
  *     <li>{@code GET /catalog/index/{hash}}: every operation, the same for every user, cached forever once
  *     complete;</li>
  *     <li>{@code POST /catalog/refresh}: system administrators rebuild the catalog;</li>
- *     <li>{@code POST /catalog/started?module=id}: a module that had not started is read again, once the page has
- *     started it with a request of its own (any licensed user);</li>
+ *     <li>{@code POST /catalog/started?module=id}: a module that had not started is read again, alone, once the page
+ *     has started it with a request of its own (any licensed user);</li>
  *     <li>{@code GET /catalog/details?op=key}: system administrators see the Java behind one operation (its method
  *     and class, the OSGi bundle, the plugin and the REST module).</li>
  * </ul>
@@ -46,6 +47,8 @@ public class CatalogResource {
 
     static final String JSON = MediaType.APPLICATION_JSON + ";charset=UTF-8";
     static final String IMMUTABLE = "private, max-age=31536000, immutable";
+    /** How long a start waits for its module to be read; a busy build thread answers 202, and the page follows. */
+    static final long STARTED_WAIT_MS = 2_000;
 
     private final CatalogService catalog;
     private final UserManager userManager;
@@ -110,12 +113,10 @@ public class CatalogResource {
             return unauthorized(); // an expired session logs in again; it is not a missing permission
         }
         if (!userManager.isSystemAdmin(user)) {
-            return Response.status(Response.Status.FORBIDDEN).type(JSON).header("Cache-Control", "no-store")
-                    .entity("{\"error\":\"system-admin-only\"}").build();
+            return error(Response.Status.FORBIDDEN, "system-admin-only");
         }
-        if (!"no-check".equals(request.getHeader("X-Atlassian-Token"))) {
-            return Response.status(Response.Status.FORBIDDEN).type(JSON).header("Cache-Control", "no-store")
-                    .entity("{\"error\":\"xsrf-check-failed\"}").build();
+        if (!xsrfHeader(request)) {
+            return error(Response.Status.FORBIDDEN, "xsrf-check-failed");
         }
         catalog.current(request.getServletContext());
         catalog.refresh(module == null || module.isBlank() ? null : module);
@@ -124,13 +125,17 @@ public class CatalogResource {
 
     /**
      * Reads one module again that had not started. Some products (Confluence) start a REST module's Jersey
-     * application on its first request, on each node, so the catalog cannot read it before; the page first sends a
-     * request to the module (it lands on the same node, the session sticks to it), then asks for this. Any licensed
-     * user may ask, for such a module only: it reads that module again and changes nothing else.
+     * application on the first request to it, on each node, so the catalog cannot read it before; the page first sends
+     * a request to the module (it lands on the same node, the session sticks to it), then asks for this. Any licensed
+     * user may ask, for such a module only. The module's application must run now on this node, else nothing happens
+     * (409 still-not-started), so asking again and again costs a lookup; then only that module is read, and the
+     * catalog stays complete.
      * <ul>
-     *     <li>202: the module is read again; the summary shows it once done;</li>
+     *     <li>200: read again, {@code {"state", "reason", "opCount"}} say how;</li>
+     *     <li>202: being read (a build is running, or the module was pending anyway); the summary shows it once done;</li>
      *     <li>204: nothing to do, the module is described already;</li>
-     *     <li>404: no such module; 409: the module failed for another reason, reading it again would not help.</li>
+     *     <li>404: no such module; 409: still not started, or failed for another reason (not-waiting-to-start);</li>
+     *     <li>500: the read failed, or the catalog is shutting down.</li>
      * </ul>
      */
     @POST
@@ -139,34 +144,37 @@ public class CatalogResource {
         if (!allowed(request)) {
             return unauthorized();
         }
-        if (!"no-check".equals(request.getHeader("X-Atlassian-Token"))) {
-            return Response.status(Response.Status.FORBIDDEN).type(JSON).header("Cache-Control", "no-store")
-                    .entity("{\"error\":\"xsrf-check-failed\"}").build();
+        if (!xsrfHeader(request)) {
+            return error(Response.Status.FORBIDDEN, "xsrf-check-failed");
         }
-        CatalogSnapshot snapshot = catalog.current(request.getServletContext());
-        ModuleEntry entry = null;
-        for (ModuleEntry m : snapshot.modules()) {
-            if (m.id().equals(module)) {
-                entry = m;
-            }
-        }
+        ModuleEntry entry = catalog.current(request.getServletContext()).module(module).orElse(null);
         if (entry == null) {
-            return Response.status(Response.Status.NOT_FOUND).type(JSON).header("Cache-Control", "no-store")
-                    .entity("{\"error\":\"unknown-module\"}").build();
+            return error(Response.Status.NOT_FOUND, "unknown-module");
         }
         if (entry.state() == State.ok) {
             return Response.noContent().header("Cache-Control", "no-store").build();
         }
-        if (entry.state() != State.failed || !NOT_STARTED.equals(entry.reason())) {
-            return Response.status(Response.Status.CONFLICT).type(JSON).header("Cache-Control", "no-store")
-                    .entity("{\"error\":\"not-waiting-to-start\"}").build();
+        if (entry.state() == State.pending) {
+            return Response.accepted().header("Cache-Control", "no-store").build();
         }
-        catalog.refresh(module);
-        return Response.accepted().header("Cache-Control", "no-store").build();
+        if (!JerseyModelSource.NOT_STARTED.equals(entry.reason())) {
+            return error(Response.Status.CONFLICT, "not-waiting-to-start");
+        }
+        CatalogService.Started started = catalog.readStarted(module, STARTED_WAIT_MS);
+        return switch (started.outcome()) {
+            case READ -> Response.ok(entryJson(started.entry()), JSON).header("Cache-Control", "no-store").build();
+            case QUEUED -> Response.accepted().header("Cache-Control", "no-store").build();
+            case STILL_NOT_STARTED -> error(Response.Status.CONFLICT, "still-not-started");
+            case UNKNOWN -> error(Response.Status.NOT_FOUND, "unknown-module");
+            case FAILED -> error(Response.Status.INTERNAL_SERVER_ERROR, "read-failed");
+        };
     }
 
-    /** The reason of a module whose Jersey application has not started yet (JerseyModelSource). */
-    static final String NOT_STARTED = "not-started";
+    /** A module's state after a start: the state, its reason code (letters, digits and dashes only) and its operations. */
+    static String entryJson(ModuleEntry e) {
+        String reason = e.reason() == null ? "null" : "\"" + e.reason().replaceAll("[^A-Za-z0-9-]", "") + "\"";
+        return "{\"state\":\"" + e.state().name() + "\",\"reason\":" + reason + ",\"opCount\":" + e.opCount() + "}";
+    }
 
     /**
      * The Java behind one operation. System administrators only: it shows the internals of the product and its
@@ -182,8 +190,7 @@ public class CatalogResource {
             return unauthorized();
         }
         if (!userManager.isSystemAdmin(user)) {
-            return Response.status(Response.Status.FORBIDDEN).type(JSON).header("Cache-Control", "no-store")
-                    .entity("{\"error\":\"system-admin-only\"}").build();
+            return error(Response.Status.FORBIDDEN, "system-admin-only");
         }
         catalog.current(request.getServletContext()); // a module that has not started needs the ServletContext
         OperationDetails.Result result = details.describe(op);
@@ -238,8 +245,18 @@ public class CatalogResource {
         return false;
     }
 
+    /** The X-Atlassian-Token: no-check header that the plugin's writes require (on top of the product's own check). */
+    private static boolean xsrfHeader(HttpServletRequest request) {
+        return "no-check".equals(request.getHeader("X-Atlassian-Token"));
+    }
+
+    /** An error answer: the status, {@code {"error": code}}, never cached. */
+    private static Response error(Response.Status status, String code) {
+        return Response.status(status).type(JSON).header("Cache-Control", "no-store")
+                .entity("{\"error\":\"" + code + "\"}").build();
+    }
+
     private static Response unauthorized() {
-        return Response.status(Response.Status.UNAUTHORIZED).header("Cache-Control", "no-store").type(JSON)
-                .entity("{\"error\":\"login-required\"}").build();
+        return error(Response.Status.UNAUTHORIZED, "login-required");
     }
 }

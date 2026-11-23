@@ -114,6 +114,17 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         await sleep(400);
         const aboutGone = !await b.evaluate(aboutShown);
         c.check('Alt+P pins the tooltip about the project; a click outside hides it', aboutPinned && aboutGone, { aboutPinned, aboutGone });
+        // Escape lets a pinned tooltip go, also with the pointer still on it (useTip leaves that Escape to usePin)
+        await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: brand.x, y: brand.y });
+        await b.waitFor(aboutShown, 3000);
+        await pressAltP();
+        await sleep(200);
+        const pinnedOnIt = await b.evaluate(`!!document.querySelector('.rab-n-brand-wrap.pinned')`);
+        await press('Escape');
+        await sleep(300);
+        const escaped = await b.evaluate(`!document.querySelector('.rab-n-brand-wrap.pinned')`) && !await b.evaluate(aboutShown);
+        await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: brand.x + 700, y: brand.y + 300 });
+        c.check('one Escape lets the pinned tooltip go, with the pointer still on it', pinnedOnIt && escaped, { pinnedOnIt, escaped });
 
         // the page is the app: no product footer, nothing to scroll
         const page = await b.evaluate(`(() => { const shown = sel => { const e = document.querySelector(sel); return e ? getComputedStyle(e).display : 'absent'; };
@@ -122,10 +133,48 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         c.check(`the product's header and footer are hidden and the page does not scroll (${page.overflow} px more)`,
             ['none', 'absent'].includes(page.header) && ['none', 'absent'].includes(page.footer) && page.overflow <= 4, page);
 
+        // a module that has not started yet (Confluence starts a module's REST API on the first request to it): a click
+        // starts it, then the catalog describes it; skipped where every module has started. First, so that on a cold
+        // node the operation the run uses is there
+        const waiting = await b.evaluate(`(async () => { const cat = await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/catalog',
+            { credentials: 'same-origin' })).json();
+            // not the token-auth modules: they start only for requests with their own (OAuth) login
+            const ws = cat.modules.filter(x => x.state === 'failed' && x.reason === 'not-started' && !/^\\/?token-auth\\//.test(x.path));
+            // the module of the operation the run uses, when it waits (a cold Confluence node: api), else any
+            const m = ws.find(x => ${q(P.title)}.startsWith(x.path.replace(/^\\/+|\\/+$/g, '') + '/')) || ws[0];
+            return m ? { id: m.id, path: m.path } : null; })()`);
+        const startWindow = [-1, -1]; // the failed requests while a module starts
+        if (waiting) {
+            await type('[data-testid=search]', '');
+            await sleep(400);
+            const sel = `[data-testid=module][data-id=${q('module:' + waiting.id)}]`;
+            await b.evaluate(`(document.querySelector('.rab-n-vlist').scrollTop = 0, true)`);
+            for (let i = 0; i < 400 && !await b.evaluate(`!!document.querySelector(${q(sel)})`); i++) {
+                await b.evaluate(`(document.querySelector('.rab-n-vlist').scrollTop += 400, true)`);
+                await sleep(40);
+            }
+            const before = await b.evaluate(`(() => { const r = document.querySelector(${q(sel)}); if (!r) return null; r.scrollIntoView({ block: 'center' });
+                return r.textContent; })()`);
+            startWindow[0] = b.failedRequests.length;
+            if (before) {
+                await sleep(200);
+                const at = await b.evaluate(`(() => { const b = document.querySelector(${q(sel)}).getBoundingClientRect(); return { x: b.left + 80, y: b.top + b.height / 2 }; })()`);
+                await clickAt(at.x, at.y);
+            }
+            const started = before && await b.waitFor(`(() => { const r = document.querySelector(${q(sel)}); return !!r && r.getAttribute('aria-expanded') !== null; })()`, 45000);
+            startWindow[1] = b.failedRequests.length;
+            const after = await text(sel);
+            c.check(`a module that has not started yet starts with a click and is described (${waiting.path})`,
+                !!before && /not started/.test(before) && started, { waiting, before, after });
+        } else {
+            console.log('SKIP no module is waiting to start here that a plain request can start');
+        }
+
         // search: a flat, ranked list
         const searchStart = Date.now();
         await type('[data-testid=search]', P.search);
-        const found = await b.waitFor(`!!document.querySelector('[data-testid=op][data-path=${q(P.title)}]')`, 5000);
+        // the row as a search result (its words marked): an unfolded module shows the same row before the search applies
+        const found = await b.waitFor(`!!document.querySelector('[data-testid=op][data-path=${q(P.title)}] .rab-n-pp-hit')`, 5000);
         c.check(`searching "${P.search}" lists ${P.title}`, found, await b.evaluate(
             `[...document.querySelectorAll('[data-testid=op]')].slice(0, 5).map(e => e.dataset.path)`));
         const marked = await b.evaluate(`[...document.querySelectorAll('[data-testid=op][data-path=${q(P.title)}] .rab-n-pp-hit')].map(e => e.textContent)`);
@@ -329,18 +378,26 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
                 const st = await b.waitFor(`/\\d{3}/.test((document.querySelector('[data-testid=response-status]') || {}).textContent || '')`, 20000);
                 c.check('the GET with the odd value gets an answer', st,
                     (await text('[data-testid=response-status]')).trim() || (await text('.rab-n-response')).slice(0, 200));
-                // the status code's rich tooltip: on keyboard focus, what the code means; Escape hides it
-                await b.evaluate(`document.querySelector('[data-testid=response-status]').focus()`);
-                await sleep(500);
+                // the status code's rich tooltip: after a rest of the pointer, what the code means (outside the status
+                // line's live region); Escape hides it
+                const chip = await b.evaluate(`(() => { const r = document.querySelector('[data-testid=response-status]').getBoundingClientRect();
+                    return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+                // from elsewhere, so the pointer enters it (that also brings back a tooltip hidden with Escape before)
+                await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 });
+                await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: chip.x, y: chip.y });
+                await b.waitFor(`getComputedStyle(document.querySelector('[data-testid=status-tip]')).visibility === 'visible'`, 3000);
                 const tipOf = () => b.evaluate(`(() => { const t = document.querySelector('[data-testid=status-tip]');
-                    return t ? { shown: getComputedStyle(t).visibility === 'visible', text: t.textContent.slice(0, 120) } : null; })()`);
+                    return t ? { shown: getComputedStyle(t).visibility === 'visible', live: !!t.closest('[role=status], [aria-live]'),
+                        wrap: t.parentElement.className, text: t.textContent.slice(0, 120) } : null; })()`);
                 const tip = await tipOf();
                 await press('Escape');
                 await sleep(200);
                 const tipAfter = await tipOf();
+                await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 });
                 const code = (await text('[data-testid=response-status]')).trim().split(' ')[0];
-                c.check('the status code has a rich tooltip that explains it, and Escape hides it',
-                    !!tip && tip.shown && tip.text.startsWith(code) && tip.text.length > code.length + 20 && !tipAfter.shown, { tip, tipAfter });
+                c.check('the status code has a rich tooltip that explains it, outside the live region, and Escape hides it',
+                    !!tip && tip.shown && !tip.live && tip.text.startsWith(code) && tip.text.length > code.length + 20 && !tipAfter.shown,
+                    { tip, tipAfter });
             }
             // undo, redo and reset: the steps are the path value, then the query value (when the form has one)
             const val = n => b.evaluate(`(document.querySelector('input[name=${n}]') || {}).value`);
@@ -620,45 +677,13 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         const odd = await b.waitFor(`!!document.querySelector('[data-testid=search]') && !!document.querySelector('[data-testid=operation]')`, 60000);
         c.check('a link with parameters named toString, constructor, __proto__ still opens the page and the operation', odd);
 
-        // a module that has not started yet (Confluence starts a module's REST API on its first request): a click starts
-        // it, then the catalog describes it; skipped where every module has started
-        const waiting = await b.evaluate(`(async () => { const cat = await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/catalog',
-            { credentials: 'same-origin' })).json();
-            // not the token-auth modules: they start only for requests with their own (OAuth) login
-            const m = cat.modules.find(x => x.state === 'failed' && x.reason === 'not-started' && !/^\\/?token-auth\\//.test(x.path));
-            return m ? { id: m.id, path: m.path } : null; })()`);
-        if (waiting) {
-            await type('[data-testid=search]', '');
-            await sleep(400);
-            const sel = `[data-testid=module][data-id=${q('module:' + waiting.id)}]`;
-            await b.evaluate(`(document.querySelector('.rab-n-vlist').scrollTop = 0, true)`);
-            for (let i = 0; i < 400 && !await b.evaluate(`!!document.querySelector(${q(sel)})`); i++) {
-                await b.evaluate(`(document.querySelector('.rab-n-vlist').scrollTop += 400, true)`);
-                await sleep(40);
-            }
-            const before = await b.evaluate(`(() => { const r = document.querySelector(${q(sel)}); if (!r) return null; r.scrollIntoView({ block: 'center' });
-                const b = r.getBoundingClientRect(); return { x: b.left + 80, y: b.top + b.height / 2, text: r.textContent }; })()`);
-            if (before) {
-                await sleep(200);
-                const at = await b.evaluate(`(() => { const b = document.querySelector(${q(sel)}).getBoundingClientRect(); return { x: b.left + 80, y: b.top + b.height / 2 }; })()`);
-                await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y });
-                await b.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', clickCount: 1 });
-                await b.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button: 'left', clickCount: 1 });
-            }
-            const started = before && await b.waitFor(`(() => { const r = document.querySelector(${q(sel)}); return !!r && r.getAttribute('aria-expanded') !== null; })()`, 45000);
-            const after = await b.evaluate(`(() => { const r = document.querySelector(${q(sel)}); return r ? r.textContent : null; })()`);
-            c.check(`a module that has not started yet starts with a click and is described (${waiting.path})`,
-                !!before && /not started/.test(before.text) && started, { waiting, before: before && before.text, after });
-        } else {
-            console.log('SKIP no module is waiting to start here that a plain request can start');
-        }
-
         // errors
         const own = b.exceptions.filter(e => /next\.js|rest-api-browser|restbrowser/i.test(e));
         c.check('no JavaScript exception from the new UI', own.length === 0, own);
-        // not the 404 asked on purpose, nor an index the catalog replaced meanwhile (the store asks again, by design)
-        const ownFailed = b.failedRequests.filter(u => /restbrowser|rest-api-browser/i.test(u) && !/op=no\.such%3Amodule/.test(u)
-            && !/^404 .*\/catalog\/index\//.test(u) && !/rest-api-browser-start/.test(u));
+        // not the 404s asked on purpose (a link to no such module, the request that starts a module), nor, while a
+        // module starts, an index the catalog replaced meanwhile (the store asks again, by design)
+        const ownFailed = b.failedRequests.filter((u, i) => /restbrowser|rest-api-browser/i.test(u) && !/op=no\.such%3Amodule/.test(u)
+            && !/rest-api-browser-start/.test(u) && !(i >= startWindow[0] && i < startWindow[1] && /^404 .*\/catalog\/index\//.test(u)));
         c.check('no failed request for the plugin\'s own resources', ownFailed.length === 0, ownFailed.slice(0, 5));
         b.failedRequests.filter(u => !ownFailed.includes(u) && !/no%20such/.test(u)).forEach(u => console.log('WARN failed request: ' + u));
         console.log(`Screenshots: ${SHOTS}`);

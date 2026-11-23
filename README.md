@@ -80,6 +80,18 @@ that prefill a request without sending it. System administrators also get a **Ja
 that handles it and its class (annotations included), the OSGi bundle and its package wiring, the plugin and the REST
 module (`/rest/restbrowser/1/catalog/details`). Plan and status: [docs/NEW-UI-PLAN.md](docs/NEW-UI-PLAN.md).
 
+**Modules that have not started.** Confluence starts a REST module only on the first request to it, on each node of a
+cluster, so right after a node starts most of its modules cannot be read yet, Confluence's own `/rest/api` included.
+The list shows them as *not started · start*. Selecting one sends an OPTIONS request to a path the module does not
+have, which starts the module on that node (Jersey usually answers it with a 404; the request passes the module's
+filters like any other). The plugin then checks that the module runs and reads that module alone, without rebuilding
+the catalog (`POST /rest/restbrowser/1/catalog/started`). A few modules start only for their own kind of login (OAuth
+tokens); they show *did not start*. On Jira the catalog can start a module itself, through the product's servlet module
+manager, so this does not come up there.
+
+Hover a module or an operation for a card that explains its marks and, for a module that could not be read, the
+reason; hover the response's status code for what it means and what to try.
+
 ## Open work
 
 [TODO.md](TODO.md) is the short list of open work; each item has its own file in [docs/todo/](docs/todo/), and

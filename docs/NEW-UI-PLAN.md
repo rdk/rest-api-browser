@@ -127,6 +127,9 @@ GET  /catalog                        small, per user, ETag = catalog hash (304 w
                  plugin{key, name, version (admins only)}, error (admins only) }] }
 GET  /catalog/index/{hash}           every operation, compact, user-independent
 POST /catalog/refresh[?module=]      sysadmin, XSRF-checked: rebuild now
+POST /catalog/started?module=        licensed, XSRF-checked: read one module again that a request has just started
+                                     (Confluence starts modules lazily); 200 {state,reason,opCount}, 202 queued,
+                                     204 already read, 404, 409 still-not-started | not-waiting-to-start
 ```
 
 **Caching of `index/{hash}`**:

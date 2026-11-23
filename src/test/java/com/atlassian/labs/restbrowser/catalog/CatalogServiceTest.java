@@ -55,6 +55,7 @@ public class CatalogServiceTest {
         final Map<String, SpecException> failures = new HashMap<>();
         final List<String> noSource = new ArrayList<>();
         volatile CountDownLatch gate;
+        volatile Runnable duringDescribe;
 
         @Override
         public String id() {
@@ -64,6 +65,10 @@ public class CatalogServiceTest {
         @Override
         public Optional<ModuleSpec> describe(RestModule module) throws SpecException {
             calls.computeIfAbsent(module.id(), k -> new AtomicInteger()).incrementAndGet();
+            Runnable during = duringDescribe;
+            if (during != null) {
+                during.run();
+            }
             CountDownLatch g = gate;
             if (g != null) {
                 try {
@@ -116,6 +121,98 @@ public class CatalogServiceTest {
     @After
     public void tearDown() {
         service.destroy();
+    }
+
+    @Test
+    public void readStartedReadsThatModuleAloneAndKeepsTheCatalogComplete() throws Exception {
+        source.failures.put("b", new SpecSource.SpecException(JerseyModelSource.NOT_STARTED, "not started", null));
+        CatalogSnapshot before = completeSnapshot();
+        assertEquals(JerseyModelSource.NOT_STARTED, entry(before, "b").reason());
+        int aCalls = source.calls.get("a").get();
+        source.failures.remove("b"); // a request started it
+        CatalogService.Started started = service.readStarted("b", 10_000);
+        assertEquals(CatalogService.StartOutcome.READ, started.outcome());
+        assertEquals(Model.State.ok, started.entry().state());
+        CatalogSnapshot after = service.current(null);
+        assertTrue(after.complete());
+        assertEquals(Model.State.ok, entry(after, "b").state());
+        assertEquals(aCalls, source.calls.get("a").get()); // nothing else was read again
+        assertEquals(CatalogService.StartOutcome.UNKNOWN, service.readStarted("no-such", 1_000).outcome());
+    }
+
+    @Test
+    public void aSlowReadOfAStartedModuleIsQueuedPublishedOnceDoneAndNotReused() throws Exception {
+        source.failures.put("b", new SpecSource.SpecException(JerseyModelSource.NOT_STARTED, "not started", null));
+        completeSnapshot();
+        source.failures.remove("b");
+        source.gate = new CountDownLatch(1); // the read hangs
+        assertEquals(CatalogService.StartOutcome.QUEUED, service.readStarted("b", 100).outcome());
+        assertEquals(JerseyModelSource.NOT_STARTED, entry(service.current(null), "b").reason());
+        source.gate.countDown();
+        source.gate = null;
+        await(() -> entry(service.current(null), "b").state() == Model.State.ok && service.current(null).complete());
+        // not started again (a rebuild met it so): a new start reads it again, the earlier read is not reused
+        source.failures.put("b", new SpecSource.SpecException(JerseyModelSource.NOT_STARTED, "not started", null));
+        service.refresh("b");
+        await(() -> JerseyModelSource.NOT_STARTED.equals(entry(service.current(null), "b").reason()) && service.current(null).complete());
+        source.failures.remove("b");
+        int calls = source.count("b");
+        assertEquals(Model.State.ok, service.readStarted("b", 10_000).entry().state());
+        assertEquals(calls + 1, source.count("b"));
+    }
+
+    @Test
+    public void aSecondReadOfAModuleReadMeanwhileReadsNothing() throws Exception {
+        source.failures.put("b", new SpecSource.SpecException(JerseyModelSource.NOT_STARTED, "not started", null));
+        completeSnapshot();
+        source.failures.remove("b");
+        assertEquals(CatalogService.StartOutcome.READ, service.readStarted("b", 10_000).outcome());
+        int calls = source.count("b");
+        CatalogService.Started again = service.readStarted("b", 10_000); // a request that checked before the publish
+        assertEquals(Model.State.ok, again.entry().state());
+        assertEquals(calls, source.count("b"));
+    }
+
+    @Test
+    public void aModuleWhoseApplicationStillDoesNotRunIsNotRead() throws Exception {
+        JerseyModelSource notRunning = new JerseyModelSource(() -> null, () -> null) {
+            @Override
+            public boolean started(RestModule module) {
+                return false;
+            }
+
+            @Override
+            public Optional<ModuleSpec> describe(RestModule module) {
+                return Optional.empty(); // the fake source describes
+            }
+        };
+        service.destroy();
+        source.failures.put("b", new SpecSource.SpecException(JerseyModelSource.NOT_STARTED, "not started", null));
+        service = new CatalogService(discovery, List.of(notRunning, source), new ProductAdapter("jira", () -> null), null,
+                () -> "1.0.0");
+        service.afterPropertiesSet();
+        service.current(null);
+        completeSnapshot();
+        source.failures.remove("b");
+        int calls = source.count("b");
+        assertEquals(CatalogService.StartOutcome.STILL_NOT_STARTED, service.readStarted("b", 10_000).outcome());
+        assertEquals(calls, source.count("b"));
+        assertEquals(JerseyModelSource.NOT_STARTED, entry(service.current(null), "b").reason());
+    }
+
+    @Test
+    public void aReadDoesNotSayCompleteWhileAModuleIsNotReadYet() throws Exception {
+        source.failures.put("b", new SpecSource.SpecException(JerseyModelSource.NOT_STARTED, "not started", null));
+        completeSnapshot();
+        source.failures.remove("b");
+        // a module the discovery sees before its plugin's event reaches the catalog
+        discovery.modules = List.of(module("a", "plugin.a"), module("b", "plugin.b"), module("c", "plugin.c"),
+                module("d", "plugin.d"));
+        assertEquals(CatalogService.StartOutcome.READ, service.readStarted("b", 10_000).outcome());
+        CatalogSnapshot after = service.current(null);
+        assertFalse(after.complete());
+        assertEquals(Model.State.pending, entry(after, "d").state());
+        assertEquals(3, after.done());
     }
 
     private static void await(BooleanSupplier condition) throws InterruptedException {
@@ -448,5 +545,24 @@ public class CatalogServiceTest {
         assertEquals(before.hash(), service.current(null).hash());
         assertTrue(service.current(null).complete());
         assertEquals(1, source.count("a"));
+    }
+
+    @Test
+    public void aBuildThatEndsWithMoreWorkQueuedDoesNotSayComplete() throws Exception {
+        completeSnapshot();
+        service.onPluginEnabled(pluginEvent("plugin.b"));
+        source.duringDescribe = () -> service.onPluginEnabled(pluginEvent("plugin.c")); // c changes while b is read
+        service.build(); // reads b, as the debounced task would; c is queued for the next build
+        source.duringDescribe = null;
+        assertFalse(service.current(null).complete()); // not complete while c waits
+        await(() -> service.current(null).complete() && source.count("c") == 2);
+    }
+
+    private static PluginEnabledEvent pluginEvent(String key) {
+        PluginEnabledEvent event = mock(PluginEnabledEvent.class);
+        Plugin plugin = mock(Plugin.class);
+        when(plugin.getKey()).thenReturn(key);
+        when(event.getPlugin()).thenReturn(plugin);
+        return event;
     }
 }
