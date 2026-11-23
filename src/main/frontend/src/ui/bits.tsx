@@ -87,6 +87,36 @@ export function usePin(shown: () => boolean, box: { current: HTMLElement | null 
   return pinned;
 }
 
+/**
+ * A small rich tooltip on hover or keyboard focus of what it wraps (give that a tabIndex and aria-describedby={id}).
+ * Escape hides it, and only that, until the pointer or the focus leaves.
+ */
+export function RichTip({ id, tip, children, testId }: { id: string; tip: ComponentChildren; children: ComponentChildren; testId?: string }) {
+  const [dismissed, setDismissed] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const wrap = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (dismissed) return;
+    const onKey = (e: KeyboardEvent) => {
+      const el = wrap.current;
+      if (e.key !== 'Escape' || !el || !(hovered || el.contains(document.activeElement))) return;
+      e.preventDefault();
+      e.stopImmediatePropagation(); // it closes the tooltip, nothing behind it
+      setDismissed(true);
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [dismissed, hovered]);
+  return (
+    <span ref={wrap} class={'rab-n-tip-wrap' + (dismissed ? ' dismissed' : '')}
+          onMouseEnter={() => setHovered(true)} onMouseLeave={() => { setHovered(false); setDismissed(false); }}
+          onFocusOut={() => setDismissed(false)}>
+      {children}
+      <span id={id} class="rab-n-tip" role="tooltip" data-testid={testId}>{tip}</span>
+    </span>
+  );
+}
+
 /** The last line of a rich tooltip: how to pin it, or how to let it go. */
 export function PinHint({ pinned }: { pinned: boolean }) {
   return (

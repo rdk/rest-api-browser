@@ -21,6 +21,48 @@ function server(handlers: { summary: () => Summary; index: (hash: string) => Ind
 
 const mods = [module('a', 'api/1')];
 
+describe('CatalogStore.startModule', () => {
+  it('sends a GET to the module, asks the catalog to read it again, then reloads', async () => {
+    const calls: [string, string][] = [];
+    const fetchFn: FetchFn = (url, init) => {
+      calls.push([init?.method ?? 'GET', url]);
+      if (url.endsWith('/rest-api-browser-start')) return json({}, 404);
+      if (url.includes('/catalog/started')) return Promise.resolve(new Response(null, { status: 202 }));
+      if (/\/index\//.test(url)) return json(index([], 'h2'));
+      return json(summary(mods, { hash: 'h2' }));
+    };
+    const store = new CatalogStore('http://host/wiki', fetchFn);
+    await store.startModule(module('p:m', '/conf/1.0/', { state: 'failed', reason: 'not-started' }));
+    expect(calls.slice(0, 3)).toEqual([
+      ['GET', 'http://host/wiki/rest/conf/1.0/rest-api-browser-start'],
+      ['POST', 'http://host/wiki/rest/restbrowser/1/catalog/started?module=p%3Am'],
+      ['GET', 'http://host/wiki/rest/restbrowser/1/catalog'],
+    ]);
+    store.stop();
+  });
+
+  it('says so when the module did not start on that request', async () => {
+    const waiting = module('p:m', 'token-auth/x', { state: 'failed', reason: 'not-started' });
+    const fetchFn: FetchFn = (url) => {
+      if (url.includes('/catalog/started')) return Promise.resolve(new Response(null, { status: 202 }));
+      if (/\/index\//.test(url)) return json(index([], 'h3'));
+      if (url.endsWith('/rest-api-browser-start')) return json({}, 401);
+      return json(summary([waiting], { hash: 'h3' }));
+    };
+    const store = new CatalogStore('', fetchFn);
+    await expect(store.startModule(waiting)).rejects.toThrow(/did not start/);
+    store.stop();
+  });
+
+  it('says why when the server refuses', async () => {
+    const answer = (status: number): FetchFn => (url) =>
+      url.includes('/catalog/started') ? Promise.resolve(new Response(null, { status })) : json({}, 404);
+    await expect(new CatalogStore('', answer(409)).startModule(module('a', 'api/1'))).rejects.toThrow(/another reason/);
+    await expect(new CatalogStore('', answer(401)).startModule(module('a', 'api/1'))).rejects.toThrow(/session has expired/);
+    await expect(new CatalogStore('', answer(500)).startModule(module('a', 'api/1'))).rejects.toThrow(/HTTP 500/);
+  });
+});
+
 describe('CatalogStore', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());

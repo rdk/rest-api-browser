@@ -313,6 +313,50 @@ public class CatalogResourceTest {
         assertEquals("no-store", r.getHeaderString("Cache-Control"));
     }
 
+    private static CatalogSnapshot withModules(ModuleEntry... modules) {
+        return CatalogTestSupport.snapshot(List.of(modules), List.of(), true, "1.0.0");
+    }
+
+    private static ModuleEntry failedModule(String id, String reason) {
+        return new ModuleEntry(id, "x/1", "product", "internal", null, State.failed, reason, "details", 0, "p", "P", "1");
+    }
+
+    @Test
+    public void startedReadsAModuleThatHadNotStartedAgain() {
+        login(false, false); // any licensed user
+        when(request.getHeader("X-Atlassian-Token")).thenReturn("no-check");
+        snapshot = withModules(failedModule("p:waiting", "not-started"));
+        Response r = resource.started("p:waiting", request);
+        assertEquals(202, r.getStatus());
+        assertEquals("no-store", r.getHeaderString("Cache-Control"));
+        verify(catalog).refresh("p:waiting");
+    }
+
+    @Test
+    public void startedDoesNothingForAModuleThatIsDescribedOrFailedForAnotherReason() {
+        login(false, false);
+        when(request.getHeader("X-Atlassian-Token")).thenReturn("no-check");
+        snapshot = withModules(CatalogTestSupport.module("p:ok", "ok/1", State.ok, "1.0"), failedModule("p:excluded", "excluded"));
+        assertEquals(204, resource.started("p:ok", request).getStatus());
+        assertEquals(409, resource.started("p:excluded", request).getStatus());
+        assertEquals(404, resource.started("p:none", request).getStatus());
+        assertEquals(404, resource.started(null, request).getStatus());
+        verify(catalog, never()).refresh(any());
+    }
+
+    @Test
+    public void startedNeedsALoginAndTheXsrfHeader() {
+        snapshot = withModules(failedModule("p:waiting", "not-started"));
+        when(request.getHeader("X-Atlassian-Token")).thenReturn("no-check");
+        assertEquals(401, resource.started("p:waiting", request).getStatus());
+        login(false, false);
+        when(request.getHeader("X-Atlassian-Token")).thenReturn(null);
+        Response r = resource.started("p:waiting", request);
+        assertEquals(403, r.getStatus());
+        assertTrue(((String) r.getEntity()).contains("xsrf"));
+        verify(catalog, never()).refresh(any());
+    }
+
     @Test
     public void refreshOfOneModule() {
         login(true, true);

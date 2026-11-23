@@ -4,6 +4,8 @@ import com.atlassian.annotations.security.LicensedOnly;
 import com.atlassian.annotations.security.SystemAdminOnly;
 import com.atlassian.labs.restbrowser.catalog.CatalogService;
 import com.atlassian.labs.restbrowser.catalog.CatalogSnapshot;
+import com.atlassian.labs.restbrowser.catalog.Model.ModuleEntry;
+import com.atlassian.labs.restbrowser.catalog.Model.State;
 import com.atlassian.labs.restbrowser.catalog.OperationDetails;
 import com.atlassian.sal.api.ApplicationProperties;
 import com.atlassian.sal.api.UrlMode;
@@ -29,6 +31,8 @@ import jakarta.ws.rs.core.StreamingOutput;
  *     <li>{@code GET /catalog/index/{hash}}: every operation, the same for every user, cached forever once
  *     complete;</li>
  *     <li>{@code POST /catalog/refresh}: system administrators rebuild the catalog;</li>
+ *     <li>{@code POST /catalog/started?module=id}: a module that had not started is read again, once the page has
+ *     started it with a request of its own (any licensed user);</li>
  *     <li>{@code GET /catalog/details?op=key}: system administrators see the Java behind one operation (its method
  *     and class, the OSGi bundle, the plugin and the REST module).</li>
  * </ul>
@@ -117,6 +121,52 @@ public class CatalogResource {
         catalog.refresh(module == null || module.isBlank() ? null : module);
         return Response.noContent().build();
     }
+
+    /**
+     * Reads one module again that had not started. Some products (Confluence) start a REST module's Jersey
+     * application on its first request, on each node, so the catalog cannot read it before; the page first sends a
+     * request to the module (it lands on the same node, the session sticks to it), then asks for this. Any licensed
+     * user may ask, for such a module only: it reads that module again and changes nothing else.
+     * <ul>
+     *     <li>202: the module is read again; the summary shows it once done;</li>
+     *     <li>204: nothing to do, the module is described already;</li>
+     *     <li>404: no such module; 409: the module failed for another reason, reading it again would not help.</li>
+     * </ul>
+     */
+    @POST
+    @Path("/started")
+    public Response started(@QueryParam("module") String module, @Context HttpServletRequest request) {
+        if (!allowed(request)) {
+            return unauthorized();
+        }
+        if (!"no-check".equals(request.getHeader("X-Atlassian-Token"))) {
+            return Response.status(Response.Status.FORBIDDEN).type(JSON).header("Cache-Control", "no-store")
+                    .entity("{\"error\":\"xsrf-check-failed\"}").build();
+        }
+        CatalogSnapshot snapshot = catalog.current(request.getServletContext());
+        ModuleEntry entry = null;
+        for (ModuleEntry m : snapshot.modules()) {
+            if (m.id().equals(module)) {
+                entry = m;
+            }
+        }
+        if (entry == null) {
+            return Response.status(Response.Status.NOT_FOUND).type(JSON).header("Cache-Control", "no-store")
+                    .entity("{\"error\":\"unknown-module\"}").build();
+        }
+        if (entry.state() == State.ok) {
+            return Response.noContent().header("Cache-Control", "no-store").build();
+        }
+        if (entry.state() != State.failed || !NOT_STARTED.equals(entry.reason())) {
+            return Response.status(Response.Status.CONFLICT).type(JSON).header("Cache-Control", "no-store")
+                    .entity("{\"error\":\"not-waiting-to-start\"}").build();
+        }
+        catalog.refresh(module);
+        return Response.accepted().header("Cache-Control", "no-store").build();
+    }
+
+    /** The reason of a module whose Jersey application has not started yet (JerseyModelSource). */
+    static final String NOT_STARTED = "not-started";
 
     /**
      * The Java behind one operation. System administrators only: it shows the internals of the product and its

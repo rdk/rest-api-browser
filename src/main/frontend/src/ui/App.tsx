@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { memo } from 'preact/compat';
-import type { Index, Operation, Summary } from '../core/types';
+import type { Index, Module, Operation, Summary } from '../core/types';
 import { CatalogStore } from '../core/catalog';
 import { clearDetails } from '../core/details';
 import { buildRows } from '../core/search';
@@ -12,7 +12,7 @@ import { Sidebar } from './Sidebar';
 import { OperationView, emptyDraft, type Draft } from './Operation';
 import { Menu, type MenuItem } from './Menu';
 import { PinHint, plural, usePin } from './bits';
-import { isSkipped } from './facts';
+import { isSkipped, isWaiting } from './facts';
 
 interface Props {
   baseUrl: string;
@@ -254,6 +254,25 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
     };
   }, []);
 
+  // modules being started (Confluence starts a module's REST API on its first request): a click in the list
+  const [starting, setStarting] = useState<Set<string>>(() => new Set());
+  const collapsedRef = useRef(shownCollapsed);
+  collapsedRef.current = shownCollapsed;
+  const onStart = useCallback((m: Module) => {
+    setStarting((s) => (s.has(m.id) ? s : new Set(s).add(m.id)));
+    store.startModule(m).then(
+      () => {
+        // read: show its operations at once
+        const next = new Set(collapsedRef.current);
+        if (next.delete(m.id)) onCollapsed(next);
+      },
+      (e) => setRefreshError(`Could not start ${m.path}: ${e instanceof Error ? e.message : String(e)}`),
+    ).finally(() => setStarting((s) => {
+      const next = new Set(s);
+      next.delete(m.id);
+      return next;
+    }));
+  }, [store, onCollapsed]);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | undefined>();
   // a failed rebuild says so in the list's status line for a while, then the counts come back
@@ -437,6 +456,8 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
             collapsed={shownCollapsed}
             onCollapsed={onCollapsed}
             loadError={loadError ?? refreshError}
+            onStart={onStart}
+            starting={starting}
           />
         </div>
         <SideHandle width={sidebarWidth} onWidth={setSidebarWidth} onDone={(w) => save({ sidebarWidth: w })} />
@@ -567,7 +588,8 @@ function prefill(op: Operation, draft: Draft, state: RouteState): Draft {
 function Welcome({ summary, missing, indexing }: { summary: Summary | null; missing: boolean; indexing: boolean }) {
   const ops = summary ? summary.modules.reduce((n, m) => n + m.opCount, 0) : 0;
   // modules left out on purpose (excluded, REST v1) are not failures
-  const failed = summary ? summary.modules.filter((m) => m.state === 'failed' && !isSkipped(m)).length : 0;
+  const failed = summary ? summary.modules.filter((m) => m.state === 'failed' && !isSkipped(m) && !isWaiting(m)).length : 0;
+  const waiting = summary ? summary.modules.filter(isWaiting).length : 0;
   return (
     <div class="rab-n-welcome" data-testid="welcome">
       <div class="rab-n-welcome-inner">
@@ -610,6 +632,12 @@ function Welcome({ summary, missing, indexing }: { summary: Summary | null; miss
             Requests run as you, in your browser. The History tab keeps the ones you sent.
           </li>
         </ul>
+        {waiting > 0 && (
+          <p class="rab-n-subtle rab-n-welcome-note" data-testid="waiting-note">
+            {plural(waiting, 'module')} {waiting === 1 ? 'has' : 'have'} not started yet on this node: the product starts a module's REST
+            API on its first request. Click one in the list to start it and see its operations.
+          </p>
+        )}
         {failed > 0 && (
           <p class="rab-n-subtle rab-n-welcome-note">
             {plural(failed, 'module')} could not be described; {failed === 1 ? 'it is' : 'they are'} listed with the reason.

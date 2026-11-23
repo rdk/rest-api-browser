@@ -2,7 +2,8 @@ import { useLayoutEffect } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import type { Module, Operation } from '../core/types';
 import { MethodBadge, PathText, PinHint } from './bits';
-import { accessFact, isSkipped, moduleFact, originLabel, paramSummary, sourceLabel, stabilityLabel, type Fact } from './facts';
+import { accessFact, moduleFact, originLabel, paramSummary, sourceLabel, stabilityLabel, type Fact } from './facts';
+import { reasonInfo } from '../core/explain';
 
 export type CardTarget = { kind: 'op'; op: Operation; module?: Module } | { kind: 'module'; module: Module; count: number };
 
@@ -69,6 +70,7 @@ function OpFacts({ op, m }: { op: Operation; m?: Module }) {
 
 function ModuleFacts({ m, count }: { m: Module; count: number }) {
   const source = sourceLabel(m.source);
+  const reason = m.state === 'failed' ? reasonInfo(m.reason) : null;
   return (
     <>
       <div class="rab-n-card-head">
@@ -79,11 +81,14 @@ function ModuleFacts({ m, count }: { m: Module; count: number }) {
         <AppRows m={m} />
         <Row name="Operations">
           {m.state === 'ok' ? (count === m.opCount ? m.opCount.toLocaleString() : `${count.toLocaleString()} of ${m.opCount.toLocaleString()} shown`)
-            : m.state === 'pending' ? 'Being read…' : isSkipped(m) ? 'Not described (left out on purpose)' : 'Could not be described'}
+            : m.state === 'pending' ? 'Being read…' : reason!.kind === 'waiting' ? 'Not started yet on this node'
+            : reason!.kind === 'skipped' ? 'Not described (left out on purpose)' : 'Could not be described'}
         </Row>
-        {m.state === 'failed' && (
+        {reason && (
           <Row name="Reason">
-            <span class={isSkipped(m) ? 'rab-n-card-note' : 'rab-n-card-error'}>{m.reason ?? 'error'}{m.error ? ': ' + clip(m.error, 300) : ''}</span>
+            <span class={reason.kind === 'failed' ? 'rab-n-card-error' : 'rab-n-card-strong'} data-testid="card-reason">{m.reason ?? 'error'}</span>
+            <div class="rab-n-card-explain">{reason.text}</div>
+            {m.error && <div class="rab-n-card-mono rab-n-card-note">{clip(m.error, 300)}</div>}
           </Row>
         )}
         {source && <Row name="Read from">{source}</Row>}

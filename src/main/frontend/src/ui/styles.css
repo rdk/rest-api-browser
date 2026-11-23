@@ -2077,3 +2077,46 @@ body.rab-next-page #footer {
 .rab-n-code-pretty .rab-n-code-text { tab-size: 4; }
 /* the scroll views that take the keyboard (tabIndex 0) show where the focus is */
 .rab-n .rab-n-vlist:focus-visible, .rab-n .rab-n-headers:focus-visible { outline: 2px solid var(--rab-focus); outline-offset: -2px; }
+
+/* A module waiting to start (Confluence starts a module's REST API on its first request): quiet, a click starts it */
+.rab-n-module.waiting .rab-n-count, .rab-n-module.starting .rab-n-count { color: var(--rab-subtlest); font-weight: 400; }
+.rab-n-module.waiting:hover .rab-n-count { color: var(--rab-link); }
+.rab-n-module.starting .rab-n-count { display: inline-flex; align-items: center; gap: 5px; }
+/* the hover card's reason: its code, what it means, the details */
+.rab-n-card-strong { font-weight: 600; color: var(--rab-text); }
+.rab-n-card-explain { margin-top: 3px; color: var(--rab-subtle); line-height: 1.45; }
+
+/* A small rich tooltip (RichTip): below what it wraps, after a short rest of the pointer, or on keyboard focus */
+.rab-n-tip-wrap { position: relative; display: inline-flex; }
+.rab-n-tip {
+  position: absolute;
+  top: calc(100% + 7px);
+  left: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: max-content;
+  max-width: 340px;
+  padding: 9px 11px;
+  border-radius: var(--rab-radius-md);
+  border: 1px solid var(--rab-border);
+  background: var(--rab-raised);
+  color: var(--rab-subtle);
+  box-shadow: var(--rab-shadow-overlay);
+  font: 400 12.5px/1.45 var(--ds-font-family-body, inherit);
+  white-space: normal;
+  text-align: left;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease, visibility 0s linear 120ms;
+}
+.rab-n-tip-wrap:hover > .rab-n-tip, .rab-n-tip-wrap:focus-within > .rab-n-tip {
+  visibility: visible;
+  opacity: 1;
+  transition: opacity 120ms ease 300ms, visibility 0s linear 300ms;
+}
+.rab-n-tip-wrap.dismissed > .rab-n-tip { visibility: hidden; opacity: 0; transition: none; }
+.rab-n-tip-title { font-weight: 700; color: var(--rab-text); }
+.rab-n-status-code:focus-visible { outline: 2px solid var(--rab-focus); outline-offset: 2px; }

@@ -4,7 +4,8 @@ import { groupRows, search, type GroupRow, type SearchRow } from '../core/search
 import { VirtualList } from './VirtualList';
 import { MethodBadge, PathText, plural, usePin } from './bits';
 import { searchWords } from '../core/pathparts';
-import { isSkipped, moduleFact, rowTicks, type Fact } from './facts';
+import { isWaiting, moduleFact, rowTicks, type Fact } from './facts';
+import { reasonInfo } from '../core/explain';
 import { RowCard, type CardTarget } from './RowCard';
 
 const ROW = 24;
@@ -25,6 +26,9 @@ export interface SidebarProps {
   collapsed: Set<string>;
   onCollapsed: (c: Set<string>) => void;
   loadError?: string;
+  /** Starts a module that has not started yet (a click on it); the ids being started show "starting…". */
+  onStart?: (m: Module) => void;
+  starting?: Set<string>;
 }
 
 type Line = { kind: 'module'; module: Module; count: number } | { kind: 'op'; op: Operation; module?: Module };
@@ -264,6 +268,7 @@ export function Sidebar(p: SidebarProps) {
       const l = lines[active];
       if (l.kind === 'op') p.onSelect(l.op);
       else if (foldable(l.module)) toggle(l.module.id);
+      else if (isWaiting(l.module)) p.onStart?.(l.module);
     } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && inList && active >= 0 && active < lines.length) {
       const l = lines[active];
       if (l.kind === 'module' && foldable(l.module) && p.collapsed.has(l.module.id) === (e.key === 'ArrowRight')) toggle(l.module.id);
@@ -381,9 +386,11 @@ export function Sidebar(p: SidebarProps) {
                   active={i === active}
                   tabStop={i === tabStop}
                   described={card?.id === idOf(l)}
+                  starting={!!p.starting?.has(l.module.id)}
                   onClick={() => {
                     setActive(i);
                     if (foldable(l.module)) toggle(l.module.id);
+                    else if (isWaiting(l.module)) p.onStart?.(l.module);
                   }}
                 />
               );
@@ -423,14 +430,15 @@ export function Sidebar(p: SidebarProps) {
   );
 }
 
-function ModuleRow({ index, module, count, collapsed, active, tabStop, described, onClick }: {
+function ModuleRow({ index, module, count, collapsed, active, tabStop, described, starting, onClick }: {
   index: number; module: Module; count: number; collapsed: boolean; active: boolean; tabStop: boolean; described: boolean;
-  onClick: () => void;
+  starting: boolean; onClick: () => void;
 }) {
   const kind = moduleFact(module);
   // a pending or failed module has no operations to fold: no chevron, no expanded state
   const foldable = module.state === 'ok';
-  const skipped = isSkipped(module);
+  // why a module could not be read: waiting to start (a click starts it), left out on purpose, or failed
+  const reason = module.state === 'failed' ? reasonInfo(module.reason) : null;
   return (
     <button
       class={
@@ -438,7 +446,8 @@ function ModuleRow({ index, module, count, collapsed, active, tabStop, described
         (module.stability === 'supported' ? ' supported' : '') +
         (active ? ' active' : '') +
         (module.state !== 'ok' ? ' ' + module.state : '') +
-        (skipped ? ' skipped' : '')
+        (reason && reason.kind !== 'failed' ? ' ' + reason.kind : '') +
+        (starting ? ' starting' : '')
       }
       onClick={onClick}
       tabIndex={tabStop ? 0 : -1}
@@ -465,7 +474,8 @@ function ModuleRow({ index, module, count, collapsed, active, tabStop, described
       <span class="rab-n-module-path"><PathText path={module.path} rank={false} /></span>
       {kind && <span class="rab-n-sr">{kind.label}</span>}
       <span class="rab-n-count">
-        {module.state === 'ok' ? count : module.state === 'pending' ? '…' : skipped ? 'not described' : 'failed: ' + (module.reason ?? 'error')}
+        {module.state === 'ok' ? count : module.state === 'pending' ? '…' : starting ? <><span class="rab-n-spinner" aria-hidden="true" /> starting…</>
+          : reason!.kind === 'waiting' ? 'not started · click to start' : reason!.label}
       </span>
     </button>
   );

@@ -1,4 +1,5 @@
 import type { Module, Operation } from '../core/types';
+import { reasonInfo } from '../core/explain';
 
 /**
  * What the list shows as small color ticks and the hover card spells out: one place, so the ticks, their colors
@@ -46,7 +47,10 @@ export function rowTicks(op: Operation, m: Module | undefined, withModule: boole
 }
 
 /** A module left out on purpose (excluded by the product's rules, or REST v1): not a failure, nothing to fix. */
-export const isSkipped = (m: Module) => m.state === 'failed' && (m.reason === 'excluded' || m.reason === 'rest-v1');
+export const isSkipped = (m: Module) => m.state === 'failed' && reasonInfo(m.reason).kind === 'skipped';
+
+/** A module whose REST API has not started yet on this node (Confluence starts one on its first request). */
+export const isWaiting = (m: Module) => m.state === 'failed' && reasonInfo(m.reason).kind === 'waiting';
 
 export function originLabel(m: Module): string {
   return m.origin === 'product' ? 'The product' : m.origin === 'bundled' ? 'App bundled with the product' : 'Installed app';

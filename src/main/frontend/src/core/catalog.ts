@@ -1,4 +1,10 @@
-import type { Index, Summary } from './types';
+import type { Index, Module, Summary } from './types';
+import { trimModulePath } from './template';
+
+/** A path no module has: the GET that starts a module answers 404, and nothing of the module runs. */
+export const START_PATH = 'rest-api-browser-start';
+/** How long starting a module waits for the catalog to read it again. */
+export const START_WAIT_MS = 30_000;
 
 export type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -91,6 +97,43 @@ export class CatalogStore {
   // Re-runs load(), e.g. after an admin triggered a rebuild.
   refreshSoon(): Promise<void> {
     return this.load();
+  }
+
+  /**
+   * Starts a module that had not started (failed, reason not-started): some products (Confluence) start a module's
+   * REST API on its first request, on each node. A GET to a path the module does not have starts it on this node
+   * (the session sticks to one node of a cluster), then the catalog is asked to read the module again, and followed
+   * until it has. Rejects with the reason when the server refuses (a session that expired, a module that failed for
+   * another reason).
+   */
+  async startModule(module: Module): Promise<void> {
+    try {
+      await this.fetchFn(`${this.baseUrl}/rest/${trimModulePath(module.path)}/${START_PATH}`, {
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' },
+      });
+    } catch {
+      // the answer does not matter, only that the request reached the module
+    }
+    const path = '/rest/restbrowser/1/catalog/started?module=' + encodeURIComponent(module.id);
+    const res = await this.fetchFn(this.baseUrl + path, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json', 'X-Atlassian-Token': 'no-check' },
+    });
+    if (isLoginAnswer(res)) throw sessionExpired(path, res.status);
+    if (res.status === 409) throw new Error('it failed for another reason, which starting it does not fix');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    await this.load();
+    // the catalog reads the module again in the background: wait for it, then tell whether the module started
+    for (let waited = 0; this.summary && !this.summary.complete && waited < START_WAIT_MS; waited += 250) {
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    const now = this.summary?.modules.find((m) => m.id === module.id);
+    if (now && now.state === 'failed' && now.reason === 'not-started') {
+      throw new Error('the product did not start it on that request (some modules start only for their own kind of '
+        + 'login, OAuth tokens for example)');
+    }
   }
 
   private expire(e: Error): void {
