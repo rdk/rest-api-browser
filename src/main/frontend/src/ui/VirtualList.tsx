@@ -108,9 +108,14 @@ export function VirtualList({ count, rowHeight, renderRow, activeIndex, revealKe
       {renderRow(i)}
     </div>
   );
+  // the kept row stays rendered when the list scrolls away from it, so a row with the keyboard focus keeps it. It sits
+  // where its index belongs (before the window, or after it), so the rows' order in the DOM never changes: a focused
+  // element that Preact moves (moveBefore) is scrolled back into view by Chrome and Edge, and the wheel could never
+  // take the list past it (insertBefore, where moveBefore is missing, would drop the focus instead)
+  const keep = keepIndex !== undefined && keepIndex >= 0 && keepIndex < count && scale === 1 && (keepIndex < start || keepIndex >= end);
+  if (keep && keepIndex! < start) rows.push(row(keepIndex!));
   for (let i = start; i < end; i++) rows.push(row(i));
-  // the kept row stays rendered when the list scrolls away from it, so a row with the keyboard focus keeps it
-  if (keepIndex !== undefined && keepIndex >= 0 && keepIndex < count && scale === 1 && (keepIndex < start || keepIndex >= end)) rows.push(row(keepIndex));
+  if (keep && keepIndex! >= end) rows.push(row(keepIndex!));
   return (
     <div
       ref={ref}

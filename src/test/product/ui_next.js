@@ -478,6 +478,32 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         const end = await b.evaluate(`(() => { const l = document.querySelector('.rab-n-vlist'), r = l.getBoundingClientRect();
             return { top: Math.round(l.scrollTop), max: l.scrollHeight - l.clientHeight, bottom: Math.round(r.bottom), viewport: document.documentElement.clientHeight }; })()`);
         c.check('the wheel scrolls the list to its end, and the end is inside the window', end.top >= end.max - 1 && end.bottom <= end.viewport, end);
+        // again after a real click on a module header (it folds and unfolds, and its row keeps the focus): the focused
+        // row is kept rendered as the list scrolls away from it, and must not pull the list back
+        await b.evaluate(`(document.querySelector('.rab-n-vlist').scrollTop = 0, true)`);
+        await sleep(300);
+        const mr = await b.evaluate(`(() => { const m = document.querySelector('[data-testid=module][aria-expanded]'); if (!m) return null;
+            const r = m.getBoundingClientRect(); return { x: r.left + 60, y: r.top + r.height / 2 }; })()`);
+        if (mr) {
+            for (let n = 0; n < 2; n++) {
+                await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: mr.x, y: mr.y });
+                await b.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: mr.x, y: mr.y, button: 'left', clickCount: 1 });
+                await b.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: mr.x, y: mr.y, button: 'left', clickCount: 1 });
+                await sleep(400);
+            }
+            await b.evaluate(`(() => { const l = document.querySelector('.rab-n-vlist'); window.__back = 0; let last = l.scrollTop;
+                l.addEventListener('scroll', () => { if (l.scrollTop < last - 30) window.__back++; last = l.scrollTop; }); })()`);
+            for (let i = 0; i < 80; i++) {
+                await b.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: lb.x, y: lb.y, deltaX: 0, deltaY: 400 });
+                await sleep(40);
+            }
+            await sleep(500);
+            const after = await b.evaluate(`(() => { const l = document.querySelector('.rab-n-vlist');
+                return { top: Math.round(l.scrollTop), max: l.scrollHeight - l.clientHeight, snapBacks: window.__back,
+                    focused: (document.activeElement && document.activeElement.dataset && document.activeElement.dataset.id) || null }; })()`);
+            c.check('after a click on a module header the wheel still scrolls down, never pulled back to the focused row',
+                after.snapBacks === 0 && after.top > 2000, after);
+        }
         await b.evaluate(`(document.querySelector('.rab-n-vlist').scrollTop = 0, true)`);
 
         // skins: Balanced by default; each one from the menu changes the header; the choice is kept (checked after the reload below)
