@@ -21,6 +21,8 @@ export interface Prefs {
   split?: number;
   collapsed?: string[];
   supportedOnly?: boolean;
+  /** The skin chosen in the menu (see skins.css). */
+  skin?: string;
 }
 
 const PER_OP = 20;

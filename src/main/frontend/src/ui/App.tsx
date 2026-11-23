@@ -22,6 +22,15 @@ interface Props {
   siteUrl: string;
 }
 
+/** The skins of skins.css, in the menu's order; the first is the default. */
+const SKINS = [
+  { id: 'balanced', label: 'Balanced', hint: 'Blue to indigo, soft gradients' },
+  { id: 'vivid', label: 'Vivid', hint: 'Bold gradients in many colours' },
+  { id: 'calm', label: 'Calm', hint: 'Flat and quiet, a light header' },
+  { id: 'navy', label: 'Calm, navy header', hint: 'Flat and quiet, a deep navy header' },
+];
+const skinOf = (s: string | undefined) => (SKINS.some((k) => k.id === s) ? s! : SKINS[0].id);
+
 /** The project's home, its releases and its issues. */
 const REPO = 'https://github.com/rdk/rest-api-browser';
 
@@ -67,8 +76,10 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl }: Props) {
   const [prefsLoaded, setPrefsLoaded] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_WIDTH);
   const [split, setSplit] = useState(SPLIT);
+  const [skin, setSkin] = useState(SKINS[0].id);
   useEffect(() => {
     userStore.prefs().then((p) => {
+      setSkin(skinOf(p.skin));
       if (p.supportedOnly !== undefined) setSupportedOnly(p.supportedOnly);
       if (p.collapsed) setCollapsed(new Set(p.collapsed));
       if (p.sidebarWidth) setSidebarWidth(p.sidebarWidth);
@@ -209,6 +220,19 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl }: Props) {
           group: true,
         }]
       : []),
+    ...SKINS.map((k, i) => ({
+      id: 'skin-' + k.id,
+      label: k.label,
+      hint: k.hint,
+      checked: skin === k.id,
+      section: i === 0 ? 'Theme' : undefined,
+      group: i === 0,
+      testId: 'skin-' + k.id,
+      onSelect: () => {
+        setSkin(k.id);
+        save({ skin: k.id });
+      },
+    })),
     {
       id: 'report',
       label: 'Report an issue…',
@@ -221,7 +245,7 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl }: Props) {
   ];
 
   return (
-    <div class="rab-n" ref={root} style={{ height: height + 'px' }}>
+    <div class="rab-n" ref={root} style={{ height: height + 'px' }} data-skin={skin}>
       <div class="rab-n-topbar">
         <div class="rab-n-top-left">
         <span ref={brandWrap} class={'rab-n-brand-wrap' + (aboutPinned ? ' pinned' : '')}>

@@ -540,9 +540,18 @@
 }
 .rab-n-menu-item:focus-visible { outline: 2px solid var(--rab-focus); outline-offset: -2px; }
 .rab-n-menu-item[aria-disabled="true"] { opacity: 0.55; cursor: default; background: none; }
-.rab-n-menu-label { font-weight: 600; }
+.rab-n-menu-label { display: flex; align-items: center; gap: 6px; font-weight: 600; }
 .rab-n-menu-hint { font-size: 11.5px; color: var(--rab-subtlest); }
 .rab-n-menu-sep { height: 1px; margin: 4px 6px; background: var(--rab-border-subtle); }
+.rab-n-menu-section {
+  padding: 4px 10px 2px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--rab-subtlest);
+}
+.rab-n-menu-check { margin-left: auto; color: var(--rab-link); }
 
 /* Main split layout */
 .rab-n-body-row { display: flex; flex: 1; min-height: 0; }

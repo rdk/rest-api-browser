@@ -434,6 +434,18 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
             && await b.waitFor(`!!document.querySelector('[data-testid=toggle-modules][data-state=expanded]') && !!document.querySelector('[data-testid=op]')`, 3000);
         c.check('the small button in the list folds and unfolds every module', folded && unfolded, { folded, unfolded });
 
+        // skins: Balanced by default; each one from the menu changes the header; the choice is kept (checked after the reload below)
+        const skinOf = () => b.evaluate(`(() => { const r = document.querySelector('.rab-n'); const t = getComputedStyle(document.querySelector('.rab-n-topbar'));
+            return { skin: r.dataset.skin, image: t.backgroundImage.slice(0, 60), color: t.backgroundColor }; })()`);
+        const pickSkin = async id => { await click('[data-testid=menu-button]'); await b.waitFor(`!!document.querySelector('[data-testid=skin-${id}]')`, 3000);
+            await click(`[data-testid=skin-${id}]`); await sleep(200); return skinOf(); };
+        const skins = { balanced: await skinOf() };
+        for (const id of ['vivid', 'calm', 'navy']) skins[id] = await pickSkin(id);
+        c.check('the menu switches the skin: Balanced by default, Vivid, Calm (flat header), Calm with a navy header',
+            skins.balanced.skin === 'balanced' && /gradient/.test(skins.balanced.image) && skins.vivid.skin === 'vivid'
+            && /gradient/.test(skins.vivid.image) && skins.vivid.image !== skins.balanced.image
+            && skins.calm.skin === 'calm' && skins.calm.image === 'none' && skins.navy.skin === 'navy' && /gradient/.test(skins.navy.image), skins);
+
         // supported only narrows the list
         await type('[data-testid=search]', '');
         const before = await b.evaluate(`(document.querySelector('[data-testid=status]') || {}).textContent || ''`);
@@ -447,6 +459,9 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         const key = templatedKey || await b.evaluate(`new URLSearchParams(location.search).get('op')`);
         await b.navigate(PAGE + '?op=' + encodeURIComponent(key) + '&path.' + encodeURIComponent(P.param) + '=DEEP-1');
         const prefilled = await b.waitFor(`(document.querySelector('input[name=${P.param}]') || {}).value === 'DEEP-1'`, 60000);
+        const keptSkin = await b.waitFor(`document.querySelector('.rab-n').dataset.skin === 'navy'`, 5000);
+        c.check('the chosen skin is kept after a reload', keptSkin, await skinOf());
+        await pickSkin('balanced');
         const sent = await b.evaluate(`!!document.querySelector('[data-testid=response]')`);
         c.check('a deep link opens the operation with its values, without sending', prefilled && !sent, { prefilled, sent });
 

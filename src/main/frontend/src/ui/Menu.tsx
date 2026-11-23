@@ -13,6 +13,10 @@ export interface MenuItem {
   testId?: string;
   /** Starts a new group: a line above it. */
   group?: boolean;
+  /** A small heading above the item (the first of a group of choices). */
+  section?: string;
+  /** One of a set of choices: shown with a check mark when chosen (a menu item radio). */
+  checked?: boolean;
 }
 
 /**
@@ -23,7 +27,7 @@ export function Menu({ label, items }: { label: string; items: MenuItem[] }) {
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
-  const enabled = () => [...(menu.current?.querySelectorAll<HTMLElement>('[role=menuitem]:not([aria-disabled=true])') ?? [])];
+  const enabled = () => [...(menu.current?.querySelectorAll<HTMLElement>(':is([role=menuitem], [role=menuitemradio]):not([aria-disabled=true])') ?? [])];
 
   useEffect(() => {
     if (!open) return;
@@ -89,6 +93,7 @@ export function Menu({ label, items }: { label: string; items: MenuItem[] }) {
           {items.map((it) => (
             <Fragment key={it.id}>
               {it.group && <div class="rab-n-menu-sep" role="separator" />}
+              {it.section && <div class="rab-n-menu-section" role="presentation">{it.section}</div>}
               {it.href ? (
                 <a role="menuitem" class="rab-n-menu-item" href={it.href} tabIndex={-1} data-testid={it.testId}
                    target={it.newTab ? '_blank' : undefined} rel={it.newTab ? 'noopener noreferrer' : undefined}
@@ -98,8 +103,9 @@ export function Menu({ label, items }: { label: string; items: MenuItem[] }) {
                 </a>
               ) : (
                 <button
-                  role="menuitem"
-                  class="rab-n-menu-item"
+                  role={it.checked === undefined ? 'menuitem' : 'menuitemradio'}
+                  aria-checked={it.checked === undefined ? undefined : it.checked}
+                  class={'rab-n-menu-item' + (it.checked ? ' checked' : '')}
                   tabIndex={-1}
                   aria-disabled={it.disabled || undefined}
                   onClick={() => {
@@ -109,7 +115,14 @@ export function Menu({ label, items }: { label: string; items: MenuItem[] }) {
                   }}
                   data-testid={it.testId}
                 >
-                  <span class="rab-n-menu-label">{it.label}</span>
+                  <span class="rab-n-menu-label">
+                    {it.label}
+                    {it.checked && (
+                      <svg class="rab-n-svg rab-n-menu-check" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                        <path d="M3.2 8.4l3 3 6.6-6.6" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </span>
                   {it.hint && <span class="rab-n-menu-hint">{it.hint}</span>}
                 </button>
               )}
