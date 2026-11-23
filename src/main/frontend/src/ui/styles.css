@@ -358,22 +358,23 @@
 .rab-n a.rab-n-version, .rab-n a.rab-n-version:link, .rab-n a.rab-n-version:visited {
   display: inline-flex;
   align-items: center;
-  padding: 0 8px;
-  line-height: 18px;
-  border-radius: var(--rab-radius-pill);
-  font-size: 11.5px;
-  font-weight: 600;
+  padding: 0 5px;
+  line-height: 16px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
-  color: var(--rab-topbar-fg);
-  background: var(--rab-topbar-glass);
-  border: 1px solid var(--rab-topbar-glass-border);
+  /* quiet: muted text and a faint outline, no fill until hovered */
+  color: color-mix(in srgb, var(--rab-topbar-fg) 70%, transparent);
+  background: none;
+  border: 1px solid color-mix(in srgb, var(--rab-topbar-fg) 20%, transparent);
   text-decoration: none;
-  transition: background var(--rab-ease), border-color var(--rab-ease);
+  transition: background var(--rab-ease), border-color var(--rab-ease), color var(--rab-ease);
 }
 .rab-n a.rab-n-version:hover {
   color: var(--rab-topbar-fg);
-  background: var(--rab-topbar-glass-hover);
-  border-color: color-mix(in srgb, var(--rab-topbar-fg) 48%, transparent);
+  background: var(--rab-topbar-glass);
+  border-color: color-mix(in srgb, var(--rab-topbar-fg) 40%, transparent);
   text-decoration: none;
 }
 .rab-n a.rab-n-top-link, .rab-n a.rab-n-top-link:link, .rab-n a.rab-n-top-link:visited {
@@ -1045,15 +1046,31 @@
 .rab-n-op:hover .rab-n-op-path { color: var(--rab-text); }
 
 /* Module header rows */
+/* The list's module headers stand out as tinted bands, a soft gradient fading to the right; skins set their own */
+.rab-n {
+  --rab-group-bg: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--rab-brand) 14%, var(--rab-surface)),
+    color-mix(in srgb, var(--rab-discovery-bold) 6%, var(--rab-surface))
+  );
+  --rab-group-bg-hover: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--rab-brand) 22%, var(--rab-surface)),
+    color-mix(in srgb, var(--rab-discovery-bold) 10%, var(--rab-surface))
+  );
+  --rab-group-border: color-mix(in srgb, var(--rab-brand) 18%, var(--rab-border-subtle));
+}
 .rab-n-module {
   position: relative;
   font-weight: 700;
   font-size: 12px;
   letter-spacing: 0.005em;
   color: var(--rab-text);
-  background: color-mix(in srgb, var(--rab-surface) 58%, var(--rab-neutral));
-  border-bottom: 1px solid var(--rab-border-subtle);
+  background: var(--rab-group-bg);
+  border-top: 1px solid var(--rab-group-border);
+  border-bottom: 1px solid var(--rab-group-border);
 }
+.rab-n .rab-n-module:hover { background: var(--rab-group-bg-hover); }
 .rab-n-module.failed .rab-n-count { color: var(--rab-danger); font-weight: 500; }
 .rab-n-module.pending { opacity: 0.65; }
 .rab-n-module-path { overflow: hidden; text-overflow: ellipsis; min-width: 0; }

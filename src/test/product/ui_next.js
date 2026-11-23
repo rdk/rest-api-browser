@@ -446,6 +446,15 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         const unfolded = await click('[data-testid=toggle-modules][data-state=collapsed]')
             && await b.waitFor(`!!document.querySelector('[data-testid=toggle-modules][data-state=expanded]') && !!document.querySelector('[data-testid=op]')`, 3000);
         c.check('the small button in the list folds and unfolds every module', folded && unfolded, { folded, unfolded });
+        // unfolding scrolls the list to the selected operation; the headers are at its top
+        await b.evaluate(`(document.querySelector('.rab-n-vlist').scrollTop = 0, true)`);
+        await b.waitFor(`!!document.querySelector('[data-testid=module]') && !!document.querySelector('[data-testid=op]')`, 3000);
+        const groups = await b.evaluate(`(() => { try { const m = document.querySelector('[data-testid=module]'), o = document.querySelector('[data-testid=op]');
+            const bg = e => { const st = getComputedStyle(e); return st.backgroundImage !== 'none' ? st.backgroundImage.slice(0, 80) : st.backgroundColor; };
+            return { module: m ? bg(m) : 'no module row', op: o ? bg(o) : 'no op row' }; } catch (e) { return { error: String(e) }; } })()`);
+        c.check('the module headers of the list have a background of their own', !!groups && !groups.error
+            && !/^no /.test(groups.module) && !/^no /.test(groups.op) && groups.module !== groups.op
+            && !/^rgba\(0, 0, 0, 0\)$/.test(groups.module), groups);
 
         // skins: Balanced by default; each one from the menu changes the header; the choice is kept (checked after the reload below)
         const skinOf = () => b.evaluate(`(() => { const r = document.querySelector('.rab-n'); const t = getComputedStyle(document.querySelector('.rab-n-topbar'));

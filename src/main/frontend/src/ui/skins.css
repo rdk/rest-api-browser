@@ -11,12 +11,12 @@
 
 html .rab-n[data-skin="balanced"] {
   --rab-indigo: color-mix(in srgb, var(--rab-brand) 62%, var(--rab-discovery-bold));
-  --rab-violet: color-mix(in srgb, var(--rab-brand) 30%, var(--rab-discovery-bold));
+  --rab-violet: color-mix(in srgb, var(--rab-brand) 42%, var(--rab-discovery-bold));
   --rab-topbar-bg: linear-gradient(
     115deg,
-    color-mix(in srgb, var(--rab-brand) 82%, #000) 0%,
-    color-mix(in srgb, var(--rab-indigo) 80%, #000) 55%,
-    color-mix(in srgb, var(--rab-violet) 85%, #000) 100%
+    color-mix(in srgb, var(--rab-brand) 82%, #000) 30%,
+    color-mix(in srgb, var(--rab-indigo) 80%, #000) 69%,
+    color-mix(in srgb, var(--rab-violet) 90%, #000) 100%
   );
   --rab-grad-side: linear-gradient(180deg, color-mix(in srgb, var(--rab-bg-info) 34%, var(--rab-sunken)) 0%, var(--rab-sunken) 46%);
   --rab-grad-brand: linear-gradient(180deg, color-mix(in srgb, var(--rab-brand) 86%, #fff), var(--rab-brand));
@@ -43,16 +43,28 @@ html .rab-n[data-skin="balanced"] {
   --rab-shadow-card: 0 1px 3px rgba(9, 30, 66, 0.1), 0 0 1px rgba(9, 30, 66, 0.2);
   --rab-shadow-card-hover: 0 4px 12px rgba(9, 30, 66, 0.12), 0 0 1px rgba(9, 30, 66, 0.25);
   --rab-shadow-hero: 0 2px 8px rgba(9, 30, 66, 0.08), 0 0 1px rgba(9, 30, 66, 0.2);
+  /* the list's module headers: blue to indigo, fading to the right */
+  --rab-group-bg: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--rab-brand) 11%, var(--rab-surface)),
+    color-mix(in srgb, var(--rab-indigo) 4%, var(--rab-surface))
+  );
+  --rab-group-bg-hover: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--rab-brand) 18%, var(--rab-surface)),
+    color-mix(in srgb, var(--rab-indigo) 8%, var(--rab-surface))
+  );
+  --rab-group-border: color-mix(in srgb, var(--rab-brand) 16%, var(--rab-border-subtle));
 }
 /* dark: the same blue-to-indigo family, from the product's dark accents */
 [data-color-mode="dark"] .rab-n[data-skin="balanced"] {
   --rab-indigo: color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 55%, var(--ds-background-accent-purple-subtle, #5e4db2));
-  --rab-violet: color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 28%, var(--ds-background-accent-purple-subtle, #5e4db2));
+  --rab-violet: color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 40%, var(--ds-background-accent-purple-subtle, #5e4db2));
   --rab-topbar-bg: linear-gradient(
     115deg,
-    color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 56%, var(--rab-surface)) 0%,
-    color-mix(in srgb, var(--rab-indigo) 56%, var(--rab-surface)) 55%,
-    color-mix(in srgb, var(--rab-violet) 65%, var(--rab-surface)) 100%
+    color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 56%, var(--rab-surface)) 30%,
+    color-mix(in srgb, var(--rab-indigo) 56%, var(--rab-surface)) 69%,
+    color-mix(in srgb, var(--rab-violet) 70%, var(--rab-surface)) 100%
   );
   --rab-grad-side: linear-gradient(180deg, color-mix(in srgb, var(--rab-bg-info) 40%, var(--rab-sunken)) 0%, var(--rab-sunken) 46%);
   --rab-grad-brand: linear-gradient(180deg, var(--ds-background-accent-blue-subtle, #0055cc), color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 82%, #000));
@@ -75,6 +87,17 @@ html .rab-n[data-skin="balanced"] {
   --rab-shadow-card: 0 1px 3px rgba(0, 0, 0, 0.35), 0 0 1px rgba(0, 0, 0, 0.5);
   --rab-shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 1px rgba(0, 0, 0, 0.55);
   --rab-shadow-hero: 0 2px 8px rgba(0, 0, 0, 0.35), 0 0 1px rgba(0, 0, 0, 0.5);
+  --rab-group-bg: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 26%, var(--rab-surface)),
+    color-mix(in srgb, var(--rab-indigo) 10%, var(--rab-surface))
+  );
+  --rab-group-bg-hover: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 36%, var(--rab-surface)),
+    color-mix(in srgb, var(--rab-indigo) 16%, var(--rab-surface))
+  );
+  --rab-group-border: color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 30%, var(--rab-border-subtle));
 }
 /* softer details: no glassy highlights or coloured glows */
 html .rab-n[data-skin="balanced"] .rab-n-topbar { box-shadow: none; }
@@ -131,6 +154,10 @@ html .rab-n[data-skin="navy"] {
   --rab-shadow-card: var(--ds-shadow-raised, 0 1px 1px rgba(9, 30, 66, 0.25), 0 0 1px rgba(9, 30, 66, 0.31));
   --rab-shadow-card-hover: var(--ds-shadow-overlay, 0 8px 12px rgba(9, 30, 66, 0.15), 0 0 1px rgba(9, 30, 66, 0.31));
   --rab-shadow-hero: var(--ds-shadow-raised, 0 1px 1px rgba(9, 30, 66, 0.25), 0 0 1px rgba(9, 30, 66, 0.31));
+  /* the list's module headers: flat, a light tint of the brand */
+  --rab-group-bg: color-mix(in srgb, var(--flat-brand) 8%, var(--ds-surface, #fff));
+  --rab-group-bg-hover: color-mix(in srgb, var(--flat-brand) 14%, var(--ds-surface, #fff));
+  --rab-group-border: var(--ds-border, #dcdfe4);
 }
 html .rab-n[data-skin="navy"] .rab-n-topbar { box-shadow: none; border-bottom: 1px solid var(--ds-border, #dcdfe4); }
 html .rab-n[data-skin="navy"] .rab-n-brand-mark { background: var(--flat-brand); border-color: transparent; color: var(--ds-text-inverse, #fff); }
