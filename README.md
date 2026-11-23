@@ -8,7 +8,7 @@ REST API Browser
 
 ![The new UI on Jira 11: the product's REST operations grouped by module on the left, an operation's form and its JSON response on the right](docs/images/new-ui.png)
 
-<sub>The new UI (coming in 4.2.0) on Jira 11.3, Balanced skin: every REST operation of the product and its apps, grouped by module, with the form and the response beside it.</sub>
+<sub>The new UI (a preview, since 4.2.0) on Jira 11.3, Balanced skin: every REST operation of the product and its apps, grouped by module, with the form and the response beside it.</sub>
 
 ## ~~Archived notice~~
 
