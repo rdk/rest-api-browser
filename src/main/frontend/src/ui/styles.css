@@ -1687,52 +1687,29 @@
 }
 
 /* Status line as a soft semantic gradient band */
+/* The response's header (its status line, then its tab bar) is a coloured band, darker than the panes, tinted by
+   the outcome: blue, green for 2xx, amber for 4xx, red for 5xx. In every skin, so the response stands apart from
+   the request above it. */
+.rab-n-response { --rab-status-tone: var(--rab-brand); --rab-status-mix: 18%; }
+.rab-n-response.tone-ok { --rab-status-tone: var(--rab-success-bold); }
+.rab-n-response.tone-warn { --rab-status-tone: var(--ds-background-warning-bold-hovered, #e2b203); }
+.rab-n-response.tone-err { --rab-status-tone: var(--rab-danger-bold); }
+[data-color-mode="dark"] .rab-n .rab-n-response { --rab-status-mix: 24%; }
 .rab-n-statusline {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 4px 10px 4px 12px;
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--rab-bg-info) 74%, var(--rab-surface)) 0%,
-    color-mix(in srgb, var(--rab-bg-discovery) 56%, var(--rab-surface)) 58%,
-    var(--rab-surface) 100%
-  );
-  border-bottom: 1px solid var(--rab-border-subtle);
+  background: color-mix(in srgb, var(--rab-status-tone) var(--rab-status-mix), var(--rab-surface));
+  border-top: 1px solid color-mix(in srgb, var(--rab-status-tone) 40%, var(--rab-border));
+  border-bottom: 1px solid color-mix(in srgb, var(--rab-status-tone) 22%, var(--rab-border-subtle));
   flex: none;
 }
-.rab-n-statusline.is-ok {
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--rab-bg-success) 82%, var(--rab-surface)) 0%,
-    color-mix(in srgb, var(--rab-bg-teal) 62%, var(--rab-surface)) 54%,
-    var(--rab-surface) 100%
-  );
+.rab-n-response > .rab-n-tabbar-response {
+  border-top: 0;
+  background: color-mix(in srgb, var(--rab-status-tone) calc(var(--rab-status-mix) / 2.5), var(--rab-surface));
 }
-.rab-n-statusline.is-info {
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--rab-bg-info) 82%, var(--rab-surface)) 0%,
-    color-mix(in srgb, var(--rab-bg-discovery) 62%, var(--rab-surface)) 54%,
-    var(--rab-surface) 100%
-  );
-}
-.rab-n-statusline.is-warn {
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--rab-bg-warning) 84%, var(--rab-surface)) 0%,
-    color-mix(in srgb, var(--rab-bg-orange) 58%, var(--rab-surface)) 54%,
-    var(--rab-surface) 100%
-  );
-}
-.rab-n-statusline.is-err {
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--rab-bg-danger) 84%, var(--rab-surface)) 0%,
-    color-mix(in srgb, var(--rab-bg-magenta) 58%, var(--rab-surface)) 54%,
-    var(--rab-surface) 100%
-  );
-}
+.rab-n-response > .rab-n-tabbar-response > .rab-n-tabs { background: none; }
 
 /* Gradient status-code chips by class */
 .rab-n-status-code {

@@ -71,7 +71,7 @@ export function ResponseView({ result, running, onCancel, maximized, onMaximize,
   const statusClass = result.status >= 500 ? 'err' : result.status >= 400 ? 'warn' : result.status >= 300 ? 'info' : 'ok';
   const id = idOf(result);
   return (
-    <div class="rab-n-response" data-testid="response">
+    <div class={'rab-n-response tone-' + statusClass} data-testid="response">
       {result.sessionExpired && (
         <div class="rab-n-banner" data-testid="session-expired">
           Your session has expired, so the product answered with its login page.{' '}

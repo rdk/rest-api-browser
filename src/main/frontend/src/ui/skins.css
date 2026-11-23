@@ -12,7 +12,12 @@
 html .rab-n[data-skin="balanced"] {
   --rab-indigo: color-mix(in srgb, var(--rab-brand) 62%, var(--rab-discovery-bold));
   --rab-violet: color-mix(in srgb, var(--rab-brand) 30%, var(--rab-discovery-bold));
-  --rab-topbar-bg: linear-gradient(115deg, var(--rab-brand) 0%, var(--rab-indigo) 55%, var(--rab-violet) 100%);
+  --rab-topbar-bg: linear-gradient(
+    115deg,
+    color-mix(in srgb, var(--rab-brand) 82%, #000) 0%,
+    color-mix(in srgb, var(--rab-indigo) 80%, #000) 55%,
+    color-mix(in srgb, var(--rab-violet) 76%, #000) 100%
+  );
   --rab-grad-side: linear-gradient(180deg, color-mix(in srgb, var(--rab-bg-info) 34%, var(--rab-sunken)) 0%, var(--rab-sunken) 46%);
   --rab-grad-brand: linear-gradient(180deg, color-mix(in srgb, var(--rab-brand) 86%, #fff), var(--rab-brand));
   --rab-grad-brand-hover: linear-gradient(180deg, var(--rab-brand), var(--rab-brand-hover));
@@ -45,9 +50,9 @@ html .rab-n[data-skin="balanced"] {
   --rab-violet: color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 28%, var(--ds-background-accent-purple-subtle, #5e4db2));
   --rab-topbar-bg: linear-gradient(
     115deg,
-    color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 66%, var(--rab-surface)) 0%,
-    color-mix(in srgb, var(--rab-indigo) 66%, var(--rab-surface)) 55%,
-    color-mix(in srgb, var(--rab-violet) 66%, var(--rab-surface)) 100%
+    color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 56%, var(--rab-surface)) 0%,
+    color-mix(in srgb, var(--rab-indigo) 56%, var(--rab-surface)) 55%,
+    color-mix(in srgb, var(--rab-violet) 58%, var(--rab-surface)) 100%
   );
   --rab-grad-side: linear-gradient(180deg, color-mix(in srgb, var(--rab-bg-info) 40%, var(--rab-sunken)) 0%, var(--rab-sunken) 46%);
   --rab-grad-brand: linear-gradient(180deg, var(--ds-background-accent-blue-subtle, #0055cc), color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 82%, #000));
@@ -71,7 +76,7 @@ html .rab-n[data-skin="balanced"] {
   --rab-shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 1px rgba(0, 0, 0, 0.55);
   --rab-shadow-hero: 0 2px 8px rgba(0, 0, 0, 0.35), 0 0 1px rgba(0, 0, 0, 0.5);
 }
-/* softer details: no glassy highlights or coloured glows, one hue per status band */
+/* softer details: no glassy highlights or coloured glows */
 html .rab-n[data-skin="balanced"] .rab-n-topbar { box-shadow: none; }
 html .rab-n[data-skin="balanced"] .rab-n-send,
 html .rab-n[data-skin="balanced"] .rab-n-send.write,
@@ -82,11 +87,6 @@ html .rab-n[data-skin="balanced"] .rab-n-send.write.danger:hover:not(:disabled) 
 html .rab-n[data-skin="balanced"] .rab-n-pill.on,
 html .rab-n[data-skin="balanced"] .rab-n-pill.on:hover { box-shadow: none; }
 html .rab-n[data-skin="balanced"] .rab-n-status-code { box-shadow: none; }
-html .rab-n[data-skin="balanced"] .rab-n-statusline { background: linear-gradient(90deg, color-mix(in srgb, var(--rab-bg-info) 55%, var(--rab-surface)), var(--rab-surface) 70%); }
-html .rab-n[data-skin="balanced"] .rab-n-statusline.is-ok { background: linear-gradient(90deg, color-mix(in srgb, var(--rab-bg-success) 60%, var(--rab-surface)), var(--rab-surface) 70%); }
-html .rab-n[data-skin="balanced"] .rab-n-statusline.is-info { background: linear-gradient(90deg, color-mix(in srgb, var(--rab-bg-info) 60%, var(--rab-surface)), var(--rab-surface) 70%); }
-html .rab-n[data-skin="balanced"] .rab-n-statusline.is-warn { background: linear-gradient(90deg, color-mix(in srgb, var(--rab-bg-warning) 70%, var(--rab-surface)), var(--rab-surface) 70%); }
-html .rab-n[data-skin="balanced"] .rab-n-statusline.is-err { background: linear-gradient(90deg, color-mix(in srgb, var(--rab-bg-danger) 70%, var(--rab-surface)), var(--rab-surface) 70%); }
 html .rab-n[data-skin="balanced"] .rab-n-tab.on,
 html .rab-n[data-skin="balanced"] .rab-n-tab[aria-selected="true"] { background: color-mix(in srgb, var(--rab-brand) 6%, transparent); }
 html .rab-n[data-skin="balanced"] .rab-n-url-group:focus-within,
@@ -142,8 +142,6 @@ html .rab-n[data-skin="navy"] :is(.rab-n-url-group:focus-within, .rab-n-search:f
   border-color: var(--ds-border-focused, #388bff);
   box-shadow: 0 0 0 1px var(--ds-border-focused, #388bff);
 }
-html .rab-n[data-skin="navy"] :is(.rab-n-statusline, .rab-n-statusline.is-ok, .rab-n-statusline.is-info,
-  .rab-n-statusline.is-warn, .rab-n-statusline.is-err) { background: var(--ds-surface, #fff); }
 html .rab-n[data-skin="navy"] .rab-n-status-code { box-shadow: none; border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }
 html .rab-n[data-skin="navy"] .rab-n-status-code.ok { background: var(--ds-background-success, #dcfff1); color: var(--ds-text-success, #216e4e); }
 html .rab-n[data-skin="navy"] .rab-n-status-code.info { background: var(--ds-background-information, #e9f2ff); color: var(--ds-text-information, #0055cc); }
@@ -151,7 +149,7 @@ html .rab-n[data-skin="navy"] .rab-n-status-code.warn { background: var(--ds-bac
 html .rab-n[data-skin="navy"] .rab-n-status-code.err { background: var(--ds-background-danger, #ffeceb); color: var(--ds-text-danger, #ae2e24); }
 html .rab-n[data-skin="navy"] :is(.rab-n-tab.on, .rab-n-tab[aria-selected="true"]) { background: none; }
 html .rab-n[data-skin="navy"] :is(.rab-n-tab.on, .rab-n-tab[aria-selected="true"])::after { height: 2px; }
-html .rab-n[data-skin="navy"] :is(.rab-n-tabs, .rab-n-tabbar) { background: var(--ds-surface, #fff); }
+html .rab-n[data-skin="navy"] :is(.rab-n-tabs, .rab-n-tabbar):not(.rab-n-response *) { background: var(--ds-surface, #fff); }
 html .rab-n[data-skin="navy"] .rab-n-sidebar-head { background: var(--ds-surface-sunken, #f7f8f9); }
 html .rab-n[data-skin="navy"] .rab-n-op.selected::before { width: 2px; }
 html .rab-n[data-skin="navy"] :is(.rab-n-pill.on, .rab-n-pill.on:hover) {

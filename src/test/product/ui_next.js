@@ -444,7 +444,9 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
 
         // skins: Balanced by default; each one from the menu changes the header; the choice is kept (checked after the reload below)
         const skinOf = () => b.evaluate(`(() => { const r = document.querySelector('.rab-n'); const t = getComputedStyle(document.querySelector('.rab-n-topbar'));
-            return { skin: r.dataset.skin, image: t.backgroundImage.slice(0, 60), color: t.backgroundColor }; })()`);
+            const band = document.querySelector('.rab-n-statusline'), pane = document.querySelector('.rab-n-tabpane, .rab-n-request');
+            return { skin: r.dataset.skin, image: t.backgroundImage.slice(0, 60), color: t.backgroundColor,
+                band: band && getComputedStyle(band).backgroundColor, pane: pane && getComputedStyle(pane.closest('.rab-n-main') || pane).backgroundColor }; })()`);
         const pickSkin = async id => { await click('[data-testid=menu-button]'); await b.waitFor(`!!document.querySelector('[data-testid=skin-${id}]')`, 3000);
             await click(`[data-testid=skin-${id}]`); await sleep(200); return skinOf(); };
         const skins = { balanced: await skinOf() };
@@ -453,6 +455,9 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
             skins.balanced.skin === 'balanced' && /gradient/.test(skins.balanced.image) && skins.vivid.skin === 'vivid'
             && /gradient/.test(skins.vivid.image) && skins.vivid.image !== skins.balanced.image
             && skins.navy.skin === 'navy' && /gradient/.test(skins.navy.image) && skins.navy.image !== skins.balanced.image, skins);
+        const bands = Object.values(skins).filter(x => x.band);
+        c.check(`the response's header is a coloured band apart from the panes, in every skin (${bands.length} seen)`,
+            bands.length === Object.keys(skins).length && bands.every(x => x.band !== x.pane && !/rgba\(0, 0, 0, 0\)/.test(x.band)), skins);
 
         // the colour mode: light, dark and system in a row of the menu; the product's colours follow on this page
         const modeOf = () => b.evaluate(`(() => { const h = document.documentElement;
