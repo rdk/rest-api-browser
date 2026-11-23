@@ -162,6 +162,17 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         c.check('Pretty shows no line numbers; Headers lists the request\'s headers before the response\'s',
             numbers === 0 && sentHeaders.some(h => /^accept:/i.test(h)), { numbers, sentHeaders });
         await b.evaluate(`([...document.querySelectorAll('[data-testid=response] [role=tab]')].find(t => /^Pretty/.test(t.textContent)) || {}).click?.(), true`);
+        // the find box sits in the response's tab bar, right after the tabs, and finds as you type
+        const findBox = await b.evaluate(`(() => { const bar = document.querySelector('[data-testid=response] .rab-n-tabbar');
+            const input = bar && bar.querySelector('input[type=search]'), tabs = bar && bar.querySelector('[role=tablist]');
+            if (!input || !tabs) return null;
+            const r = input.getBoundingClientRect(), t = tabs.getBoundingClientRect(), br = bar.getBoundingClientRect();
+            return { sameRow: r.top >= br.top - 1 && r.bottom <= br.bottom + 1, gapAfterTabs: Math.round(r.left - t.right) }; })()`);
+        await type('[data-testid=response] .rab-n-tabbar input[type=search]', '":');
+        const findCount = await b.waitFor(`/^1 of \\d+/.test((document.querySelector('[data-testid=find-count]') || {}).textContent || '')`, 3000);
+        c.check('the find box is in the response\'s tab bar, right after the tabs, and finds as you type',
+            !!findBox && findBox.sameRow && findBox.gapAfterTabs >= 0 && findBox.gapAfterTabs < 40 && findCount,
+            { findBox, count: await text('[data-testid=find-count]') });
         c.check('the History tab lists the request', await b.waitFor(`/History \\([1-9]/.test(document.body.textContent)`, 5000));
         // the Java behind the operation (system administrators): its method and class, the OSGi bundle, the plugin
         await b.evaluate(`([...document.querySelectorAll('.rab-n-request [role=tab]')].find(t => t.textContent.trim() === 'Java') || {}).click?.(), true`);

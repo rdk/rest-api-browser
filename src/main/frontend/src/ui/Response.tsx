@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { downloadBlob, type RunResult } from './runner';
 import { buildLines, find, visibleLines, type LineModel } from '../core/jsonlines';
 import { VirtualList } from './VirtualList';
@@ -9,6 +9,8 @@ const LINE = 20;
 const MAX_LINE = 2000;
 
 type View = 'pretty' | 'raw' | 'headers';
+/** A request to move to the next (dir 1) or previous (dir -1) match; n counts the requests. */
+type Step = { n: number; dir: number };
 
 let resultSeq = 0;
 const resultIds = new WeakMap<RunResult, number>();
@@ -22,6 +24,11 @@ export function ResponseView({ result, running, onCancel }: {
   result: RunResult | null; running: boolean; onCancel: () => void;
 }) {
   const [view, setView] = useState<View>('pretty');
+  // the find box sits in the tab bar; Pretty and Raw do the matching and report the count back
+  const [needle, setNeedle] = useState('');
+  const [step, setStep] = useState<Step>({ n: 0, dir: 1 });
+  const [found, setFound] = useState({ count: 0, index: 0 });
+  const onFound = useCallback((count: number, index: number) => setFound({ count, index }), []);
   // parsed once per response, kept across tab switches
   const model = useMemo(
     () => (result && result.kind === 'json' && !result.truncated && result.text ? buildLines(result.text) : null),
@@ -93,15 +100,21 @@ export function ResponseView({ result, running, onCancel }: {
           </button>
         )}
       </div>
-      <Tabs<View>
-        value={view}
-        onChange={setView}
-        tabs={[
-          { id: 'pretty', label: 'Pretty' },
-          { id: 'raw', label: 'Raw' },
-          { id: 'headers', label: `Headers (${(result.requestHeaders?.length ?? 0) + result.headers.length})` },
-        ]}
-      />
+      <div class="rab-n-tabbar rab-n-tabbar-response">
+        <Tabs<View>
+          value={view}
+          onChange={setView}
+          tabs={[
+            { id: 'pretty', label: 'Pretty' },
+            { id: 'raw', label: 'Raw' },
+            { id: 'headers', label: `Headers (${(result.requestHeaders?.length ?? 0) + result.headers.length})` },
+          ]}
+        />
+        {view !== 'headers' && result.kind !== 'binary' && result.kind !== 'empty' && (
+          <FindBox initial={needle} onFind={setNeedle} onStep={(dir) => setStep((st) => ({ n: st.n + 1, dir }))}
+                   count={found.count} index={found.index} />
+        )}
+      </div>
       {result.truncated && (
         <div class="rab-n-banner">The response is larger than the limit; only its start was read. Download saves that part.</div>
       )}
@@ -126,13 +139,13 @@ export function ResponseView({ result, running, onCancel }: {
       ) : result.kind === 'empty' ? (
         <div class="rab-n-response-state rab-n-subtle">No content.</div>
       ) : view === 'pretty' && model ? (
-        <JsonView key={'json' + id} model={model} />
+        <JsonView key={'json' + id} model={model} needle={needle} step={step} onFound={onFound} />
       ) : (
         <>
           {result.kind === 'html' && view === 'pretty' && (
             <div class="rab-n-banner">The server answered with an HTML page; its source is shown.</div>
           )}
-          <TextView key={'text' + id} text={result.text ?? ''} />
+          <TextView key={'text' + id} text={result.text ?? ''} needle={needle} step={step} onFound={onFound} />
         </>
       )}
     </div>
@@ -140,10 +153,10 @@ export function ResponseView({ result, running, onCancel }: {
 }
 
 /** Find as you type, 150 ms after the last key; Enter and Shift+Enter step through the matches. */
-function FindBox({ onFind, onStep, count, index }: {
-  onFind: (needle: string) => void; onStep: (step: number) => void; count: number; index: number;
+function FindBox({ initial, onFind, onStep, count, index }: {
+  initial: string; onFind: (needle: string) => void; onStep: (step: number) => void; count: number; index: number;
 }) {
-  const [needle, setNeedle] = useState('');
+  const [needle, setNeedle] = useState(initial);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
   return (
@@ -180,9 +193,32 @@ function FindBox({ onFind, onStep, count, index }: {
           aria-label="Find in response"
         />
       </div>
-      {needle && <span class="rab-n-subtle rab-n-find-count">{count ? `${index + 1} of ${count}` : 'no match'}</span>}
+      {needle && <span class="rab-n-subtle rab-n-find-count" data-testid="find-count">{count ? `${index + 1} of ${count}` : 'no match'}</span>}
     </div>
   );
+}
+
+/**
+ * The matches of the find box in one view: searched again when the needle changes (and when the view opens with
+ * one), stepped through on each Enter, reported back for the count beside the box.
+ */
+function useFind(needle: string, step: Step, onFound: (count: number, index: number) => void, search: (needle: string) => number[]) {
+  const [matches, setMatches] = useState<number[]>([]);
+  const [current, setCurrent] = useState(0);
+  const searchRef = useRef(search);
+  searchRef.current = search;
+  useEffect(() => {
+    setMatches(needle ? searchRef.current(needle) : []);
+    setCurrent(0);
+  }, [needle]);
+  const seen = useRef(step.n);
+  useEffect(() => {
+    if (step.n === seen.current) return; // a step made before this view opened
+    seen.current = step.n;
+    if (matches.length) setCurrent((c) => (c + step.dir + matches.length) % matches.length);
+  }, [step]);
+  useEffect(() => onFound(matches.length, current), [matches, current]);
+  return { matches, current };
 }
 
 /** Index of value in a sorted array, or -1. */
@@ -198,22 +234,18 @@ function indexIn(sorted: number[], value: number): number {
 }
 
 /** A folding JSON view over the flat line model: only visible lines are rendered. */
-function JsonView({ model }: { model: LineModel }) {
+function JsonView({ model, needle, step, onFound }: {
+  model: LineModel; needle: string; step: Step; onFound: (count: number, index: number) => void;
+}) {
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
-  const [matches, setMatches] = useState<number[]>([]);
-  const [current, setCurrent] = useState(0);
+  const { matches, current } = useFind(needle, step, onFound, (n) => {
+    const found = find(model, n);
+    if (found.length) setCollapsed((c) => (c.size ? new Set() : c)); // a match may sit inside a folded block
+    return found;
+  });
   const visible = useMemo(() => visibleLines(model, collapsed), [model, collapsed]);
   const matchSet = useMemo(() => new Set(matches), [matches]);
   const activeLine = matches.length ? matches[current] : -1;
-  const onFind = (needle: string) => {
-    const found = needle ? find(model, needle) : [];
-    if (found.length && collapsed.size) setCollapsed(new Set()); // a match may sit inside a folded block
-    setMatches(found);
-    setCurrent(0);
-  };
-  const onStep = (step: number) => {
-    if (matches.length) setCurrent((c) => (c + step + matches.length) % matches.length);
-  };
   const toggle = (i: number) => {
     const next = new Set(collapsed);
     if (next.has(i)) next.delete(i);
@@ -223,7 +255,6 @@ function JsonView({ model }: { model: LineModel }) {
   const activeRow = activeLine >= 0 ? indexIn(visible, activeLine) : -1;
   return (
     <div class="rab-n-code-wrap">
-      <FindBox onFind={onFind} onStep={onStep} count={matches.length} index={current} />
       <VirtualList
         className="rab-n-code rab-n-code-pretty"
         count={visible.length}
@@ -259,7 +290,9 @@ function JsonView({ model }: { model: LineModel }) {
 }
 
 /** Raw text, split into rows of at most MAX_LINE characters (minified JSON is one line of megabytes). */
-function TextView({ text }: { text: string }) {
+function TextView({ text, needle, step, onFound }: {
+  text: string; needle: string; step: Step; onFound: (count: number, index: number) => void;
+}) {
   const rows = useMemo(() => {
     const out: { line: number; text: string; cont: boolean }[] = [];
     let line = 0, start = 0;
@@ -276,27 +309,18 @@ function TextView({ text }: { text: string }) {
     return out;
   }, [text]);
   const lower = useRef<string[] | null>(null);
-  const [matches, setMatches] = useState<number[]>([]);
-  const [current, setCurrent] = useState(0);
-  const matchSet = useMemo(() => new Set(matches), [matches]);
-  const onFind = (needle: string) => {
-    const n = needle.toLowerCase();
+  const { matches, current } = useFind(needle, step, onFound, (needleText) => {
+    const n = needleText.toLowerCase();
     const found: number[] = [];
-    if (n) {
-      if (!lower.current) lower.current = rows.map((r) => r.text.toLowerCase());
-      const l = lower.current;
-      for (let i = 0; i < l.length; i++) if (l[i].includes(n)) found.push(i);
-    }
-    setMatches(found);
-    setCurrent(0);
-  };
-  const onStep = (step: number) => {
-    if (matches.length) setCurrent((c) => (c + step + matches.length) % matches.length);
-  };
+    if (!lower.current) lower.current = rows.map((r) => r.text.toLowerCase());
+    const l = lower.current;
+    for (let i = 0; i < l.length; i++) if (l[i].includes(n)) found.push(i);
+    return found;
+  });
+  const matchSet = useMemo(() => new Set(matches), [matches]);
   const activeRow = matches.length ? matches[current] : -1;
   return (
     <div class="rab-n-code-wrap">
-      <FindBox onFind={onFind} onStep={onStep} count={matches.length} index={current} />
       <VirtualList
         className="rab-n-code"
         count={rows.length}

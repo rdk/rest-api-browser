@@ -1673,7 +1673,17 @@
   border-bottom: 1px solid var(--rab-border-subtle);
   flex: none;
 }
-.rab-n-find-wrap { position: relative; display: flex; align-items: center; }
+/* in the response's tab bar, right after the tabs */
+.rab-n-tabbar-response > .rab-n-tabs { flex: none; }
+.rab-n-tabbar-response > .rab-n-find {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 0 10px 0 6px;
+  background: none;
+  border: 0;
+}
+.rab-n-tabbar-response .rab-n-find input { width: 220px; max-width: 32vw; }
+.rab-n-find-wrap { position: relative; display: flex; align-items: center; min-width: 0; }
 .rab-n-find-icon { position: absolute; left: 9px; color: var(--rab-subtlest); pointer-events: none; }
 .rab-n-find input {
   width: 240px;
