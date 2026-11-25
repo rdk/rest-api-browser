@@ -5,10 +5,6 @@ REST API Browser
 > An unofficial, maintained fork of Atlassian's archived REST API Browser, for Jira 11, Confluence 10 and the other
 > Data Center products of Platform 8. See [About this fork](#about-this-fork).
 
-![The new UI on Jira 11: the product's REST operations grouped by module on the left, an operation's form and its JSON response on the right](docs/images/new-ui.png)
-
-<sub>The new UI (a preview, since 4.2.0) on Jira 11.3: every REST operation of the product and its apps, grouped by module, with the form and the response beside it.</sub>
-
 ## Description
 
 REST API Browser is an app for **Atlassian Data Center** products, the self-managed editions that run on your own
@@ -19,6 +15,16 @@ Installed in a product, it lists the REST APIs of that instance: the product's o
 those of the apps you installed, including private and undocumented ones. Pick an endpoint to see its parameters,
 fill them in and send the request from the browser, with your own session and permissions. It is meant for
 administrators and app developers who need to know what an instance really offers.
+
+## Screenshots
+
+![The new UI on Jira 11: the product's REST operations grouped by module on the left, an operation's form and its JSON response on the right](docs/images/new-ui.png)
+
+<sub>The new UI (a preview, since 4.2.0) on Jira 11.3: every REST operation of the product and its apps, grouped by module, with the form and the response beside it.</sub>
+
+<p><img src="docs/images/decompiler.png" width="720" alt="Tabbed Java decompiler window in REST API Browser 4.3.0: Vineflower 1.11.1, method outline with REST verb badges, clickable class references and inline REST endpoint links" /></p>
+
+<sub>Embedded Java decompiler (since 4.3.0, sysadmin only): floating tabbed window with Vineflower 1.11.1 (default) and CFR 0.152 switching, method outline with REST verb badges, clickable class references, inline endpoint links and ZIP export.</sub>
 
 ## Compatibility
 
