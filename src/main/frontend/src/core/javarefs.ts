@@ -455,7 +455,8 @@ function stripLeadingAnnotations(code: string): string {
 /**
  * Extracts constructors, methods, and nested types from decompiled Java source lines for the collapsible outline panel,
  * including REST HTTP method markers (@GET, @POST, @PUT, @DELETE, @PATCH, @HEAD, @OPTIONS, and Spring *Mapping).
- * Tracks brace depth so only class-body declarations (not local calls inside method bodies) are listed.
+ * Tracks brace depth and annotation argument parentheses so array literals inside multiline annotations
+ * (e.g. `@Operation(responses = { @ApiResponse(...) })`) never corrupt brace depth or drop pending HTTP verbs.
  */
 export function extractClassOutline(lines: string[]): OutlineItem[] {
   const items: OutlineItem[] = [];
@@ -469,10 +470,12 @@ export function extractClassOutline(lines: string[]): OutlineItem[] {
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i];
     const depthBefore = depth;
+    const annDepthBefore = annParenDepth;
 
-    // Update comment & brace depth across this line (keep string literals in raw for @Path("...") extraction)
+    // Update comment, annotation-argument paren depth, and brace depth across this line
     let inStr = false;
     let inChr = false;
+    let afterAt = false; // true after '@' until whitespace/non-ident or '('
     let lineCode = '';
     for (let c = 0; c < raw.length; c++) {
       const ch = raw[c];
@@ -502,10 +505,34 @@ export function extractClassOutline(lines: string[]): OutlineItem[] {
       }
       if (ch === '"') {
         inStr = true;
-      } else if (ch === '\'') {
+        afterAt = false;
+        continue;
+      }
+      if (ch === '\'') {
         inChr = true;
-      } else {
-        lineCode += ch;
+        afterAt = false;
+        continue;
+      }
+
+      lineCode += ch;
+      if (annParenDepth > 0) {
+        if (ch === '(') annParenDepth++;
+        else if (ch === ')') annParenDepth--;
+        // Braces inside annotation arguments (e.g. responses = { ... }) are array literals, not code blocks
+        continue;
+      }
+      if (ch === '@') {
+        // Ignore `@interface` (annotation type declaration)
+        afterAt = !raw.slice(c).startsWith('@interface');
+      } else if (afterAt) {
+        if (ch === '(') {
+          annParenDepth = 1;
+          afterAt = false;
+        } else if (!/[\w$.\s]/.test(ch)) {
+          afterAt = false;
+        }
+      }
+      if (annParenDepth === 0) {
         if (ch === '{') depth++;
         else if (ch === '}') depth = Math.max(0, depth - 1);
       }
@@ -515,7 +542,11 @@ export function extractClassOutline(lines: string[]): OutlineItem[] {
       typeStack.pop();
       pendingHttp = undefined;
       pendingPath = undefined;
-      annParenDepth = 0;
+    }
+
+    // Continuation line of a multiline annotation (e.g. @Operation(...))
+    if (annDepthBefore > 0) {
+      continue;
     }
 
     const codeTrim = lineCode.trim();
@@ -526,13 +557,6 @@ export function extractClassOutline(lines: string[]): OutlineItem[] {
     // Track REST annotations at class-body depth (even across multiline annotations or inline with the method)
     const currentType = typeStack[typeStack.length - 1];
     if (currentType && depthBefore === currentType.depth) {
-      if (annParenDepth > 0) {
-        for (const ch of codeTrim) {
-          if (ch === '(') annParenDepth++;
-          else if (ch === ')') annParenDepth = Math.max(0, annParenDepth - 1);
-        }
-        continue;
-      }
       if (codeTrim.startsWith('@') && !codeTrim.startsWith('@interface')) {
         const vm = REST_VERB_RE.exec(codeTrim);
         if (vm) pendingHttp = vm[1] as HttpMethod;
@@ -542,14 +566,9 @@ export function extractClassOutline(lines: string[]): OutlineItem[] {
         }
         const pm = REST_PATH_RE.exec(raw);
         if (pm) pendingPath = pm[1];
+        if (annParenDepth > 0) continue; // multiline annotation opened on this line
         const afterAnn = stripLeadingAnnotations(codeTrim);
-        if (!afterAnn) {
-          for (const ch of codeTrim) {
-            if (ch === '(') annParenDepth++;
-            else if (ch === ')') annParenDepth = Math.max(0, annParenDepth - 1);
-          }
-          continue;
-        }
+        if (!afterAnn) continue;
         // Inline annotation followed by declaration on the same line: fall through using `afterAnn`
       }
     }

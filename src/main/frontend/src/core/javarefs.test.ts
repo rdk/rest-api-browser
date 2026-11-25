@@ -183,4 +183,31 @@ describe('javarefs', () => {
       'method:run',
     ]);
   });
+
+  it('preserves REST HTTP method across multiline OpenAPI annotations containing array braces', () => {
+    const lines = [
+      '@Path("serverInfo")',
+      '@Produces({"application/json"})',
+      'public class ServerInfoResource {',
+      '    @GET',
+      '    @AnonymousAllowed',
+      '    @Operation(',
+      '        summary = "Get info",',
+      '        responses = {',
+      '            @ApiResponse(',
+      '                responseCode = "200",',
+      '                content = {@Content(mediaType = "application/json")}',
+      '            )',
+      '        }',
+      '    )',
+      '    public Response getServerInfo(@QueryParam("doHealthCheck") boolean check) {',
+      '        return Response.ok().build();',
+      '    }',
+      '}',
+    ];
+    const outline = extractClassOutline(lines);
+    expect(outline).toEqual([
+      { kind: 'method', name: 'getServerInfo', params: '(boolean)', returns: 'Response', visibility: 'public', isStatic: false, httpMethod: 'GET', line: 14, depth: 0 },
+    ]);
+  });
 });
