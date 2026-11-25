@@ -325,7 +325,8 @@ public class JerseyModelSource implements SpecSource {
             Class<?> rawRet = handling.getReturnType();
             if (rawRet != void.class && rawRet != Void.class) {
                 Type genericRet = handling.getGenericReturnType();
-                returnJavaType = stableTypeName(genericRet, rawRet);
+                String annotatedRet = isGenericResponseWrapper(rawRet) ? annotatedReturnJavaType(def, handling) : null;
+                returnJavaType = annotatedRet != null ? annotatedRet : stableTypeName(genericRet, rawRet);
                 returnType = shortTypeName(returnJavaType);
             }
         }
@@ -574,13 +575,212 @@ public class JerseyModelSource implements SpecSource {
     private static final String OAS_OPERATION = "io.swagger.v3.oas.annotations.Operation";
     private static final String OAS_PARAMETER = "io.swagger.v3.oas.annotations.Parameter";
     private static final String OAS_PARAMETERS = "io.swagger.v3.oas.annotations.Parameters";
+    private static final String OAS_API_RESPONSE = "io.swagger.v3.oas.annotations.responses.ApiResponse";
+    private static final String OAS_API_RESPONSES = "io.swagger.v3.oas.annotations.responses.ApiResponses";
     private static final String SWAGGER_OPERATION = "io.swagger.annotations.ApiOperation";
+    private static final String SWAGGER_API_RESPONSE = "io.swagger.annotations.ApiResponse";
+    private static final String SWAGGER_API_RESPONSES = "io.swagger.annotations.ApiResponses";
     private static final String SWAGGER_PARAM = "io.swagger.annotations.ApiParam";
     private static final String SWAGGER_IMPLICIT_PARAM = "io.swagger.annotations.ApiImplicitParam";
     private static final String SWAGGER_IMPLICIT_PARAMS = "io.swagger.annotations.ApiImplicitParams";
     private static final String ATLASSIAN_PATH_PARAM_DOC = "com.atlassian.dc.swagger.annotations.PathParamDoc";
     private static final String ATLASSIAN_MULTIPART_PARAM = "com.atlassian.plugins.rest.api.multipart.MultipartFormParam";
     private static final String JERSEY_FORM_DATA_PARAM = "org.glassfish.jersey.media.multipart.FormDataParam";
+
+    private static boolean isGenericResponseWrapper(Class<?> c) {
+        if (c == null || c == Object.class) {
+            return true;
+        }
+        String n = c.getName();
+        return "jakarta.ws.rs.core.Response".equals(n) || "javax.ws.rs.core.Response".equals(n);
+    }
+
+    /**
+     * Resolves the documented response Java type when a JAX-RS method returns {@code Response} or {@code Object}.
+     * Checks OpenAPI v3 ({@code @ApiResponses}/{@code @ApiResponse}/{@code @Operation(responses=...)}),
+     * Atlassian {@code @ResponseType}, and Swagger v2 ({@code @ApiOperation}/{@code @ApiResponses}).
+     */
+    static String annotatedReturnJavaType(Method definition, Method handling) {
+        String type = annotatedReturnJavaTypeOf(definition);
+        if (type == null && handling != null && !handling.equals(definition)) {
+            type = annotatedReturnJavaTypeOf(handling);
+        }
+        return type;
+    }
+
+    private static String annotatedReturnJavaTypeOf(Method method) {
+        if (method == null) {
+            return null;
+        }
+        Annotation[] all = safeAnnotations(method);
+        // 1. OpenAPI v3: @ApiResponses, @ApiResponse, @Operation(responses = ...)
+        List<Annotation> oasResponses = new ArrayList<>();
+        for (Annotation a : all) {
+            String name = a.annotationType().getName();
+            if (OAS_API_RESPONSE.equals(name)) {
+                oasResponses.add(a);
+            } else if (OAS_API_RESPONSES.equals(name)) {
+                addAnnotations(annMember(a, "value"), oasResponses);
+            } else if (OAS_OPERATION.equals(name)) {
+                addAnnotations(annMember(a, "responses"), oasResponses);
+            }
+        }
+        String fromOas = extractOasResponseType(oasResponses);
+        if (fromOas != null) {
+            return fromOas;
+        }
+        // 2. Atlassian @ResponseType(value = Foo.class, genericTypes = { ... })
+        for (Annotation a : all) {
+            if ("ResponseType".equals(a.annotationType().getSimpleName())) {
+                Object val = annMember(a, "value");
+                if (val instanceof Class<?> cls && isConcreteResponseClass(cls)) {
+                    String base = stableTypeName(cls, cls);
+                    Object generics = annMember(a, "genericTypes");
+                    if (generics instanceof Class<?>[] gArr && gArr.length > 0) {
+                        List<String> args = new ArrayList<>();
+                        for (Class<?> g : gArr) {
+                            if (g != null) {
+                                args.add(stableTypeName(g, g));
+                            }
+                        }
+                        if (!args.isEmpty()) {
+                            return base + "<" + String.join(", ", args) + ">";
+                        }
+                    }
+                    return base;
+                }
+            }
+        }
+        // 3. Swagger v2: @ApiOperation(response = ..., responseContainer = ...) and @ApiResponses/@ApiResponse
+        for (Annotation a : all) {
+            if (SWAGGER_OPERATION.equals(a.annotationType().getName())) {
+                String t = formatSwaggerResponse(annMember(a, "response"), annString(a, "responseContainer"));
+                if (t != null) {
+                    return t;
+                }
+            }
+        }
+        List<Annotation> swResponses = new ArrayList<>();
+        for (Annotation a : all) {
+            String name = a.annotationType().getName();
+            if (SWAGGER_API_RESPONSE.equals(name)) {
+                swResponses.add(a);
+            } else if (SWAGGER_API_RESPONSES.equals(name)) {
+                addAnnotations(annMember(a, "value"), swResponses);
+            }
+        }
+        for (Annotation r : swResponses) {
+            Object codeObj = annMember(r, "code");
+            if (codeObj instanceof Integer code && code >= 200 && code < 300) {
+                String t = formatSwaggerResponse(annMember(r, "response"), annString(r, "responseContainer"));
+                if (t != null) {
+                    return t;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static void addAnnotations(Object value, List<Annotation> out) {
+        if (value instanceof Annotation[] array) {
+            Collections.addAll(out, array);
+        }
+    }
+
+    private static String extractOasResponseType(List<Annotation> responses) {
+        if (responses.isEmpty()) {
+            return null;
+        }
+        String fallback = null;
+        for (Annotation resp : responses) {
+            String code = annString(resp, "responseCode");
+            boolean is2xx = code != null && code.trim().startsWith("2");
+            boolean isDefault = code == null || code.isBlank() || "default".equalsIgnoreCase(code.trim());
+            if (!is2xx && !isDefault) {
+                continue;
+            }
+            String found = extractOasContentType(annMember(resp, "content"));
+            if (found != null) {
+                if (is2xx) {
+                    return found;
+                }
+                if (fallback == null) {
+                    fallback = found;
+                }
+            }
+        }
+        return fallback;
+    }
+
+    private static String extractOasContentType(Object contentObj) {
+        if (!(contentObj instanceof Annotation[] contents)) {
+            return null;
+        }
+        for (Annotation content : contents) {
+            // Check array = @ArraySchema(schema = @Schema(implementation = ...)) first
+            Object arrayAnn = annMember(content, "array");
+            if (arrayAnn instanceof Annotation arr) {
+                String item = extractOasSchemaType(annMember(arr, "schema"));
+                if (item != null) {
+                    return item + "[]";
+                }
+                String arrSchema = extractOasSchemaType(annMember(arr, "arraySchema"));
+                if (arrSchema != null) {
+                    return arrSchema;
+                }
+            }
+            // Check direct schema = @Schema(implementation = ...)
+            String direct = extractOasSchemaType(annMember(content, "schema"));
+            if (direct != null) {
+                return direct;
+            }
+        }
+        return null;
+    }
+
+    private static String extractOasSchemaType(Object schemaObj) {
+        if (!(schemaObj instanceof Annotation schema)) {
+            return null;
+        }
+        Object impl = annMember(schema, "implementation");
+        if (impl instanceof Class<?> cls && isConcreteResponseClass(cls)) {
+            return stableTypeName(cls, cls);
+        }
+        for (String member : new String[]{"oneOf", "anyOf", "allOf"}) {
+            Object arr = annMember(schema, member);
+            if (arr instanceof Class<?>[] classes) {
+                for (Class<?> cls : classes) {
+                    if (isConcreteResponseClass(cls)) {
+                        return stableTypeName(cls, cls);
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private static String formatSwaggerResponse(Object responseObj, String container) {
+        if (!(responseObj instanceof Class<?> cls) || !isConcreteResponseClass(cls)) {
+            return null;
+        }
+        String base = stableTypeName(cls, cls);
+        if (base == null) {
+            return null;
+        }
+        if (container == null || container.isBlank()) {
+            return base;
+        }
+        return switch (container.trim().toLowerCase()) {
+            case "list" -> "java.util.List<" + base + ">";
+            case "set" -> "java.util.Set<" + base + ">";
+            case "map" -> "java.util.Map<java.lang.String, " + base + ">";
+            default -> base;
+        };
+    }
+
+    private static boolean isConcreteResponseClass(Class<?> cls) {
+        return cls != null && cls != Void.class && cls != void.class && cls != Object.class;
+    }
 
     static String multipartParamName(Annotation[] annotations) {
         if (annotations == null) {

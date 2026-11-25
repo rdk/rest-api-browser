@@ -290,4 +290,68 @@ public class JerseyModelSourceTest {
         assertEquals("List<Long>", JerseyModelSource.shortTypeName(jerseyLike));
         assertEquals("java.lang.String[]", JerseyModelSource.stableTypeName(String[].class, String[].class));
     }
+
+    public static class UsageDto {
+    }
+
+    @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.RUNTIME)
+    public @interface ResponseType {
+        Class<?> value();
+        Class<?>[] genericTypes() default {};
+    }
+
+    public static class AnnotatedReturns {
+        @io.swagger.v3.oas.annotations.responses.ApiResponses({
+                @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                        responseCode = "200",
+                        description = "OK",
+                        content = @io.swagger.v3.oas.annotations.media.Content(
+                                mediaType = "application/json",
+                                array = @io.swagger.v3.oas.annotations.media.ArraySchema(
+                                        schema = @io.swagger.v3.oas.annotations.media.Schema(implementation = UsageDto.class)
+                                )
+                        )
+                ),
+                @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Not found")
+        })
+        public Object arraySchemaReturn() {
+            return null;
+        }
+
+        @io.swagger.v3.oas.annotations.Operation(
+                responses = @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                        responseCode = "200",
+                        content = @io.swagger.v3.oas.annotations.media.Content(
+                                schema = @io.swagger.v3.oas.annotations.media.Schema(implementation = UsageDto.class)
+                        )
+                )
+        )
+        public Object operationDirectSchema() {
+            return null;
+        }
+
+        @ResponseType(value = List.class, genericTypes = {UsageDto.class})
+        public Object atlassianResponseType() {
+            return null;
+        }
+
+        @io.swagger.annotations.ApiOperation(value = "List usage", response = UsageDto.class, responseContainer = "List")
+        public Object swaggerV2List() {
+            return null;
+        }
+    }
+
+    @Test
+    public void annotatedReturnJavaTypeReadsOpenApiArraySchemaDirectSchemaResponseTypeAndSwagger() throws Exception {
+        String dto = UsageDto.class.getName();
+        assertEquals(dto + "[]", JerseyModelSource.annotatedReturnJavaType(
+                AnnotatedReturns.class.getMethod("arraySchemaReturn"), null));
+        assertEquals(dto, JerseyModelSource.annotatedReturnJavaType(
+                AnnotatedReturns.class.getMethod("operationDirectSchema"), null));
+        assertEquals("java.util.List<" + dto + ">", JerseyModelSource.annotatedReturnJavaType(
+                AnnotatedReturns.class.getMethod("atlassianResponseType"), null));
+        assertEquals("java.util.List<" + dto + ">", JerseyModelSource.annotatedReturnJavaType(
+                AnnotatedReturns.class.getMethod("swaggerV2List"), null));
+        assertTrue(OperationDetails.signatureTypes(AnnotatedReturns.class.getMethod("arraySchemaReturn")).contains(UsageDto.class));
+    }
 }

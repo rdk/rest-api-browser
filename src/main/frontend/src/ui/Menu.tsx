@@ -1,5 +1,6 @@
 import { Fragment, type ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { tipProps } from '../core/uitips';
 
 export interface MenuItem {
   id: string;
@@ -97,7 +98,10 @@ export function Menu({ label, items }: { label: string; items: MenuItem[] }) {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={label}
-        title={label}
+        {...tipProps({
+          title: label,
+          body: 'Reset layout sizes, rebuild the REST catalog, change colour mode or header skin, or report an issue.',
+        })}
         onClick={() => setOpen(!open)}
         onKeyDown={(e) => {
           if (e.key === 'ArrowDown' && !open) {
@@ -127,7 +131,15 @@ export function Menu({ label, items }: { label: string; items: MenuItem[] }) {
                 <div class="rab-n-menu-choices" role="group" aria-label={it.label}>
                   {it.choices.map((c) => (
                     <button key={c.id} role="menuitemradio" aria-checked={c.checked} tabIndex={-1}
-                            class={'rab-n-menu-choice' + (c.checked ? ' checked' : '')} title={c.label}
+                            class={'rab-n-menu-choice' + (c.checked ? ' checked' : '')}
+                            {...tipProps({
+                              title: `${c.label} colour mode`,
+                              body: c.id === 'light'
+                                ? 'Always use the light colour palette on this page.'
+                                : c.id === 'dark'
+                                  ? 'Always use the dark colour palette on this page.'
+                                  : 'Follow your operating system or browser colour scheme automatically.',
+                            })}
                             onClick={() => c.onSelect()} data-testid={c.testId}>
                       {c.icon}
                       <span>{c.label}</span>

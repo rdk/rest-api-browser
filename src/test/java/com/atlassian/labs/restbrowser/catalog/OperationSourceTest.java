@@ -89,6 +89,15 @@ public class OperationSourceTest {
         assertEquals("vineflower", body.get("decompilerId"));
         assertTrue(((String) body.get("source")).contains("Greeting"));
 
+        // default engine is Vineflower; explicit "cfr" selects CFR
+        assertEquals(Engine.VINEFLOWER, Engine.parse(null));
+        assertEquals(Engine.VINEFLOWER, Engine.parse(""));
+        assertEquals(Engine.VINEFLOWER, Engine.parse("vineflower"));
+        assertEquals(Engine.CFR, Engine.parse("cfr"));
+        Result def = source.decompile(null, Greeting.class.getName(), -1, "class", null);
+        assertEquals(200, def.status());
+        assertEquals("vineflower", ((Map<String, Object>) parseJson(def.json())).get("decompilerId"));
+
         // nested dot syntax resolves to $ inner class
         String dotted = Greeting.class.getName().replace('$', '.');
         assertEquals(200, source.decompile(null, dotted, -1, "class", "cfr").status());

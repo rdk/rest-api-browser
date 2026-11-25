@@ -5,6 +5,7 @@ import { findRows, rowEnd, wrapRows } from '../core/textrows';
 import { VirtualList } from './VirtualList';
 import { MaximizeButton, RichTip, Tabs, copyText, download, formatBytes, plural, tabId, useFlash } from './bits';
 import { statusInfo, statusTone } from '../core/explain';
+import { tipProps } from '../core/uitips';
 
 const LINE = 20;
 /** Pretty cuts a longer line (one DOM text node of megabytes freezes the tab); up to this, it scrolls sideways. */
@@ -46,7 +47,7 @@ export function ResponseView({ result, running, onCancel, maximized, onMaximize,
       <div class="rab-n-response rab-n-response-state" data-testid="response-running">
         <div class="rab-n-response-state-inner">
           <span role="status"><span class="rab-n-spinner" aria-hidden="true" /> Sending…</span>
-          <button class="rab-n-link" onClick={onCancel} title="Cancel the request (Esc)">Cancel</button>
+          <button class="rab-n-link" onClick={onCancel} {...tipProps({ title: 'Cancel request', body: 'Abort the in-flight HTTP request.', shortcut: 'Esc' })}>Cancel</button>
         </div>
       </div>
     );
@@ -111,10 +112,10 @@ export function ResponseView({ result, running, onCancel, maximized, onMaximize,
           label="The response"
           panelId="rab-n-response-pane"
           tabs={[
-            { id: 'pretty', label: 'Pretty' },
-            { id: 'raw', label: 'Raw' },
-            { id: 'headers', label: `Response headers (${result.headers.length})` },
-            { id: 'sent', label: 'Request headers' },
+            { id: 'pretty', label: 'Pretty', tip: { title: 'Pretty view', body: 'Syntax-highlighted, collapsible view of JSON responses.' } },
+            { id: 'raw', label: 'Raw', tip: { title: 'Raw response', body: 'Exact unformatted response body as returned by the server.' } },
+            { id: 'headers', label: `Response headers (${result.headers.length})`, tip: { title: 'Response headers', body: 'HTTP headers returned by the server (content type, caching, security, node ID, etc.).' } },
+            { id: 'sent', label: 'Request headers', tip: { title: 'Request headers', body: 'Headers set by the app plus headers added by your browser and proxies (secrets redacted).' } },
           ]}
         />
         <span class="rab-n-spacer" />
@@ -241,8 +242,9 @@ function CopyContentButton({ view, result, baseUrl, formatted }: { view: View; r
   const label = off ? (result.kind === 'binary' ? 'A binary body cannot be copied: download it' : 'Nothing to copy: the body is empty')
     : state === 'done' ? 'Copied' : state === 'failed' ? 'The browser did not allow copying' : 'Copy ' + what;
   return (
-    <button class={'rab-n-tool' + (state === 'done' ? ' done' : state === 'failed' ? ' failed' : '')} disabled={off} title={label} aria-label={label}
+    <button class={'rab-n-tool' + (state === 'done' ? ' done' : state === 'failed' ? ' failed' : '')} disabled={off} aria-label={label}
             data-testid="copy-content" data-state={state}
+            {...tipProps({ title: 'Copy content', body: label, tone: off ? 'warn' : undefined })}
             onClick={async () => {
               const text = await textOf(view, result, baseUrl);
               flash(text !== null && (await copyText(text)) ? 'done' : 'failed');
@@ -275,7 +277,8 @@ function DownloadButton({ view, result, baseUrl, formatted }: { view: View; resu
     : formatted ? 'the body, formatted' : 'the body as received';
   const label = empty ? 'Nothing to download: the body is empty' : 'Download ' + what;
   return (
-    <button class="rab-n-tool" disabled={empty} title={label} aria-label={label} data-testid="download"
+    <button class="rab-n-tool" disabled={empty} aria-label={label} data-testid="download"
+            {...tipProps({ title: 'Download', body: label, tone: empty ? 'warn' : undefined })}
             onClick={async () => {
               const file = await downloadOf(view, result, baseUrl);
               if (file && current.current.view === view && current.current.result === result) download(file.blob, file.name);

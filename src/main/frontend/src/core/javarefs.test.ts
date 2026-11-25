@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { splitSourceLines, tokenizeSource } from './javatokens';
+import { annotationTokens, splitSourceLines, tokenizeSource } from './javatokens';
 import {
-  classLabel, createRefContext, extractClassOutline, fallbackJavaType, findMethodHeaderLine,
-  linkSourceLine, linkSourceTokens, parseJavaTypeParts,
+  classLabel, createRefContext, extractAnnotationClassMap, extractClassOutline, fallbackJavaType, findMethodHeaderLine,
+  linkAnnotationTokens, linkSourceLine, linkSourceTokens, matchOutlineEndpoints, normalizeRestPath, parseJavaTypeParts,
 } from './javarefs';
+import { shortJava } from './details';
+import type { Module, Operation } from './types';
 
 describe('javarefs', () => {
   it('resolves simple types from imports and constant-pool refs, keeping generics unlinked', () => {
@@ -145,7 +147,7 @@ describe('javarefs', () => {
     const outline = extractClassOutline(lines);
     expect(outline).toEqual([
       { kind: 'ctor', name: 'ServerInfoResource', params: '(String)', returns: '', visibility: 'public', isStatic: false, line: 3, depth: 0 },
-      { kind: 'method', name: 'getServerInfo', params: '(boolean)', returns: 'Response', visibility: 'public', isStatic: false, httpMethod: 'GET', restPath: 'info', line: 8, depth: 0 },
+      { kind: 'method', name: 'getServerInfo', params: '(boolean)', returns: 'Response', visibility: 'public', isStatic: false, httpMethod: 'GET', restPath: 'info', fullRestPath: 'info', line: 8, depth: 0 },
       { kind: 'method', name: 'createItem', params: '(String)', returns: 'Response', visibility: 'public', isStatic: false, httpMethod: 'POST', line: 14, depth: 0 },
       { kind: 'method', name: 'remove', params: '(long)', returns: 'void', visibility: 'public', isStatic: false, httpMethod: 'DELETE', line: 15, depth: 0 },
       { kind: 'type', name: 'Helper', params: '', returns: 'class', visibility: 'public', isStatic: true, line: 16, depth: 0 },
@@ -207,7 +209,122 @@ describe('javarefs', () => {
     ];
     const outline = extractClassOutline(lines);
     expect(outline).toEqual([
-      { kind: 'method', name: 'getServerInfo', params: '(boolean)', returns: 'Response', visibility: 'public', isStatic: false, httpMethod: 'GET', line: 14, depth: 0 },
+      { kind: 'method', name: 'getServerInfo', params: '(boolean)', returns: 'Response', visibility: 'public', isStatic: false, httpMethod: 'GET', fullRestPath: 'serverInfo', line: 14, depth: 0 },
     ]);
+  });
+
+  it('matches decompiled REST endpoint methods to catalog operations preferring the current module', () => {
+    const lines = [
+      '@Path("/issue")',
+      'public class IssueResource {',
+      '    @GET',
+      '    @Path("/{issueIdOrKey: [^/]+}")',
+      '    public Response getIssue(@PathParam("issueIdOrKey") String key) { return null; }',
+      '    @POST',
+      '    public Response createIssue(String body) { return null; }',
+      '}',
+    ];
+    const outline = extractClassOutline(lines);
+    expect(normalizeRestPath('/issue/{issueIdOrKey: [^/]+}/')).toBe('issue/{}');
+    const modV2 = { id: 'jira:v2', path: 'api/2', plugin: { key: 'jira', name: 'Jira' } } as unknown as Module;
+    const modLatest = { id: 'jira:latest', path: 'api/latest', plugin: { key: 'jira', name: 'Jira' } } as unknown as Module;
+    const modules = new Map<string, Module>([['jira:v2', modV2], ['jira:latest', modLatest]]);
+    const ops: Operation[] = [
+      { key: 'jira:latest:GET:issue/{}', module: 'jira:latest', method: 'GET', path: 'issue/{id}', consumes: [], produces: [], params: [] },
+      { key: 'jira:v2:GET:issue/{}', module: 'jira:v2', method: 'GET', path: 'issue/{issueIdOrKey}', consumes: [], produces: [], params: [] },
+      { key: 'jira:v2:POST:issue', module: 'jira:v2', method: 'POST', path: 'issue', consumes: [], produces: [], params: [] },
+    ];
+    const matched = matchOutlineEndpoints(outline, ops, modules, 'jira:v2:GET:issue/{}');
+    expect(matched.get(4)).toMatchObject({ op: ops[1], fullPath: '/rest/api/2/issue/{issueIdOrKey}' });
+    expect(matched.get(6)).toMatchObject({ op: ops[2], fullPath: '/rest/api/2/issue' });
+  });
+
+  it('extracts outline methods from CFR-style multiline class headers (extends/implements on next lines) and inline annotations', () => {
+    const lines = [
+      '/*',
+      ' * Decompiled with CFR 0.152.',
+      ' */',
+      'package com.example;',
+      '',
+      '@Path("usage")',
+      '@Produces(value={"application/json"})',
+      'public class UsageResource',
+      'extends AbstractResource',
+      'implements Serializable {',
+      '    @Inject public UsageResource(',
+      '        ServiceA a,',
+      '        ServiceB b',
+      '    ) {',
+      '        super();',
+      '    }',
+      '    @GET',
+      '    @Path("/api-usage")',
+      '    public final Response getRestUsageInfo(@QueryParam("pluginKey") String arg0) {',
+      '        return Response.ok().build();',
+      '    }',
+      '}',
+    ];
+    const outline = extractClassOutline(lines);
+    expect(outline).toEqual([
+      { kind: 'ctor', name: 'UsageResource', params: '(ServiceA, ServiceB)', returns: '', visibility: 'public', isStatic: false, line: 10, depth: 0 },
+      { kind: 'method', name: 'getRestUsageInfo', params: '(String)', returns: 'Response', visibility: 'public', isStatic: false, httpMethod: 'GET', restPath: '/api-usage', fullRestPath: 'usage/api-usage', line: 18, depth: 0 },
+    ]);
+  });
+
+  it('handles empty single-line nested types, multiline records, type-use annotations, and nested generic type params', () => {
+    const lines = [
+      '@Metadata(mv={1, 9, 0}, d1={"\\u0000\\n"})',
+      'public final class KotlinResource',
+      'extends BaseResource {',
+      '    public record EmptyKey(String a, int b) {}',
+      '    public record Multi(',
+      '        String key,',
+      '        int count',
+      '    ) implements Comparable<Multi> {',
+      '        public int compareTo(Multi other) { return 0; }',
+      '    }',
+      '    @GET',
+      '    public final @NotNull Response getInfo(@QueryParam("id") @Nullable String id) {',
+      '        return Response.ok().build();',
+      '    }',
+      '    public static <T extends Comparable<T>> List<@NotNull T> sortItems(List<T> items) {',
+      '        return items;',
+      '    }',
+      '}',
+    ];
+    const outline = extractClassOutline(lines);
+    expect(outline).toEqual([
+      { kind: 'type', name: 'EmptyKey', params: '', returns: 'record', visibility: 'public', isStatic: false, line: 3, depth: 0 },
+      { kind: 'type', name: 'Multi', params: '', returns: 'record', visibility: 'public', isStatic: false, line: 4, depth: 0 },
+      { kind: 'method', name: 'compareTo', params: '(Multi)', returns: 'int', visibility: 'public', isStatic: false, line: 8, depth: 1 },
+      { kind: 'method', name: 'getInfo', params: '(String)', returns: 'Response', visibility: 'public', isStatic: false, httpMethod: 'GET', line: 11, depth: 0 },
+      { kind: 'method', name: 'sortItems', params: '(List<T>)', returns: 'List<T>', visibility: 'public', isStatic: true, line: 14, depth: 0 },
+    ]);
+  });
+
+  it('links nested OpenAPI annotations and implementation class literals in Method view', () => {
+    const raw = '@io.swagger.v3.oas.annotations.responses.ApiResponses({'
+      + '@io.swagger.v3.oas.annotations.responses.ApiResponse('
+      + 'content=@io.swagger.v3.oas.annotations.media.Content('
+      + 'array=@io.swagger.v3.oas.annotations.media.ArraySchema('
+      + 'schema=@io.swagger.v3.oas.annotations.media.Schema(implementation=com.example.usage.RestUsageInfoResponse.class)), '
+      + 'mediaType="application/json"), description="A JSON response for com.fake.InString.class", responseCode="200")})';
+    const classMap = extractAnnotationClassMap(raw);
+    expect(classMap.get('RestUsageInfoResponse')).toBe('com.example.usage.RestUsageInfoResponse');
+    expect(classMap.get('Schema')).toBe('io.swagger.v3.oas.annotations.media.Schema');
+    expect(classMap.get('ArraySchema')).toBe('io.swagger.v3.oas.annotations.media.ArraySchema');
+    expect(classMap.get('InString')).toBeUndefined();
+
+    // Short display mode
+    const shortSpans = linkAnnotationTokens(annotationTokens(shortJava(raw), 80), classMap);
+    expect(shortSpans.find((s) => s.text === 'RestUsageInfoResponse')?.target).toBe('com.example.usage.RestUsageInfoResponse');
+    expect(shortSpans.find((s) => s.text === '@Schema')?.target).toBe('io.swagger.v3.oas.annotations.media.Schema');
+    expect(shortSpans.find((s) => s.text === '@ApiResponse')?.target).toBe('io.swagger.v3.oas.annotations.responses.ApiResponse');
+
+    // Full names display mode
+    const fullSpans = linkAnnotationTokens(annotationTokens(raw, 80), classMap);
+    expect(fullSpans.find((s) => s.text === 'RestUsageInfoResponse')?.target).toBe('com.example.usage.RestUsageInfoResponse');
+    expect(fullSpans.find((s) => s.text === '@io.swagger.v3.oas.annotations.media.Schema')?.target)
+      .toBe('io.swagger.v3.oas.annotations.media.Schema');
   });
 });

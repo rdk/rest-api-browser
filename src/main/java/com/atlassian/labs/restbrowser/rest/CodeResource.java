@@ -126,7 +126,7 @@ public class CodeResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response operationBundle(@QueryParam("op") String op,
                                     @QueryParam("scope") @DefaultValue("method") String scope,
-                                    @QueryParam("decompiler") @DefaultValue("cfr") String decompiler,
+                                    @QueryParam("decompiler") @DefaultValue("vineflower") String decompiler,
                                     @Context HttpServletRequest request) {
         Response denied = checkSysadmin(request);
         if (denied != null) {
@@ -148,7 +148,7 @@ public class CodeResource {
                                   @QueryParam("includeJdk") @DefaultValue("false") boolean includeJdk,
                                   @QueryParam("packagePrefix") String packagePrefix,
                                   @QueryParam("includeSources") @DefaultValue("false") boolean includeSources,
-                                  @QueryParam("decompiler") @DefaultValue("cfr") String decompiler,
+                                  @QueryParam("decompiler") @DefaultValue("vineflower") String decompiler,
                                   @Context HttpServletRequest request) {
         Response denied = checkSysadmin(request);
         if (denied != null) {
@@ -178,7 +178,7 @@ public class CodeResource {
 
     /**
      * Batch inspect or decompile up to 10 classes in one request.
-     * Body: {@code {"classes":["a.b.Foo","a.b.Bar"],"fromBundle":-1,"decompiler":"cfr","includeSource":true,"includeMeta":false,"maxLines":200}}.
+     * Body: {@code {"classes":["a.b.Foo","a.b.Bar"],"fromBundle":-1,"decompiler":"vineflower","includeSource":true,"includeMeta":false,"maxLines":200}}.
      */
     @POST
     @Path("/batch")
@@ -215,7 +215,7 @@ public class CodeResource {
 
     static BatchRequest parseBatchRequest(String body) {
         if (body == null || body.isBlank()) {
-            return new BatchRequest(List.of(), -1L, null, "cfr", true, false, null);
+            return new BatchRequest(List.of(), -1L, null, "vineflower", true, false, null);
         }
         List<String> classes = new ArrayList<>();
         Matcher arr = CLASSES_ARR.matcher(body);
@@ -236,7 +236,7 @@ public class CodeResource {
             }
         }
         String op = null;
-        String decompiler = "cfr";
+        String decompiler = "vineflower";
         Matcher sm = STR_FIELD.matcher(body);
         while (sm.find()) {
             switch (sm.group(1)) {

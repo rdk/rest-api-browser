@@ -6,6 +6,9 @@ import {
   type OperationSource, type PluginInfo, type RestModuleInfo, type Section,
 } from '../core/details';
 import { annotationTokens, toLines, tokenize, type Token } from '../core/javatokens';
+import { extractAnnotationClassMap, linkAnnotationTokens } from '../core/javarefs';
+import { formatJavaSource } from '../core/javaformat';
+import { tipProps, type UiTipSpec } from '../core/uitips';
 import type { OpenTabRequest } from '../core/sourcetabs';
 import { CopyButton, plural, safeHref } from './bits';
 import { DecompilerLink, DecompilerToggle, describeSourceError, SourceCode } from './SourceDialog';
@@ -22,12 +25,14 @@ let lastPage: Page = 'method';
  * signature, the OSGi bundle with its wiring, the plugin and the REST module, one page each, chosen in a menu on the
  * left. Fetched when the tab opens, once per page load.
  */
-export function JavaTab({ baseUrl, opKey, revision, decompiler, onDecompiler, onOpenClass }: {
+export function JavaTab({ baseUrl, opKey, revision, decompiler, onDecompiler, pretty, onPretty, onOpenClass }: {
   baseUrl: string;
   opKey: string;
   revision?: string;
   decompiler: DecompilerId;
   onDecompiler: (d: DecompilerId) => void;
+  pretty?: boolean;
+  onPretty?: () => void;
   onOpenClass?: (req: OpenTabRequest) => void;
 }) {
   const [details, setDetails] = useState<OperationDetails | null>(() => peekDetails(opKey));
@@ -86,7 +91,11 @@ export function JavaTab({ baseUrl, opKey, revision, decompiler, onDecompiler, on
     setReload((r) => r + 1);
   };
   const reloadButton = (label: string) => (
-    <button class="rab-n-quiet" onClick={again} title="Read it again from the server">
+    <button
+      class="rab-n-quiet"
+      onClick={again}
+      {...tipProps({ title: 'Reload Java metadata', body: 'Discard the cached reflection details and fetch fresh information from the server.' })}
+    >
       <svg class="rab-n-svg" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
         <path d="M13 8a5 5 0 11-1.5-3.6M13 2.5v3h-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
@@ -134,28 +143,31 @@ export function JavaTab({ baseUrl, opKey, revision, decompiler, onDecompiler, on
   const cls = isError(details.resourceClass) ? null : details.resourceClass;
   const bundle = !details.bundle || isError(details.bundle) || 'none' in details.bundle ? null : details.bundle;
   const plugin = isError(details.plugin) ? null : details.plugin;
-  const pages: { id: Page; label: string; count?: number; failed?: boolean; hidden?: boolean }[] = [
-    { id: 'method', label: 'Method', failed: isError(details.method) },
-    { id: 'class', label: 'Class', failed: isError(details.resourceClass) },
-    { id: 'types', label: 'Types', count: isError(details.types) ? undefined : details.types.length, failed: isError(details.types) },
-    { id: 'bundle', label: 'Bundle', failed: isError(details.bundle) },
-    { id: 'imports', label: 'Imports', count: bundle?.importCount, hidden: !bundle?.imports },
-    { id: 'exports', label: 'Exports', count: bundle?.exportCount, hidden: !bundle?.exports },
-    { id: 'plugin', label: 'Plugin', failed: isError(details.plugin) },
-    { id: 'modules', label: 'Modules', count: plugin?.moduleCount, hidden: !plugin },
-    { id: 'rest', label: 'REST module', failed: isError(details.module) },
+  const pages: { id: Page; label: string; tip: UiTipSpec; count?: number; failed?: boolean; hidden?: boolean }[] = [
+    { id: 'method', label: 'Method', tip: { title: 'Handler method', body: 'Java signature, JAX-RS/OpenAPI annotations, and inline method decompiler.' }, failed: isError(details.method) },
+    { id: 'class', label: 'Class', tip: { title: 'Resource class', body: 'Class declaration, hierarchy, annotations, classloader, and full-class decompiler.' }, failed: isError(details.resourceClass) },
+    { id: 'types', label: 'Types', tip: { title: 'Signature types', body: 'All Java classes referenced by parameters, return type, and method annotations.' }, count: isError(details.types) ? undefined : details.types.length, failed: isError(details.types) },
+    { id: 'bundle', label: 'Bundle', tip: { title: 'OSGi bundle', body: 'OSGi symbolic name, bundle ID, version, state, and manifest headers.' }, failed: isError(details.bundle) },
+    { id: 'imports', label: 'Imports', tip: { title: 'Imported packages', body: 'Java packages imported by this OSGi bundle and which bundles provide them.' }, count: bundle?.importCount, hidden: !bundle?.imports },
+    { id: 'exports', label: 'Exports', tip: { title: 'Exported packages', body: 'Java packages exported by this OSGi bundle and how many bundles consume them.' }, count: bundle?.exportCount, hidden: !bundle?.exports },
+    { id: 'plugin', label: 'Plugin', tip: { title: 'Atlassian plugin', body: 'Plugin key, version, vendor, origin, and installation state.' }, failed: isError(details.plugin) },
+    { id: 'modules', label: 'Modules', tip: { title: 'Plugin modules', body: 'All plugin descriptors (REST, servlets, web-items, etc.) declared by this plugin.' }, count: plugin?.moduleCount, hidden: !plugin },
+    { id: 'rest', label: 'REST module', tip: { title: 'REST module', body: 'REST descriptor path, version, API stability, and discovery source.' }, failed: isError(details.module) },
   ];
   const shown = pages.filter((p) => !p.hidden);
   const current = shown.some((p) => p.id === page) ? page : 'method';
   const tools = (
     <span class="rab-n-java-tools">
       {(current === 'method' || current === 'class' || current === 'types') && (
-        <label class="rab-n-java-toggle" title="Show class names with their packages">
+        <label
+          class="rab-n-java-toggle"
+          {...tipProps({ title: 'Full class names', body: 'Show fully qualified package names for Java types and annotations instead of short names.' })}
+        >
           <input type="checkbox" checked={full} onChange={(e) => setFull((e.target as HTMLInputElement).checked)} /> Full names
         </label>
       )}
-      {cls && <CopyButton quiet label="Copy class" text={() => cls.name} />}
-      {method && <CopyButton quiet label="Copy method" text={() => `${method.class}#${method.name}`} />}
+      {cls && <CopyButton quiet label="Copy class" tip={{ title: 'Copy class name', body: `Copy ${cls.name} to your clipboard.` }} text={() => cls.name} />}
+      {method && <CopyButton quiet label="Copy method" tip={{ title: 'Copy method reference', body: `Copy ${method.class}#${method.name} to your clipboard.` }} text={() => `${method.class}#${method.name}`} />}
       {reloadButton('Reload')}
     </span>
   );
@@ -178,7 +190,8 @@ export function JavaTab({ baseUrl, opKey, revision, decompiler, onDecompiler, on
           <button key={p.id} id={'rab-n-java-tab-' + p.id} role="tab" aria-selected={p.id === current} aria-controls="rab-n-java-page"
                   tabIndex={p.id === current ? 0 : -1}
                   class={'rab-n-java-nav-item' + (p.id === current ? ' on' : '')} onClick={() => setPage(p.id)}
-                  data-testid={'java-nav-' + p.id}>
+                  data-testid={'java-nav-' + p.id}
+                  {...tipProps(p.tip)}>
             <span>{p.label}</span>
             {p.failed ? <span class="rab-n-java-nav-failed" title="Could not be read"><span aria-hidden="true">!</span><span class="rab-n-sr"> (could not be read)</span></span>
               : p.count !== undefined && <span class="rab-n-java-nav-count">{p.count.toLocaleString()}</span>}
@@ -200,6 +213,8 @@ export function JavaTab({ baseUrl, opKey, revision, decompiler, onDecompiler, on
                   focusParamCount={m.parameters.length}
                   decompiler={decompiler}
                   onDecompiler={onDecompiler}
+                  pretty={!!pretty}
+                  onPretty={onPretty}
                   onOpenClass={openClass}
                 />
                 <MethodCode m={m} full={full} n={n} bundleId={bundle?.id} opKey={opKey} onOpenClass={onOpenClass} />
@@ -256,6 +271,7 @@ export function JavaTab({ baseUrl, opKey, revision, decompiler, onDecompiler, on
                       type="button"
                       class="rab-n-button"
                       data-testid="load-class-source"
+                      {...tipProps({ title: 'Decompile full class', body: 'Decompile the entire resource class in the floating tabbed window, scrolled to this method.' })}
                       onClick={() => openClass({
                         target: c.name,
                         candidates: [c.name],
@@ -280,6 +296,7 @@ export function JavaTab({ baseUrl, opKey, revision, decompiler, onDecompiler, on
                       <button
                         type="button"
                         class="rab-n-button"
+                        {...tipProps({ title: 'Decompile declaring class', body: 'Open the full declaring class in the floating tabbed decompiler window.' })}
                         onClick={() => openClass({
                           target: c.name,
                           candidates: [c.name],
@@ -371,7 +388,7 @@ function describe(e: unknown): string {
  * Top action bar and optional inline method decompiler on the Method page.
  * "Decompile class" always opens the full class in the tabbed SourceDialog focused on this handler method.
  */
-function SourceBlock({ baseUrl, opKey, className, bundleId, focusMethod, focusParamCount, decompiler, onDecompiler, onOpenClass }: {
+function SourceBlock({ baseUrl, opKey, className, bundleId, focusMethod, focusParamCount, decompiler, onDecompiler, pretty, onPretty, onOpenClass }: {
   baseUrl: string;
   opKey: string;
   className: string;
@@ -380,15 +397,21 @@ function SourceBlock({ baseUrl, opKey, className, bundleId, focusMethod, focusPa
   focusParamCount?: number;
   decompiler: DecompilerId;
   onDecompiler: (d: DecompilerId) => void;
+  pretty: boolean;
+  onPretty?: () => void;
   onOpenClass: (req: OpenTabRequest) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [localPretty, setLocalPretty] = useState(false);
+  const isPretty = onPretty ? pretty : localPretty;
+  const togglePretty = onPretty ?? (() => setLocalPretty((p) => !p));
   const [src, setSrc] = useState<OperationSource | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
 
   const query = useMemo(() => ({ op: opKey, scope: 'method' as const, decompiler }), [opKey, decompiler]);
+  const displaySource = useMemo(() => (src ? (isPretty ? formatJavaSource(src.source) : src.source) : ''), [src, isPretty]);
 
   useEffect(() => {
     if (!open) return;
@@ -430,10 +453,22 @@ function SourceBlock({ baseUrl, opKey, className, bundleId, focusMethod, focusPa
   if (!open) {
     return (
       <div class="rab-n-source-actions rab-n-source-top" data-testid="java-source">
-        <button type="button" class="rab-n-button" data-testid="load-class-source" onClick={openClassDialog}>
+        <button
+          type="button"
+          class="rab-n-button"
+          data-testid="load-class-source"
+          onClick={openClassDialog}
+          {...tipProps({ title: 'Decompile full class', body: 'Open the entire handler class in the floating tabbed decompiler window, scrolled to this method.' })}
+        >
           Decompile class
         </button>
-        <button type="button" class="rab-n-button" data-testid="load-source" onClick={() => setOpen(true)}>
+        <button
+          type="button"
+          class="rab-n-button"
+          data-testid="load-source"
+          onClick={() => setOpen(true)}
+          {...tipProps({ title: 'Decompile method inline', body: 'Decompile just this handler method and display it right here on the Method page.' })}
+        >
           Decompile method
         </button>
       </div>
@@ -454,15 +489,37 @@ function SourceBlock({ baseUrl, opKey, className, bundleId, focusMethod, focusPa
           <DecompilerToggle value={decompiler} onChange={onDecompiler} />
           <button
             type="button"
+            class={'rab-n-quiet rab-n-outline-btn' + (isPretty ? ' on' : '')}
+            aria-pressed={isPretty}
+            data-testid="toggle-pretty-source"
+            {...tipProps({
+              title: isPretty ? 'Original decompiler output' : 'Pretty-reformat Java',
+              body: isPretty
+                ? 'Showing reformatted code. Click to switch back to the raw decompiler output.'
+                : 'Re-indent to 4 spaces, wrap long annotations and method signatures, and normalize brace spacing.',
+            })}
+            onClick={togglePretty}
+          >
+            Pretty
+          </button>
+          <button
+            type="button"
             class="rab-n-quiet"
             data-testid="load-class-source"
-            title="Open the full class in the tabbed decompiler window"
+            {...tipProps({ title: 'Decompile full class', body: 'Open the complete handler class in the floating tabbed decompiler window.' })}
             onClick={openClassDialog}
           >
             Decompile class
           </button>
-          {src && <CopyButton quiet label="Copy source" text={() => src.source} />}
-          <button type="button" class="rab-n-quiet" onClick={() => setOpen(false)}>Hide</button>
+          {src && <CopyButton quiet label="Copy source" tip={{ title: 'Copy source code', body: 'Copy the currently displayed Java method source to your clipboard.' }} text={() => displaySource} />}
+          <button
+            type="button"
+            class="rab-n-quiet"
+            onClick={() => setOpen(false)}
+            {...tipProps({ title: 'Hide inline source', body: 'Collapse the inline decompiled method block.' })}
+          >
+            Hide
+          </button>
         </span>
       </div>
       {loading ? (
@@ -476,7 +533,7 @@ function SourceBlock({ baseUrl, opKey, className, bundleId, focusMethod, focusPa
         </div>
       ) : src ? (
         <SourceCode
-          source={src.source}
+          source={displaySource}
           className={src.class}
           refs={src.refs}
           bundleId={src.bundleId}
@@ -491,19 +548,20 @@ function SourceBlock({ baseUrl, opKey, className, bundleId, focusMethod, focusPa
 }
 
 /**
- * An annotation laid out in lines; its leading `@Annotation` token links to the annotation class when `raw` has a FQCN.
+ * An annotation laid out in lines; every nested `@Annotation` and every class/enum literal resolved from `raw`
+ * (e.g. `@Schema(implementation = RestUsageInfoResponse.class)`) is clickable with a rich hover tooltip.
  */
 function Annotation({ raw, text, max, bundleId, opKey, onOpenClass }: {
   raw: string; text: string; max?: number; bundleId?: number; opKey?: string; onOpenClass?: (req: OpenTabRequest) => void;
 }) {
-  const annFqcn = /^@([A-Za-z_][\w$.]*)/.exec(raw)?.[1];
+  const classMap = useMemo(() => extractAnnotationClassMap(raw), [raw]);
   return (
     <div class="rab-n-jc-ann-block">
       {toLines(annotationTokens(text, max)).map((l, i) => (
         <div key={i} class="rab-n-jc-line" style={{ paddingLeft: l.indent + 4 + 'ch', textIndent: '-4ch' }}>
           <Code
             tokens={l.tokens}
-            annFqcn={i === 0 ? annFqcn : undefined}
+            classMap={classMap}
             bundleId={bundleId}
             opKey={opKey}
             onOpenClass={onOpenClass}
@@ -515,25 +573,33 @@ function Annotation({ raw, text, max, bundleId, opKey, onOpenClass }: {
 }
 
 /** Coloured Java tokens: annotations, members, types, keywords, strings, numbers and punctuation. */
-function Code({ tokens, annFqcn, bundleId, opKey, onOpenClass }: {
-  tokens: Token[]; annFqcn?: string; bundleId?: number; opKey?: string; onOpenClass?: (req: OpenTabRequest) => void;
+function Code({ tokens, classMap, bundleId, opKey, onOpenClass }: {
+  tokens: Token[]; classMap?: Map<string, string>; bundleId?: number; opKey?: string; onOpenClass?: (req: OpenTabRequest) => void;
 }) {
-  let linkedFirstAnn = false;
+  if (classMap && classMap.size > 0 && onOpenClass) {
+    const spans = linkAnnotationTokens(tokens, classMap);
+    return (
+      <>
+        {spans.map((s, i) => {
+          if (s.target) {
+            return (
+              <JavaTypeButton key={i} fqcn={s.target} fromBundle={bundleId} opKey={opKey} onOpenClass={onOpenClass} kind={s.kind}>
+                {s.text}
+              </JavaTypeButton>
+            );
+          }
+          return s.kind === 'space' || s.kind === 'name'
+            ? s.text
+            : <span key={i} class={'rab-n-jc-' + s.kind}>{s.text}</span>;
+        })}
+      </>
+    );
+  }
   return (
     <>
-      {tokens.map((t, i) => {
-        if (t.kind === 'ann' && annFqcn && onOpenClass && !linkedFirstAnn) {
-          linkedFirstAnn = true;
-          return (
-            <JavaTypeButton key={i} fqcn={annFqcn} fromBundle={bundleId} opKey={opKey} onOpenClass={onOpenClass} kind="ann">
-              {t.text}
-            </JavaTypeButton>
-          );
-        }
-        return t.kind === 'space' || t.kind === 'name'
-          ? t.text
-          : <span key={i} class={'rab-n-jc-' + t.kind}>{t.text}</span>;
-      })}
+      {tokens.map((t, i) => (t.kind === 'space' || t.kind === 'name'
+        ? t.text
+        : <span key={i} class={'rab-n-jc-' + t.kind}>{t.text}</span>))}
     </>
   );
 }
@@ -611,14 +677,11 @@ function MethodCode({ m, full, n, bundleId, opKey, onOpenClass }: {
       <span class="rab-n-jc-punct">(</span>
       {m.parameters.map((p, i) => (
         <div key={i} class="rab-n-jc-param">
-          {p.annotations.map((a, k) => {
-            const annFqcn = /^@([A-Za-z_][\w$.]*)/.exec(a)?.[1];
-            return (
+          {p.annotations.map((a, k) => (
               <span key={k}>
-                <Code tokens={annotationTokens(n(a), 60)} annFqcn={annFqcn} bundleId={bundleId} opKey={opKey} onOpenClass={onOpenClass} />{' '}
+                <Code tokens={annotationTokens(n(a), 60)} classMap={extractAnnotationClassMap(a)} bundleId={bundleId} opKey={opKey} onOpenClass={onOpenClass} />{' '}
               </span>
-            );
-          })}
+          ))}
           <JavaTypeExpr typeExpr={p.type} full={full} fromBundle={bundleId} opKey={opKey} onOpenClass={onOpenClass} />{' '}
           <span class={p.name ? 'rab-n-jc-pname' : 'rab-n-jc-pname rab-n-subtle'}>{p.name ?? 'arg' + i}</span>
           {i < m.parameters.length - 1 && <span class="rab-n-jc-punct">,</span>}

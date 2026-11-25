@@ -1,4 +1,5 @@
 import { tokenizeSourceLine, type Token, type TokenKind } from './javatokens';
+import type { Module, Operation } from './types';
 
 /** Declaration role for syntax highlighting (bold class/interface/enum/record and method/constructor names). */
 export type DeclKind = 'type' | 'method';
@@ -408,17 +409,88 @@ export interface OutlineItem {
   httpMethod?: HttpMethod;
   /** Optional @Path("...") value on the method. */
   restPath?: string;
+  /** Combined class-level @Path + method-level @Path (trimmed of leading/trailing slashes) for REST endpoints. */
+  fullRestPath?: string;
   /** 0-based line index of the declaration header. */
   line: number;
   depth: number;
 }
 
 const OUTLINE_TYPE_RE = /^\s*(?:(?:public|protected|private|static|final|abstract|sealed|non-sealed|strictfp)\s+)*(class|interface|enum|record|@interface)\s+([A-Za-z_$][\w$]*)/;
-const OUTLINE_METHOD_RE = /^\s*((?:(?:public|protected|private|static|final|abstract|synchronized|native|default)\s+)*)(?:<[^>]+>\s+)?(?:([\w$.<>?,[\] ]+?)\s+)?([A-Za-z_$][\w$]*)\s*\(([^)]*)/;
+const OUTLINE_MODS_RE = /^(?:(?:public|protected|private|static|final|abstract|synchronized|native|default|strictfp)\s+)*/;
+const OUTLINE_METHOD_RE = /^\s*((?:(?:public|protected|private|static|final|abstract|synchronized|native|default|strictfp)\s+)*)(?:([\w$.<>?,[\] ]+?)\s+)?([A-Za-z_$][\w$]*)\s*\(([^)]*)/;
 const CONTROL_KW = new Set(['if', 'for', 'while', 'switch', 'catch', 'synchronized', 'try', 'return', 'throw', 'new', 'else', 'do', 'assert', 'super', 'this']);
 const REST_VERB_RE = /@(?:[\w$.]+\.)?(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\b/;
 const SPRING_MAPPING_RE = /@(?:[\w$.]+\.)?(Get|Post|Put|Delete|Patch)Mapping\b/;
-const REST_PATH_RE = /@(?:[\w$.]+\.)?Path\s*\(\s*(?:value\s*=\s*)?"([^"]*)"/;
+const REST_PATH_RE = /@(?:[\w$.]+\.)?(?:Path|RequestMapping|(?:Get|Post|Put|Delete|Patch)Mapping)\s*\(\s*(?:(?:value|path)\s*=\s*)?(?:\{\s*)?"([^"]*)"/;
+
+/**
+ * Strips inline type-use annotations (e.g. `@NotNull`, `@Nullable`) and balanced generic method type parameter lists
+ * (e.g. `<T extends Comparable<T>>`) from the prefix before `(` so `OUTLINE_METHOD_RE` matches Kotlin/JSR-308 headers.
+ */
+function normalizeMethodHeader(declLine: string): string {
+  const paren = declLine.indexOf('(');
+  if (paren <= 0) return declLine;
+  const prefix = declLine.slice(0, paren);
+  const rest = declLine.slice(paren);
+  // Strip any inline `@Ann` / `@Ann(...)` type-use annotations in the header prefix (between modifiers / in return type)
+  let clean = '';
+  let i = 0;
+  while (i < prefix.length) {
+    if (prefix[i] === '@') {
+      const m = /^@[\w$.]+/.exec(prefix.slice(i));
+      if (m) {
+        let pos = i + m[0].length;
+        let ws = pos;
+        while (ws < prefix.length && /\s/.test(prefix[ws])) ws++;
+        if (prefix[ws] === '(') {
+          let d = 1;
+          pos = ws + 1;
+          while (pos < prefix.length && d > 0) {
+            if (prefix[pos] === '(') d++;
+            else if (prefix[pos] === ')') d--;
+            pos++;
+          }
+        }
+        i = pos;
+        if (clean.length > 0 && !/[\s<(,]$/.test(clean)) clean += ' ';
+        continue;
+      }
+    }
+    clean += prefix[i++];
+  }
+  clean = clean.replace(/<\s+/g, '<').replace(/\s+/g, ' ').trimStart();
+  // Strip balanced leading method type parameters `<...>` after modifiers (e.g. `public <T extends Comparable<T>> T max`)
+  const modMatch = OUTLINE_MODS_RE.exec(clean);
+  const mods = modMatch ? modMatch[0] : '';
+  let afterMods = clean.slice(mods.length);
+  if (afterMods.startsWith('<')) {
+    let angle = 0;
+    let pos = 0;
+    while (pos < afterMods.length) {
+      if (afterMods[pos] === '<') angle++;
+      else if (afterMods[pos] === '>') {
+        angle--;
+        if (angle === 0) {
+          pos++;
+          break;
+        }
+      }
+      pos++;
+    }
+    if (angle === 0) afterMods = afterMods.slice(pos).trimStart();
+  }
+  return mods + afterMods + rest;
+}
+
+function joinRestPaths(a?: string, b?: string): string | undefined {
+  if (a === undefined && b === undefined) return undefined;
+  const parts = [a, b]
+    .filter((s): s is string => s !== undefined)
+    .map((s) => s.replace(/^\/+|\/+$/g, ''))
+    .filter(Boolean);
+  return parts.join('/');
+}
 
 function stripLeadingAnnotations(code: string): string {
   let s = code.trimStart();
@@ -465,7 +537,8 @@ export function extractClassOutline(lines: string[]): OutlineItem[] {
   let annParenDepth = 0;
   let pendingHttp: HttpMethod | undefined;
   let pendingPath: string | undefined;
-  const typeStack: { name: string; depth: number }[] = [];
+  let pendingType: { name: string; depth: number; restPath?: string } | undefined;
+  const typeStack: { name: string; depth: number; restPath?: string }[] = [];
 
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i];
@@ -475,7 +548,8 @@ export function extractClassOutline(lines: string[]): OutlineItem[] {
     // Update comment, annotation-argument paren depth, and brace depth across this line
     let inStr = false;
     let inChr = false;
-    let afterAt = false; // true after '@' until whitespace/non-ident or '('
+    // 0 = outside annotation name, 1 = reading `@Name`, 2 = whitespace right after `@Name` (only `(` may follow)
+    let annState: 0 | 1 | 2 = 0;
     let lineCode = '';
     for (let c = 0; c < raw.length; c++) {
       const ch = raw[c];
@@ -505,12 +579,12 @@ export function extractClassOutline(lines: string[]): OutlineItem[] {
       }
       if (ch === '"') {
         inStr = true;
-        afterAt = false;
+        annState = 0;
         continue;
       }
       if (ch === '\'') {
         inChr = true;
-        afterAt = false;
+        annState = 0;
         continue;
       }
 
@@ -523,13 +597,22 @@ export function extractClassOutline(lines: string[]): OutlineItem[] {
       }
       if (ch === '@') {
         // Ignore `@interface` (annotation type declaration)
-        afterAt = !raw.slice(c).startsWith('@interface');
-      } else if (afterAt) {
+        annState = raw.slice(c).startsWith('@interface') ? 0 : 1;
+      } else if (annState === 1) {
         if (ch === '(') {
           annParenDepth = 1;
-          afterAt = false;
-        } else if (!/[\w$.\s]/.test(ch)) {
-          afterAt = false;
+          annState = 0;
+        } else if (/\s/.test(ch)) {
+          annState = 2;
+        } else if (!/[\w$.]/.test(ch)) {
+          annState = 0;
+        }
+      } else if (annState === 2) {
+        if (ch === '(') {
+          annParenDepth = 1;
+          annState = 0;
+        } else if (!/\s/.test(ch)) {
+          annState = 0;
         }
       }
       if (annParenDepth === 0) {
@@ -554,9 +637,24 @@ export function extractClassOutline(lines: string[]): OutlineItem[] {
       continue;
     }
 
-    // Track REST annotations at class-body depth (even across multiline annotations or inline with the method)
+    // Complete a multiline class/interface/enum/record header whose opening `{` appeared on a later line (common in CFR)
+    if (pendingType) {
+      if (depth >= pendingType.depth) {
+        typeStack.push(pendingType);
+        pendingType = undefined;
+        continue;
+      }
+      if (lineCode.includes('{') || codeTrim.endsWith(';')) {
+        // Opened and closed on the same line (e.g. `implements Marker {}`) or terminated without a body
+        pendingType = undefined;
+      }
+      continue;
+    }
+
+    // Track REST annotations at class-declaration depth (depth 0) and class-body depth
     const currentType = typeStack[typeStack.length - 1];
-    if (currentType && depthBefore === currentType.depth) {
+    const atDeclDepth = depthBefore === 0 || (currentType && depthBefore === currentType.depth);
+    if (atDeclDepth) {
       if (codeTrim.startsWith('@') && !codeTrim.startsWith('@interface')) {
         const vm = REST_VERB_RE.exec(codeTrim);
         if (vm) pendingHttp = vm[1] as HttpMethod;
@@ -583,6 +681,7 @@ export function extractClassOutline(lines: string[]): OutlineItem[] {
     if (tm && !declLine.includes('=')) {
       const name = tm[2];
       const targetDepth = depthBefore + 1;
+      const classPath = joinRestPaths(currentType?.restPath, pendingPath);
       pendingHttp = undefined;
       pendingPath = undefined;
       if (depthBefore >= 1) {
@@ -597,8 +696,11 @@ export function extractClassOutline(lines: string[]): OutlineItem[] {
           depth: Math.max(0, typeStack.length - 1),
         });
       }
-      if (lineCode.includes('{')) {
-        typeStack.push({ name, depth: targetDepth });
+      if (depth >= targetDepth) {
+        typeStack.push({ name, depth: targetDepth, restPath: classPath });
+        pendingType = undefined;
+      } else if (!lineCode.includes('{') && !declLine.endsWith(';')) {
+        pendingType = { name, depth: targetDepth, restPath: classPath };
       }
       continue;
     }
@@ -611,7 +713,7 @@ export function extractClassOutline(lines: string[]): OutlineItem[] {
       continue;
     }
 
-    const mm = OUTLINE_METHOD_RE.exec(declLine);
+    const mm = OUTLINE_METHOD_RE.exec(normalizeMethodHeader(declLine));
     if (!mm) {
       if (declLine.endsWith(';') || declLine === '}') {
         pendingHttp = undefined;
@@ -636,7 +738,11 @@ export function extractClassOutline(lines: string[]): OutlineItem[] {
       line: i,
       depth: Math.max(0, typeStack.length - 1),
     };
-    if (!isCtor && pendingHttp) item.httpMethod = pendingHttp;
+    if (!isCtor && pendingHttp) {
+      item.httpMethod = pendingHttp;
+      const fullPath = joinRestPaths(currentType.restPath, pendingPath);
+      if (fullPath !== undefined) item.fullRestPath = fullPath;
+    }
     if (!isCtor && pendingPath !== undefined) item.restPath = pendingPath;
     pendingHttp = undefined;
     pendingPath = undefined;
@@ -807,6 +913,229 @@ export function parseJavaTypeParts(typeExpr: string, showFull = false): TypePart
     out.push({ text: display, fqcn: ident });
   }
   return out;
+}
+
+/**
+ * Extracts a lookup map of short/display/qualified Java names -> FQCN from a raw annotation string produced by
+ * OperationDetails (where every nested @Annotation, Class literal, and Enum constant carries its full package name).
+ */
+export function extractAnnotationClassMap(raw: string): Map<string, string> {
+  const map = new Map<string, string>();
+  if (!raw) return map;
+  // Strip quoted string and char literals so package-like text inside descriptions is never mistaken for a class name
+  const code = raw.replace(/"(?:[^"\\]|\\.)*"?|'(?:[^'\\]|\\.)*'?/g, '""');
+  const record = (fqcn: string) => {
+    if (!fqcn) return;
+    const normalized = fqcn.replace(/\s+/g, '');
+    if (!map.has(normalized)) map.set(normalized, normalized);
+    const dotted = normalized.replace(/\$/g, '.');
+    if (!map.has(dotted)) map.set(dotted, normalized);
+    const label = classLabel(normalized);
+    if (label && !map.has(label)) map.set(label, normalized);
+    const simple = simpleName(normalized);
+    if (simple && !map.has(simple)) map.set(simple, normalized);
+  };
+  // 1. All @package.Annotation names (top-level and nested)
+  for (const m of code.matchAll(/@([a-z_][\w$]*(?:\.[a-z_][\w$]*)*\.[A-Z_$][\w$]*(?:\$[A-Z_$][\w$]*)*)/g)) {
+    record(m[1]);
+  }
+  // 2. All Class literals (pkg.Foo.class, pkg.Foo[].class) and Enum types (pkg.Thread$State.BLOCKED)
+  for (const m of code.matchAll(/(?<![@.\w$])([a-z_][\w$]*(?:\.[a-z_][\w$]*)*\.[A-Z_$][\w$]*(?:\$[A-Z_$][\w$]*)*)(?=\s*(?:\[\s*\])*\s*\.class\b|\.[A-Z_][A-Z0-9_]*\b)/g)) {
+    record(m[1]);
+  }
+  return map;
+}
+
+/**
+ * Turns tokens from `annotationTokens(...)` into clickable spans for every nested `@Annotation` and every class/enum
+ * type resolved via `extractAnnotationClassMap(raw)`.
+ */
+export function linkAnnotationTokens(tokens: Token[], classMap: Map<string, string>): SourceSpan[] {
+  const out: SourceSpan[] = [];
+  for (let i = 0; i < tokens.length; ) {
+    const t = tokens[i];
+    // Annotation token (@ApiResponses, @Schema, @io.swagger.v3.oas.annotations.media.Schema)
+    if (t.kind === 'ann' && t.text.length > 1) {
+      const name = t.text.slice(1);
+      const fqcn = classMap.get(name) ?? (/^[a-z_][\w$]*\.[A-Za-z0-9_.$]+$/.test(name) ? name : undefined);
+      if (fqcn) {
+        out.push({ text: t.text, kind: 'ann', target: fqcn, candidates: [fqcn] });
+        i++;
+        continue;
+      }
+    }
+    // Qualified package.Class(.Inner)* chain when Full names is enabled (stops before .class or .ENUM_CONST)
+    if (t.kind === 'name' && i + 2 < tokens.length && tokens[i + 1].text === '.') {
+      let j = i;
+      let sawType = false;
+      let chain = t.text;
+      while (j + 2 < tokens.length && tokens[j + 1].text === '.') {
+        const next = tokens[j + 2];
+        if (next.kind === 'name' || next.kind === 'type') {
+          chain += '.' + next.text;
+          if (next.kind === 'type') sawType = true;
+          j += 2;
+        } else {
+          break;
+        }
+      }
+      if (sawType) {
+        let firstTypeIdx = i;
+        while (firstTypeIdx <= j && tokens[firstTypeIdx].kind !== 'type') {
+          out.push(tokens[firstTypeIdx]);
+          firstTypeIdx++;
+        }
+        const display = tokens.slice(firstTypeIdx, j + 1).map((x) => x.text).join('');
+        const fqcn = classMap.get(chain) ?? chain;
+        if (display) {
+          out.push({ text: display, kind: 'type', target: fqcn, candidates: [fqcn] });
+          i = j + 1;
+          continue;
+        }
+      }
+    }
+    // Nested Outer.Inner type chain when Full names is off (e.g. Thread.State.BLOCKED)
+    if (t.kind === 'type' && i + 2 < tokens.length && tokens[i + 1].text === '.' && tokens[i + 2].kind === 'type') {
+      let j = i;
+      let chain = t.text;
+      while (j + 2 < tokens.length && tokens[j + 1].text === '.' && tokens[j + 2].kind === 'type') {
+        chain += '.' + tokens[j + 2].text;
+        j += 2;
+      }
+      const fqcn = classMap.get(chain);
+      if (fqcn) {
+        out.push({ text: chain, kind: 'type', target: fqcn, candidates: [fqcn] });
+        i = j + 1;
+        continue;
+      }
+    }
+    // Single type token (e.g. RestUsageInfoResponse in @Schema(implementation = RestUsageInfoResponse.class))
+    if (t.kind === 'type') {
+      const fqcn = classMap.get(t.text);
+      if (fqcn) {
+        out.push({ text: t.text, kind: 'type', target: fqcn, candidates: [fqcn] });
+        i++;
+        continue;
+      }
+    }
+    out.push(t);
+    i++;
+  }
+  return out;
+}
+
+/**
+ * Normalizes a JAX-RS / REST path for matching between decompiled `@Path` annotations and catalog operation paths:
+ * strips leading/trailing slashes, collapses duplicate slashes, and replaces `{param[: regex]}` templates with `{}`.
+ */
+export function normalizeRestPath(path: string): string {
+  return path
+    .trim()
+    .replace(/^\/+|\/+$/g, '')
+    .replace(/\/+/g, '/')
+    .replace(/\{[^}]*\}/g, '{}');
+}
+
+export interface MatchedEndpoint {
+  op: Operation;
+  /** Full display path including module base (e.g. "/rest/api/2/serverInfo"). */
+  fullPath: string;
+}
+
+/**
+ * Matches REST-annotated methods in a decompiled class's outline to concrete catalog operations so the source viewer
+ * can render an "open in new tab" link directly beside each REST endpoint method declaration.
+ */
+export function matchOutlineEndpoints(
+  outline: OutlineItem[],
+  operations: Operation[],
+  modulesById: Map<string, Module>,
+  contextOpKey?: string,
+  focusMethod?: string,
+): Map<number, MatchedEndpoint> {
+  const result = new Map<number, MatchedEndpoint>();
+  if (!outline.length || !operations.length) return result;
+
+  const restItems = outline.filter((o) => o.kind === 'method' && o.httpMethod);
+  if (!restItems.length) return result;
+
+  let contextOp: Operation | undefined;
+  const byMethod = new Map<string, { op: Operation; norm: string }[]>();
+  for (const op of operations) {
+    if (contextOpKey && op.key === contextOpKey) contextOp = op;
+    const m = op.method.toUpperCase();
+    let list = byMethod.get(m);
+    if (!list) {
+      list = [];
+      byMethod.set(m, list);
+    }
+    list.push({ op, norm: normalizeRestPath(op.path) });
+  }
+  const contextModuleId = contextOp?.module;
+  const contextPluginKey = contextModuleId ? modulesById.get(contextModuleId)?.plugin.key : undefined;
+
+  const pickBest = (candidates: Operation[]): Operation | undefined => {
+    if (!candidates.length) return undefined;
+    if (candidates.length === 1) return candidates[0];
+    if (contextOpKey) {
+      const exact = candidates.find((o) => o.key === contextOpKey);
+      if (exact) return exact;
+    }
+    if (contextModuleId) {
+      const sameMod = candidates.filter((o) => o.module === contextModuleId);
+      if (sameMod.length) candidates = sameMod;
+    }
+    if (contextPluginKey && candidates.length > 1) {
+      const samePlugin = candidates.filter((o) => modulesById.get(o.module)?.plugin.key === contextPluginKey);
+      if (samePlugin.length) candidates = samePlugin;
+    }
+    if (candidates.length > 1) {
+      const active = candidates.filter((o) => !o.deprecated);
+      if (active.length) candidates = active;
+    }
+    return candidates[0];
+  };
+
+  const toMatched = (op: Operation): MatchedEndpoint => {
+    const mod = modulesById.get(op.module);
+    const modPath = mod ? mod.path.replace(/^\/+|\/+$/g, '') : '';
+    const opPath = op.path.replace(/^\/+/, '');
+    const fullPath = modPath ? `/rest/${modPath}${opPath ? '/' + opPath : ''}` : `/${opPath}`;
+    return { op, fullPath };
+  };
+
+  for (const item of restItems) {
+    const method = item.httpMethod!;
+    const pool = byMethod.get(method) ?? [];
+    let matched: Operation | undefined;
+
+    if (item.fullRestPath !== undefined) {
+      const targetNorm = normalizeRestPath(item.fullRestPath);
+      // 1. Exact normalized path match
+      const exact = pool.filter((e) => e.norm === targetNorm).map((e) => e.op);
+      matched = pickBest(exact);
+      // 2. Sub-resource suffix match (for classes reached via a parent resource locator)
+      if (!matched && targetNorm) {
+        const suffix = pool.filter((e) => e.norm.endsWith('/' + targetNorm)).map((e) => e.op);
+        if (suffix.length === 1) {
+          matched = suffix[0];
+        } else if (suffix.length > 1 && contextModuleId) {
+          const sameMod = suffix.filter((o) => o.module === contextModuleId);
+          if (sameMod.length === 1) matched = sameMod[0];
+        }
+      }
+    }
+
+    // 3. Fallback for the exact handler method of the operation that opened this class
+    if (!matched && contextOp && focusMethod && item.name === focusMethod && contextOp.method.toUpperCase() === method) {
+      matched = contextOp;
+    }
+
+    if (matched) {
+      result.set(item.line, toMatched(matched));
+    }
+  }
+  return result;
 }
 
 /** Maps catalog shorthand parameter types ("string", "int", "File") to a Java class FQCN when no `javaType` is given. */

@@ -8,6 +8,7 @@ import { moduleFact, rowTicks, type Fact } from './facts';
 import { isWaiting, moduleReason, rowLabel } from '../core/explain';
 import type { StartFailure } from '../core/catalog';
 import { RowCard, type CardTarget } from './RowCard';
+import { tipProps } from '../core/uitips';
 
 const ROW = 24;
 /** The hover card's id: the row it describes points to it (aria-describedby). */
@@ -339,10 +340,15 @@ export function Sidebar(p: SidebarProps) {
             <button
               class="rab-n-mini"
               onClick={toggleAll}
-              title={allCollapsed ? 'Expand all modules' : 'Collapse all modules'}
               aria-label={allCollapsed ? 'Expand all modules' : 'Collapse all modules'}
               data-testid="toggle-modules"
               data-state={allCollapsed ? 'collapsed' : 'expanded'}
+              {...tipProps({
+                title: allCollapsed ? 'Expand all modules' : 'Collapse all modules',
+                body: allCollapsed
+                  ? 'Open every loaded REST module group to list all operations.'
+                  : 'Fold every loaded REST module group to see a compact module overview.',
+              })}
             >
               <svg class="rab-n-svg" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                 <rect x="2.5" y="2.5" width="11" height="11" rx="2.5" stroke="currentColor" strokeWidth="1.3" />
@@ -354,8 +360,13 @@ export function Sidebar(p: SidebarProps) {
             class={'rab-n-pill' + (p.supportedOnly ? ' on' : '')}
             aria-pressed={p.supportedOnly}
             onClick={() => p.onSupportedOnly(!p.supportedOnly)}
-            title="Only the product's supported public APIs"
             data-testid="supported-only"
+            {...tipProps({
+              title: 'Supported APIs only',
+              body: p.supportedOnly
+                ? 'Showing only officially supported public REST APIs. Click to include internal and third-party app endpoints.'
+                : 'Filter the list to officially supported public REST APIs, hiding internal and app endpoints.',
+            })}
           >
             Supported only
           </button>
@@ -375,7 +386,14 @@ export function Sidebar(p: SidebarProps) {
               : 'No operation matches.'}
           </span>
           {hiddenBySupported > 0 && (
-            <button class="rab-n-link" onClick={() => p.onSupportedOnly(false)}>
+            <button
+              class="rab-n-link"
+              onClick={() => p.onSupportedOnly(false)}
+              {...tipProps({
+                title: 'Show all endpoints',
+                body: 'Turn off the "Supported only" filter to include internal product and installed app endpoints.',
+              })}
+            >
               Include internal and app endpoints ({hiddenBySupported})
             </button>
           )}

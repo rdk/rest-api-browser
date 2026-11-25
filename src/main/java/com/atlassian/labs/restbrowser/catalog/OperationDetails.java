@@ -59,8 +59,8 @@ public class OperationDetails {
     static final int MAX_MODULES = 300;
     static final int MAX_PACKAGES = 500;
     static final int MAX_TEXT = 500;
-    /** An annotation may carry the operation's documentation (OpenAPI's @Operation): longer than other text. */
-    static final int MAX_ANNOTATION = 2000;
+    /** An annotation may carry the operation's documentation (OpenAPI's @Operation / @ApiResponses): longer than other text. */
+    static final int MAX_ANNOTATION = 8000;
     /** The bundle headers worth showing; the others (Import-Package, …) are shown as wiring or not at all. */
     static final List<String> HEADERS = List.of("Bundle-Name", "Bundle-Vendor", "Bundle-Description", "Bundle-DocURL",
             "Bundle-License", "Atlassian-Plugin-Key", "Atlassian-Build-Date", "Spring-Context", "Bundle-ClassPath",
@@ -316,7 +316,7 @@ public class OperationDetails {
         return b.toString();
     }
 
-    /** The classes a method's signature names (return, parameters, type arguments, exceptions), JDK ones included. */
+    /** The classes a method's signature and annotations name (return, parameters, type arguments, exceptions, schema classes), JDK ones included. */
     static List<Class<?>> signatureTypes(Method m) {
         Set<Class<?>> out = new LinkedHashSet<>();
         Set<TypeVariable<?>> seen = new HashSet<>();
@@ -327,7 +327,60 @@ public class OperationDetails {
         for (Type t : m.getGenericExceptionTypes()) {
             collect(t, out, seen);
         }
+        try {
+            for (Annotation a : m.getDeclaredAnnotations()) {
+                collectAnnotationClasses(a, out, 0);
+            }
+        } catch (RuntimeException | LinkageError ignored) {
+            // unreadable annotation
+        }
         return new ArrayList<>(out);
+    }
+
+    /** Collects non-void Class<?> values referenced inside nested annotations (e.g. @Schema(implementation = Foo.class)). */
+    private static void collectAnnotationClasses(Annotation a, Set<Class<?>> out, int depth) {
+        if (a == null || depth > 6) {
+            return;
+        }
+        for (Method member : a.annotationType().getDeclaredMethods()) {
+            if (member.getParameterCount() != 0 || member.isSynthetic()) {
+                continue;
+            }
+            Object v;
+            Object def;
+            try {
+                v = member(member, a);
+                def = member.getDefaultValue();
+            } catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {
+                continue;
+            }
+            if (def != null && java.util.Objects.deepEquals(v, def)) {
+                continue;
+            }
+            collectAnnotationValueClasses(v, out, depth + 1);
+        }
+    }
+
+    private static void collectAnnotationValueClasses(Object v, Set<Class<?>> out, int depth) {
+        if (v == null || depth > 7) {
+            return;
+        }
+        if (v instanceof Class<?> c) {
+            Class<?> k = c;
+            while (k.isArray()) {
+                k = k.getComponentType();
+            }
+            if (!k.isPrimitive() && k != Void.class) {
+                out.add(k);
+            }
+        } else if (v instanceof Annotation nested) {
+            collectAnnotationClasses(nested, out, depth);
+        } else if (v.getClass().isArray()) {
+            int n = java.lang.reflect.Array.getLength(v);
+            for (int i = 0; i < n; i++) {
+                collectAnnotationValueClasses(java.lang.reflect.Array.get(v, i), out, depth);
+            }
+        }
     }
 
     /** A type variable stands for its bounds; seen stops {@code <T extends Comparable<T>>} from going round. */

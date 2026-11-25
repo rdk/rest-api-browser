@@ -18,6 +18,16 @@ import { fallbackJavaType } from '../core/javarefs';
 import type { DecompilerId } from '../core/details';
 import type { OpenTabRequest } from '../core/sourcetabs';
 import { statusTone } from '../core/explain';
+import { tipProps, type UiTipSpec } from '../core/uitips';
+
+function accessTip(access: string): UiTipSpec {
+  const k = access.toLowerCase();
+  if (k.includes('sysadmin')) return { title: `Access: ${access}`, body: 'Restricted to system administrators via server-side security annotation.', tone: 'warn' };
+  if (k.includes('admin')) return { title: `Access: ${access}`, body: 'Restricted to application administrators via server-side security annotation.', tone: 'warn' };
+  if (k.includes('anonymous') || k.includes('open')) return { title: `Access: ${access}`, body: 'Allows anonymous (unauthenticated) access when enabled on this instance.' };
+  if (k.includes('unlicensed')) return { title: `Access: ${access}`, body: 'Accessible to logged-in users even without a product license.' };
+  return { title: `Access: ${access}`, body: 'Security access annotation declared on this REST handler.' };
+}
 
 /** What the user has typed for one operation; kept per operation while the page is open. */
 export interface Draft {
@@ -65,10 +75,12 @@ interface Props {
   onOpenClass?: (req: OpenTabRequest) => void;
   decompiler?: DecompilerId;
   onDecompiler?: (d: DecompilerId) => void;
+  prettySource?: boolean;
+  onTogglePrettySource?: () => void;
 }
 
 export function OperationView({
-  summary, op, module, initialDraft, onDraft, runner, userStore, split, onSplit, onOpenClass, decompiler, onDecompiler,
+  summary, op, module, initialDraft, onDraft, runner, userStore, split, onSplit, onOpenClass, decompiler, onDecompiler, prettySource, onTogglePrettySource,
 }: Props) {
   const [tab, setTab] = useState<Tab>('params');
   // a box on the whole screen: the request (with its URL bar) or the response; Escape gives it back its place
@@ -250,19 +262,38 @@ export function OperationView({
     <div ref={rootRef} class={'rab-n-operation' + (max ? ' max-' + max : '')} data-testid="operation">
       <div class="rab-n-op-head">
         <div class="rab-n-op-title">
-          <MethodBadge method={method} />
+          <MethodBadge method={method} showTip />
           <span class="rab-n-op-fullpath" data-testid="operation-path"><PathText path={fullPath} prefix={module?.path.length} /></span>
           {hasBadges && (
             <span class="rab-n-op-badges">
-              {module?.stability === 'supported' && <span class="rab-n-tag rab-n-tag-supported">Supported</span>}
+              {module?.stability === 'supported' && (
+                <span class="rab-n-tag rab-n-tag-supported" {...tipProps({ title: 'Supported public API', body: 'Part of the product\'s officially documented and supported REST API.' })}>
+                  Supported
+                </span>
+              )}
               {isApp && module && <AppLozenge baseUrl={summary.baseUrl} module={module} sysadmin={summary.sysadmin} />}
-              {op.access && <span class={'rab-n-tag rab-n-tag-access rab-n-tag-access-' + op.access.toLowerCase()} title="Access annotation of the handler">{op.access}</span>}
-              {op.deprecated && <span class="rab-n-tag rab-n-tag-deprecated">Deprecated</span>}
+              {op.access && (
+                <span class={'rab-n-tag rab-n-tag-access rab-n-tag-access-' + op.access.toLowerCase()} {...tipProps(accessTip(op.access))}>
+                  {op.access}
+                </span>
+              )}
+              {op.deprecated && (
+                <span class="rab-n-tag rab-n-tag-deprecated" {...tipProps({ title: 'Deprecated endpoint', body: 'Marked @Deprecated in the server code and may be removed in a future release.', tone: 'warn' })}>
+                  Deprecated
+                </span>
+              )}
             </span>
           )}
           <span class="rab-n-spacer" />
-          <CopyButton label="Copy curl" testId="copy-curl" disabled={!built.request} title={built.error ?? 'The request as a curl command'}
-                      text={() => (built.request ? toCurl({ ...built.request, url: absolute(built.request.url) }) : '')} />
+          <CopyButton
+            label="Copy curl"
+            testId="copy-curl"
+            disabled={!built.request}
+            tip={built.error
+              ? { title: 'Copy as cURL', body: built.error, tone: 'warn' }
+              : { title: 'Copy as cURL', body: 'Copy this request (method, URL, headers, and body) as a runnable curl command.' }}
+            text={() => (built.request ? toCurl({ ...built.request, url: absolute(built.request.url) }) : '')}
+          />
         </div>
         {(op.summary || op.description) && <OpDoc summary={op.summary} description={op.description} />}
         {(op.bodyType || op.returnType) && (
@@ -288,17 +319,33 @@ export function OperationView({
         <div class={'rab-n-urlbar' + (write ? ' is-write' : '') + (isDelete ? ' is-delete' : '')}>
           <div class="rab-n-url-group">
             <code class="rab-n-url" data-testid="live-url" title={built.url}><UrlText parts={built.parts} /></code>
-            <CopyButton label="Copy URL" text={() => absolute(built.url)} />
+            <CopyButton
+              label="Copy URL"
+              tip={{ title: 'Copy request URL', body: 'Copy the full resolved URL, including path and query parameters.' }}
+              text={() => absolute(built.url)}
+            />
           </div>
           {running ? (
-            <button class="rab-n-button rab-n-cancel-btn" onClick={cancel}>Cancel</button>
+            <button
+              class="rab-n-button rab-n-cancel-btn"
+              onClick={cancel}
+              {...tipProps({ title: 'Cancel request', body: 'Abort the currently running HTTP request.', shortcut: 'Esc' })}
+            >
+              Cancel
+            </button>
           ) : (
             <button
               class={'rab-n-button rab-n-send' + (write ? ' write' : '') + (isDelete ? ' danger' : '')}
               onClick={send}
               disabled={!built.request}
-              title={built.error ?? (write ? `Changes data (${method}). Ctrl+Enter` : 'Ctrl+Enter')}
               data-testid="send"
+              {...tipProps(built.error
+                ? { title: `Send ${method}`, body: built.error, tone: 'warn' }
+                : isDelete
+                  ? { title: 'Send DELETE request', body: 'Execute this DELETE request against the live server using your current session.', note: 'May permanently remove data', shortcut: 'Ctrl+Enter', tone: 'danger' }
+                  : write
+                    ? { title: `Send ${method} request`, body: `Execute this ${method} request against the live server using your current session.`, note: 'Changes server data', shortcut: 'Ctrl+Enter', tone: 'warn' }
+                    : { title: `Send ${method} request`, body: 'Execute this read-only request from your browser using your current session.', shortcut: 'Ctrl+Enter' })}
             >
               {write ? (
                 <svg class="rab-n-svg" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -316,7 +363,10 @@ export function OperationView({
           {/* the response is hidden while the request has the whole screen: its outcome shows here */}
           {max === 'top' && (running || draft.result) && (
             <button class="rab-n-max-status" data-testid="max-status" aria-live="polite"
-                    title={compact || running ? 'Show the request and the response again' : 'Show the response on the whole screen'}
+                    {...tipProps({
+                      title: 'View response',
+                      body: compact || running ? 'Exit maximized mode and show request and response together.' : 'Switch to maximized response view.',
+                    })}
                     onClick={() => {
                       if (compact || running) setMax(null);
                       else {
@@ -342,22 +392,23 @@ export function OperationView({
             tabs={[
               {
                 id: 'params',
+                tip: { title: 'Parameters', body: 'Path, query, form, header, and matrix parameters accepted by this operation.' },
                 label: (
                   <>
                     Params ({visibleParams.length})
                     {warnings > 0 && (
-                      <span class="rab-n-tab-warn" title={warnings === 1 ? '1 value needs attention' : `${warnings} values need attention`} data-testid="params-warn">
+                      <span class="rab-n-tab-warn" data-testid="params-warn" {...tipProps({ title: 'Validation warning', body: warnings === 1 ? '1 parameter value needs attention before sending.' : `${warnings} parameter values need attention before sending.`, tone: 'warn' })}>
                         <WarnGlyph size={12} />
                       </span>
                     )}
                   </>
                 ),
               },
-              ...(hasBody ? [{ id: 'body' as Tab, label: 'Body' }] : []),
-              { id: 'headers', label: 'Headers' },
-              { id: 'history', label: `History (${history.length})` },
+              ...(hasBody ? [{ id: 'body' as Tab, label: 'Body', tip: { title: 'Request body', body: 'Edit the raw payload and Content-Type sent with this write request.' } }] : []),
+              { id: 'headers', label: 'Headers', tip: { title: 'Request headers', body: 'Configure Accept header, XSRF protection header, and custom HTTP headers.' } },
               // the Java behind the operation: internals, so for system administrators only (as the endpoint)
-              ...(summary.sysadmin ? [{ id: 'java' as Tab, label: 'Java' }] : []),
+              ...(summary.sysadmin ? [{ id: 'java' as Tab, label: 'Java', tip: { title: 'Java implementation', body: 'Inspect handler method, annotations, class hierarchy, OSGi bundle, plugin, and decompiled source.' } }] : []),
+              { id: 'history', label: 'History', tip: { title: 'Request history', body: 'Recent requests sent to this endpoint from your browser so you can restore their inputs.' } },
             ]}
           />
             <FormTools canUndo={canUndo} canRedo={canRedo} canReset={canReset}
@@ -378,8 +429,10 @@ export function OperationView({
                 baseUrl={summary.baseUrl}
                 opKey={op.key}
                 revision={summary.hash}
-                decompiler={decompiler ?? 'cfr'}
+                decompiler={decompiler ?? 'vineflower'}
                 onDecompiler={onDecompiler ?? (() => undefined)}
+                pretty={prettySource}
+                onPretty={onTogglePrettySource}
                 onOpenClass={onOpenClass}
               />
             )}
@@ -441,16 +494,19 @@ function FormTools({ canUndo, canRedo, canReset, onUndo, onRedo, onReset }: {
   );
   return (
     <div class="rab-n-form-tools" role="group" aria-label="The form's changes">
-      <button class="rab-n-tool" onClick={onUndo} disabled={!canUndo} title="Undo the last change of the form (Ctrl+Z outside a field)"
-              aria-label="Undo" data-testid="form-undo">
+      <button class="rab-n-tool" onClick={onUndo} disabled={!canUndo}
+              aria-label="Undo" data-testid="form-undo"
+              {...tipProps({ title: 'Undo form change', body: 'Revert the last edit to parameters, body, or headers (outside text inputs).', shortcut: 'Ctrl+Z' })}>
         {icon('M6 3.5L3 6.5l3 3M3.5 6.5h6a3.5 3.5 0 010 7H7')}
       </button>
-      <button class="rab-n-tool" onClick={onRedo} disabled={!canRedo} title="Redo (Ctrl+Y or Ctrl+Shift+Z outside a field)"
-              aria-label="Redo" data-testid="form-redo">
+      <button class="rab-n-tool" onClick={onRedo} disabled={!canRedo}
+              aria-label="Redo" data-testid="form-redo"
+              {...tipProps({ title: 'Redo form change', body: 'Reapply the last undone form edit (also Ctrl+Shift+Z).', shortcut: 'Ctrl+Y' })}>
         {icon('M10 3.5l3 3-3 3M12.5 6.5h-6a3.5 3.5 0 000 7H9')}
       </button>
-      <button class="rab-n-tool" onClick={onReset} disabled={!canReset} title="Reset the form to its defaults (can be undone)"
-              aria-label="Reset the form" data-testid="form-reset">
+      <button class="rab-n-tool" onClick={onReset} disabled={!canReset}
+              aria-label="Reset the form" data-testid="form-reset"
+              {...tipProps({ title: 'Reset form', body: 'Clear all edited fields back to this operation\'s defaults (can be undone).' })}>
         {icon('M3.2 8a4.8 4.8 0 104.8-4.8H5.6M7.2 1.6L5.4 3.2 7.2 4.8')}
       </button>
     </div>
@@ -565,14 +621,16 @@ function ParamsTab({ params, values, onValues, regexes, opKey, onOpenClass }: {
                           <ParamInput param={p} value={v} invalid={check?.state === 'warn' && !!v.trim()} onChange={(nv) => set(p, list.map((x, j) => (j === i ? nv : x)))} />
                           <CheckMark check={check} />
                           {p.repeating && list.length > 1 && (
-                            <button class="rab-n-icon" aria-label={`Remove ${p.name} value ${i + 1}`} title="Remove this value"
+                            <button class="rab-n-icon" aria-label={`Remove ${p.name} value ${i + 1}`}
+                                    {...tipProps({ title: 'Remove value', body: `Remove value #${i + 1} for ${p.name}.` })}
                                     onClick={() => set(p, list.filter((_, j) => j !== i))}>×</button>
                           )}
                         </div>
                       );
                     })}
                     {p.repeating && (p.in === 'query' || p.in === 'form') && (
-                      <button class="rab-n-link" onClick={() => set(p, [...list, ''])}>+ value</button>
+                      <button class="rab-n-link" onClick={() => set(p, [...list, ''])}
+                              {...tipProps({ title: 'Add another value', body: `Append another ${p.name} parameter entry to the request.` })}>+ value</button>
                     )}
                   </>
                 )}
@@ -629,7 +687,8 @@ function FileParamField({ param, files, textValues, onFiles, onText }: {
       <div class="rab-n-param-row">
         <input class="rab-n-input" name={param.name} aria-label={label} value={textValues[0] ?? ''} placeholder="text part"
                onInput={(e) => onText([(e.target as HTMLInputElement).value])} />
-        <button type="button" class="rab-n-quiet" onClick={switchMode} title="Upload a file for this part instead">File</button>
+        <button type="button" class="rab-n-quiet" onClick={switchMode}
+                {...tipProps({ title: 'Switch to file upload', body: 'Upload a file for this multipart form part instead of sending plain text.' })}>File</button>
       </div>
     );
   }
@@ -649,10 +708,12 @@ function FileParamField({ param, files, textValues, onFiles, onText }: {
         />
         <CheckMark check={check} />
         {files.length > 0 && (
-          <button type="button" class="rab-n-icon" aria-label={`Clear ${param.name}`} title="Clear selected files"
+          <button type="button" class="rab-n-icon" aria-label={`Clear ${param.name}`}
+                  {...tipProps({ title: 'Clear files', body: 'Remove the selected file(s) from this multipart upload field.' })}
                   onClick={() => { onFiles([]); if (inputRef.current) inputRef.current.value = ''; }}>×</button>
         )}
-        <button type="button" class="rab-n-quiet" onClick={switchMode} title="Send plain text for this multipart part instead">Text</button>
+        <button type="button" class="rab-n-quiet" onClick={switchMode}
+                {...tipProps({ title: 'Switch to plain text', body: 'Send a text value for this multipart part instead of uploading a file.' })}>Text</button>
       </div>
       {files.length > 0 && (
         <div class="rab-n-file-list">
@@ -755,7 +816,16 @@ function BodyTab({ op, values, onValues, hasForm, formActive, onOpenParams, onOp
             <span class="rab-n-json-check-text" title={error ?? undefined}>{error ? 'Not valid JSON: ' + error : 'Valid JSON'}</span>
           </span>
         )}
-        {isJson && <button class="rab-n-button" onClick={format} disabled={formActive || !!error || !values.body?.trim()}>Format</button>}
+        {isJson && (
+          <button
+            class="rab-n-button"
+            onClick={format}
+            disabled={formActive || !!error || !values.body?.trim()}
+            {...tipProps({ title: 'Format JSON', body: 'Pretty-print the JSON request body with 2-space indentation.' })}
+          >
+            Format
+          </button>
+        )}
       </div>
       <textarea
         class={'rab-n-textarea' + (error && !formActive ? ' invalid' : '')}
@@ -788,7 +858,7 @@ function HeadersTab({ op, draft, onDraft, write }: { op: Operation; draft: Draft
         </select>
       </label>
       {write && (
-        <label class="rab-n-row" title="Atlassian products reject writes without it (XSRF protection); switch it off to test that">
+        <label class="rab-n-row" {...tipProps({ title: 'XSRF protection header', body: 'Atlassian products reject write requests without X-Atlassian-Token: no-check. Uncheck it to test XSRF rejection.' })}>
           <input type="checkbox" checked={!draft.noXsrfHeader} onChange={(e) => onDraft({ ...draft, noXsrfHeader: !(e.target as HTMLInputElement).checked })} />{' '}
           X-Atlassian-Token: no-check <span class="rab-n-subtle">(sent automatically)</span>
         </label>
@@ -802,11 +872,14 @@ function HeadersTab({ op, draft, onDraft, write }: { op: Operation; draft: Draft
                  onInput={(e) => setCustom(custom.map((x, j) => (j === i ? { ...x, value: (e.target as HTMLInputElement).value } : x)))} />
           {/* the empty row shown when there are none has nothing to remove */}
           {draft.custom.length > 0 ? (
-            <button class="rab-n-icon" aria-label={`Remove header ${i + 1}`} title="Remove this header" onClick={() => setCustom(custom.filter((_, j) => j !== i))}>×</button>
+            <button class="rab-n-icon" aria-label={`Remove header ${i + 1}`}
+                    {...tipProps({ title: 'Remove header', body: 'Delete this custom HTTP header from the request.' })}
+                    onClick={() => setCustom(custom.filter((_, j) => j !== i))}>×</button>
           ) : <span class="rab-n-icon-slot" aria-hidden="true" />}
         </div>
       ))}
-      <button class="rab-n-link" onClick={() => setCustom([...custom, { name: '', value: '' }])}>+ header</button>
+      <button class="rab-n-link" onClick={() => setCustom([...custom, { name: '', value: '' }])}
+              {...tipProps({ title: 'Add custom header', body: 'Append an extra HTTP request header name/value pair.' })}>+ header</button>
     </div>
   );
 }
@@ -818,7 +891,7 @@ function HistoryTab({ entries, onRestore, onClear }: { entries: HistoryEntry[]; 
   return (
     <div class="rab-n-history" data-testid="history">
       {entries.map((e) => (
-        <button key={e.id} class="rab-n-history-row" onClick={() => onRestore(e)} title={historyTitle(e)}>
+        <button key={e.id} class="rab-n-history-row" onClick={() => onRestore(e)} {...tipProps(historyTip(e))}>
           <span class={'rab-n-status-code ' + statusTone(e.status)}>{e.status ?? '?'}</span>
           <span class="rab-n-subtle rab-n-history-time">{new Date(e.at).toLocaleString()}</span>
           <span class="rab-n-ellipsis rab-n-history-url">{e.url}</span>
@@ -829,18 +902,25 @@ function HistoryTab({ entries, onRestore, onClear }: { entries: HistoryEntry[]; 
           )}
         </button>
       ))}
-      <button class="rab-n-link" onClick={onClear}>Clear history</button>
+      <button class="rab-n-link" onClick={onClear}
+              {...tipProps({ title: 'Clear history', body: 'Delete saved local request history for this operation from your browser.', tone: 'warn' })}>
+        Clear history
+      </button>
     </div>
   );
 }
 
 /** What restoring a history row gives back, with what it cannot give back. */
-function historyTitle(e: HistoryEntry): string {
+function historyTip(e: HistoryEntry): UiTipSpec {
   const notes = [
-    e.bodyTruncated && 'the body was cut at 10,000 characters when it was saved',
-    e.redacted && 'values that looked like secrets were not saved',
+    e.bodyTruncated && 'body was cut at 10,000 characters when saved',
+    e.redacted && 'values that looked like secrets were omitted',
   ].filter(Boolean);
-  return 'Restore these values' + (notes.length ? ' (' + notes.join('; ') + ')' : '');
+  return {
+    title: 'Restore saved request',
+    body: 'Refill parameters, body, and headers from this past request (does not send automatically).',
+    note: notes.length ? notes.join('; ') : undefined,
+  };
 }
 
 function SplitHandle({ split, onSplit }: { split: number; onSplit: (ratio: number) => void }) {

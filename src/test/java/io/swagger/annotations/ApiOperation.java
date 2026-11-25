@@ -7,4 +7,6 @@ import java.lang.annotation.RetentionPolicy;
 public @interface ApiOperation {
     String value() default "";
     String notes() default "";
+    Class<?> response() default Void.class;
+    String responseContainer() default "";
 }

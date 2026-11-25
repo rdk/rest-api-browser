@@ -283,7 +283,13 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         c.check('the find box sits at the right, just before Copy and Download, and finds as you type; Copy copies',
             !!findBox && findBox.sameRow && findBox.right && findBox.gapToCopy >= 0 && findBox.gapToCopy < 24 && findBox.copyBeforeDownload
             && findCount && copied === 'done', { findBox, copied, count: await text('[data-testid=find-count]') });
-        c.check('the History tab lists the request', await b.waitFor(`/History \\([1-9]/.test(document.body.textContent)`, 5000));
+        const tabOrder = await b.evaluate(`[...document.querySelectorAll('.rab-n-request [role=tab]')].map(t => t.textContent.trim())`);
+        const javaIdx = tabOrder.indexOf('Java');
+        const histIdx = tabOrder.indexOf('History');
+        await b.evaluate(`([...document.querySelectorAll('.rab-n-request [role=tab]')].find(t => t.textContent.trim() === 'History') || {}).click?.(), true`);
+        const historyHasRow = await b.waitFor(`!!document.querySelector('.rab-n-history-row')`, 5000);
+        c.check('the Java tab sits left of History (without a count), and History lists the request',
+            javaIdx >= 0 && histIdx === javaIdx + 1 && historyHasRow, { tabOrder, historyHasRow });
         // the Java behind the operation (system administrators): its method and class, the OSGi bundle, the plugin
         await b.evaluate(`([...document.querySelectorAll('.rab-n-request [role=tab]')].find(t => t.textContent.trim() === 'Java') || {}).click?.(), true`);
         await b.waitFor(`!!document.querySelector('[data-testid=java-signature], [data-testid=java-error]')`, 20000);
@@ -338,9 +344,8 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         c.check(`decompiling ${P.title} in the Java tab shows the method's source (${methodName}) with decompile buttons at top`,
             decompiled && !!decompileBtnPos && decompileBtnPos.aboveSignature && !!methodName && srcText.includes(methodName) && srcText.includes('{'),
             { methodName, decompileBtnPos, src: srcText.slice(0, 200) });
-        // switch to Vineflower in place, hover a Java type for the rich class/OSGi tooltip,
+        // Vineflower is the default decompiler; hover a Java type for the rich class/OSGi tooltip,
         // then click "Decompile class" which always opens the full class in the tabbed dialog focused on the method header
-        await click('[data-testid=decompiler-vineflower]');
         const vfLoaded = await b.waitFor(`/Vineflower/.test((document.querySelector('[data-testid=java-source-engine]') || {}).textContent || '')`, 15000);
 
         // hover a Java type in the operation header (Returns) or source to verify the rich class hover card
@@ -373,10 +378,12 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
             const dlg = document.querySelector('[data-testid=source-dialog]');
             const boldMethod = dlg && dlg.querySelector('.rab-n-jc-decl-method');
             const restBadge = dlg && dlg.querySelector('[data-testid=outline-rest-badge]');
+            const epLink = dlg && dlg.querySelector('[data-testid=source-endpoint-link]');
             const outlineEl = dlg && dlg.querySelector('[data-testid=source-dialog-outline]');
             return {
                 boldMethod: boldMethod ? { text: boldMethod.textContent, weight: getComputedStyle(boldMethod).fontWeight } : null,
                 restBadge: restBadge ? { text: restBadge.textContent, http: restBadge.dataset.httpMethod } : null,
+                epLink: epLink ? { href: epLink.getAttribute('href'), target: epLink.target, text: epLink.textContent.trim() } : null,
                 outlineWidthBefore: outlineEl ? Math.round(outlineEl.getBoundingClientRect().width) : 0,
             };
         })()`);
@@ -385,15 +392,22 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         for (let i = 0; i < 4; i++) await press('ArrowRight');
         await sleep(100);
         const outlineWidthAfter = await b.evaluate(`Math.round(document.querySelector('[data-testid=source-dialog-outline]').getBoundingClientRect().width)`);
-        c.check('Decompile class opens in dialog focused on method header, bolds declarations, marks REST endpoints, and resizes outline',
+        c.check('Decompile class opens in dialog focused on method header, bolds declarations, marks REST endpoints with open-in-tab links, and resizes outline',
             vfLoaded && dlgOpen && !!declAndRest.boldMethod && Number(declAndRest.boldMethod.weight) >= 700
             && !!declAndRest.restBadge && declAndRest.restBadge.text.length === 1
+            && !!declAndRest.epLink && declAndRest.epLink.target === '_blank' && /\?op=/.test(declAndRest.epLink.href)
             && outlineWidthAfter > declAndRest.outlineWidthBefore,
             { vfLoaded, dlgOpen, dlgClass1, declAndRest, outlineWidthAfter });
 
-        // switch decompiler in place inside the dialog and verify decompiler version link sits directly left of the toggle
+        // switch decompiler in place inside the dialog and verify decompiler version link sits directly left of the toggle, plus Pretty toggle and CFR outline work
         await click('[data-testid=source-dialog] [data-testid=decompiler-cfr]');
         const dlgCfr = await b.waitFor(`/CFR/.test((document.querySelector('[data-testid=dialog-decompiler]') || {}).textContent || '')`, 15000);
+        const cfrOutlineOrig = await b.evaluate(`document.querySelectorAll('[data-testid=outline-item]').length`);
+        await click('[data-testid=source-dialog] [data-testid=toggle-pretty-source]');
+        const prettyOn = await b.waitFor(`document.querySelector('[data-testid=source-dialog] [data-testid=toggle-pretty-source]')?.getAttribute('aria-pressed') === 'true'`, 2000);
+        const cfrOutlinePretty = await b.evaluate(`document.querySelectorAll('[data-testid=outline-item]').length`);
+        await click('[data-testid=source-dialog] [data-testid=toggle-pretty-source]');
+        const prettyOff = await b.waitFor(`document.querySelector('[data-testid=source-dialog] [data-testid=toggle-pretty-source]')?.getAttribute('aria-pressed') === 'false'`, 2000);
         const decompilerLink = await b.evaluate(`(() => {
             const link = document.querySelector('[data-testid=dialog-decompiler]');
             const toggle = document.querySelector('[data-testid=source-dialog] [data-testid=decompiler-toggle]');
@@ -426,7 +440,12 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         await click('[data-testid=source-dialog-outline-toggle]');
         const outlineReopened = await b.waitFor(`!!document.querySelector('[data-testid=source-dialog-outline]')`, 2000);
         await click('[data-testid=source-dialog-maximize]');
-        const dlgMax = await b.waitFor(`document.querySelector('[data-testid=source-dialog] [role=dialog]')?.dataset.state === 'max'`, 2000);
+        const dlgMax = await b.waitFor(`(() => {
+            const el = document.querySelector('[data-testid=source-dialog] [role=dialog]');
+            if (!el || el.dataset.state !== 'max') return false;
+            const r = el.getBoundingClientRect();
+            return r.left >= 8 && r.right <= document.documentElement.clientWidth - 8;
+        })()`, 2000);
         await click('[data-testid=source-dialog-maximize]');
         const dlgRestored = await b.waitFor(`document.querySelector('[data-testid=source-dialog] [role=dialog]')?.dataset.state === 'normal'`, 2000);
         // Escape minimizes dialog while preserving tabs, and top-panel Classes button brings it back (keeping no border/color change and remembered outline width)
@@ -451,14 +470,14 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         const restoredAll = await b.waitFor(`document.querySelectorAll('[data-testid=source-dialog-tab]').length === 2`, 2000);
         await press('Escape');
         const dlgClosed = await b.waitFor(`!document.querySelector('[data-testid=source-dialog]')`, 3000);
-        c.check(`tabbed decompiler dialog drills (${ref1} -> ${ref2}), remembers outline width, has themed header/outline/status/ZIP, maximizes, minimizes keeping tabs, reopens from top panel, and supports close/close-all/undo`,
-            dlgOpen && !!dlgClass1 && dlgCfr && !!decompilerLink && /^https:\/\/github\.com\/leibnitz27\/cfr$/.test(decompilerLink.href) && decompilerLink.leftOfToggle
-            && twoTabs && outlineCollapsed && outlineReopened && outlineAndStatus.hasZip
+        c.check(`tabbed decompiler dialog drills (${ref1} -> ${ref2}), remembers outline width, has themed header/outline/status/ZIP/Pretty, maximizes, minimizes keeping tabs, reopens from top panel, and supports close/close-all/undo`,
+            dlgOpen && !!dlgClass1 && dlgCfr && cfrOutlineOrig > 0 && cfrOutlinePretty > 0 && prettyOn && prettyOff && !!decompilerLink && /^https:\/\/github\.com\/leibnitz27\/cfr$/.test(decompilerLink.href) && decompilerLink.leftOfToggle
+            && twoTabs && outlineAndStatus.outlineCount > 0 && outlineCollapsed && outlineReopened && outlineAndStatus.hasZip
             && outlineWidthRemembered === outlineWidthAfter
             && /Line \d+ \/ \d+/.test(outlineAndStatus.status) && classesBtnStyle && classesBtnStyle.border === '0px'
             && dlgMax && dlgRestored && dlgMinimized && dlgReopened
             && oneLeft && backToTwo && zeroLeft && restoredAll && dlgClosed,
-            { ref1, dlgClass1, dlgCfr, decompilerLink, twoTabs, outlineAndStatus, outlineCollapsed, outlineReopened, outlineWidthRemembered, classesBtnStyle, dlgMax, dlgRestored, dlgMinimized, dlgReopened, oneLeft, backToTwo, zeroLeft, restoredAll, dlgClosed });
+            { ref1, dlgClass1, dlgCfr, cfrOutlineOrig, cfrOutlinePretty, prettyOn, prettyOff, decompilerLink, twoTabs, outlineAndStatus, outlineCollapsed, outlineReopened, outlineWidthRemembered, classesBtnStyle, dlgMax, dlgRestored, dlgMinimized, dlgReopened, oneLeft, backToTwo, zeroLeft, restoredAll, dlgClosed });
 
         // agent REST API & llms.txt live check
         const agentApi = await b.evaluate(`(async () => {
@@ -574,6 +593,18 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
                     !!tipClickPinned && tipClickPinned.shown && /pinned/.test(tipClickPinned.wrap)
                     && !!tipClickUnpinned && !tipClickUnpinned.shown,
                     { tipClickPinned, tipClickUnpinned });
+            }
+            // delegated rich tooltips on buttons/links (e.g. Send button)
+            const sendBtn = await b.evaluate(`(() => { const e = document.querySelector('[data-testid=send]');
+                if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+            if (sendBtn) {
+                await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: sendBtn.x, y: sendBtn.y });
+                const uiTipShown = await b.waitFor(`!!document.querySelector('[data-testid=ui-tip]')`, 2500);
+                const uiTipText = uiTipShown ? (await text('[data-testid=ui-tip]')).trim() : '';
+                await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 });
+                const uiTipGone = await b.waitFor(`!document.querySelector('[data-testid=ui-tip]')`, 1500);
+                c.check('buttons and links show rich explanatory tooltips on hover and dismiss when leaving',
+                    uiTipShown && uiTipText.length > 20 && uiTipGone, { uiTipShown, uiTipText, uiTipGone });
             }
             // undo, redo and reset: the steps are the path value, then the query value (when the form has one)
             const val = n => b.evaluate(`(document.querySelector('input[name=${n}]') || {}).value`);

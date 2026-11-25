@@ -73,8 +73,8 @@ public class OperationSource {
     public static final String ENABLED_PROPERTY = "rest.api.browser.decompile";
     public static final String DECOMPILER_CFR = "CFR 0.152";
     public static final String DECOMPILER_VINEFLOWER = "Vineflower 1.11.1";
-    /** Kept for compatibility with existing callers/tests. */
-    public static final String DECOMPILER = DECOMPILER_CFR;
+    /** Default decompiler label (kept for compatibility with existing callers/tests). */
+    public static final String DECOMPILER = DECOMPILER_VINEFLOWER;
     static final int MAX_CACHE = 96;
     static final int MAX_INSPECT_CACHE = 128;
     static final int MAX_SOURCE = 200_000;
@@ -84,8 +84,8 @@ public class OperationSource {
     private static final Pattern SAFE_CLASS_NAME = Pattern.compile("^[A-Za-z0-9_.$]{1,300}$");
 
     public enum Engine {
-        CFR("cfr", DECOMPILER_CFR),
-        VINEFLOWER("vineflower", DECOMPILER_VINEFLOWER);
+        VINEFLOWER("vineflower", DECOMPILER_VINEFLOWER),
+        CFR("cfr", DECOMPILER_CFR);
 
         final String id;
         final String label;
@@ -96,10 +96,10 @@ public class OperationSource {
         }
 
         public static Engine parse(String raw) {
-            if (raw != null && ("vineflower".equalsIgnoreCase(raw.trim()) || "vf".equalsIgnoreCase(raw.trim()))) {
-                return VINEFLOWER;
+            if (raw != null && "cfr".equalsIgnoreCase(raw.trim())) {
+                return CFR;
             }
-            return CFR;
+            return VINEFLOWER;
         }
     }
 
@@ -167,7 +167,7 @@ public class OperationSource {
     }
 
     public Result decompile(String key) {
-        return decompile(key, null, -1, "method", "cfr");
+        return decompile(key, null, -1, "method", "vineflower");
     }
 
     public Result decompile(String opKey, String classCandidates, long fromBundleId, String scope, String decompiler) {
@@ -262,7 +262,7 @@ public class OperationSource {
     }
 
     Result decompileMethod(String key, Method method) {
-        return decompileMethod(key, method, Engine.CFR);
+        return decompileMethod(key, method, Engine.VINEFLOWER);
     }
 
     Result decompileMethod(String key, Method method, Engine engine) {

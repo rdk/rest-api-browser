@@ -2,15 +2,27 @@ import { useEffect, useId, useRef, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import { pathParts } from '../core/pathparts';
 import type { Check } from '../core/validate';
+import { tipProps, type UiTipSpec } from '../core/uitips';
 
 export const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
-export function MethodBadge({ method }: { method: string }) {
+const METHOD_TIPS: Record<string, UiTipSpec> = {
+  GET: { title: 'HTTP GET', body: 'Read-only request that retrieves data without modifying server state.' },
+  HEAD: { title: 'HTTP HEAD', body: 'Read-only request that returns response headers without a body.' },
+  OPTIONS: { title: 'HTTP OPTIONS', body: 'Read-only request that queries supported HTTP methods and CORS options.' },
+  POST: { title: 'HTTP POST', body: 'Write request that creates a resource or triggers an action on the server.', tone: 'warn' },
+  PUT: { title: 'HTTP PUT', body: 'Write request that creates or completely replaces a target resource.', tone: 'warn' },
+  PATCH: { title: 'HTTP PATCH', body: 'Write request that applies a partial update to an existing resource.', tone: 'warn' },
+  DELETE: { title: 'HTTP DELETE', body: 'Destructive write request that removes the target resource on the server.', tone: 'danger' },
+};
+
+export function MethodBadge({ method, showTip = false }: { method: string; showTip?: boolean }) {
   const m = method.toUpperCase();
   const cls = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(m) ? m.toLowerCase() : 'other';
+  const tip = showTip ? tipProps(METHOD_TIPS[m] ?? { title: `HTTP ${m}`, body: `Sends an HTTP ${m} request.` }) : {};
   return m === 'DELETE'
-    ? <span class={'rab-n-method rab-n-method-' + cls} title="DELETE"><span aria-hidden="true">DEL</span><span class="rab-n-sr">DELETE</span></span>
-    : <span class={'rab-n-method rab-n-method-' + cls}>{m}</span>;
+    ? <span class={'rab-n-method rab-n-method-' + cls} {...tip}><span aria-hidden="true">DEL</span><span class="rab-n-sr">DELETE</span></span>
+    : <span class={'rab-n-method rab-n-method-' + cls} {...tip}>{m}</span>;
 }
 
 /**
@@ -31,8 +43,17 @@ export function PathText({ path, prefix, words, rank }: { path: string; prefix?:
 export function MaximizeButton({ on, onToggle, what, testId }: { on: boolean; onToggle: () => void; what: string; testId: string }) {
   const label = on ? `Restore the ${what} (Esc)` : `Show the ${what} on the whole screen`;
   return (
-    <button class={'rab-n-tool' + (on ? ' on' : '')} onClick={onToggle} title={label} aria-label={label} aria-pressed={on}
-            data-testid={testId} data-state={on ? 'max' : 'normal'}>
+    <button
+      class={'rab-n-tool' + (on ? ' on' : '')}
+      onClick={onToggle}
+      aria-label={label}
+      aria-pressed={on}
+      data-testid={testId}
+      data-state={on ? 'max' : 'normal'}
+      {...tipProps(on
+        ? { title: `Restore ${what}`, body: `Return the ${what} to its normal size.`, shortcut: 'Esc' }
+        : { title: `Maximize ${what}`, body: `Expand the ${what} to fill the viewport.` })}
+    >
       <svg class="rab-n-svg" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
         <path d={on ? 'M6 2.5v3.5H2.5M13.5 6H10V2.5M10 13.5V10h3.5M2.5 10H6v3.5' : 'M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10'}
               stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -259,7 +280,7 @@ export function CheckMark({ check }: { check: Check }) {
 export const tabId = (panelId: string, id: string) => panelId + '-tab-' + id;
 
 export function Tabs<T extends string>({ tabs, value, onChange, label, panelId }: {
-  tabs: { id: T; label: ComponentChildren }[]; value: T; onChange: (id: T) => void;
+  tabs: { id: T; label: ComponentChildren; tip?: UiTipSpec }[]; value: T; onChange: (id: T) => void;
   /** The tab list's accessible name. */
   label?: string;
   /** The id of the panel the tabs show (role="tabpanel", aria-labelledby={tabId(panelId, value)}). */
@@ -290,6 +311,7 @@ export function Tabs<T extends string>({ tabs, value, onChange, label, panelId }
           tabIndex={t.id === value || (at < 0 && idx === 0) ? 0 : -1}
           class={'rab-n-tab' + (t.id === value ? ' on' : '')}
           onClick={() => onChange(t.id)}
+          {...tipProps(t.tip)}
         >
           {t.label}
         </button>
@@ -318,10 +340,10 @@ export async function copyText(value: string): Promise<boolean> {
   }
 }
 
-export function CopyButton({ text, label, testId, quiet, disabled, title }: {
+export function CopyButton({ text, label, testId, quiet, disabled, title, tip }: {
   text: () => string; label: string; testId?: string; quiet?: boolean;
-  /** Nothing to copy: the button is disabled and `title` says why. */
-  disabled?: boolean; title?: string;
+  /** Nothing to copy: the button is disabled and `title` or `tip` says why. */
+  disabled?: boolean; title?: string; tip?: UiTipSpec;
 }) {
   const [state, setState] = useState<'idle' | 'done' | 'failed'>('idle');
   const flash = useFlash<'done' | 'failed'>(setState);
@@ -329,9 +351,14 @@ export function CopyButton({ text, label, testId, quiet, disabled, title }: {
     const value = text();
     flash(value !== '' && (await copyText(value)) ? 'done' : 'failed');
   };
+  const resolvedTip: UiTipSpec = tip ?? {
+    title: label,
+    body: title ?? `Copy ${label.replace(/^Copy\s+/i, '').toLowerCase()} to your clipboard.`,
+    tone: disabled ? 'warn' : undefined,
+  };
   return (
     <button class={(quiet ? 'rab-n-quiet' : 'rab-n-button') + ' rab-n-copy' + (state === 'done' ? ' copied' : state === 'failed' ? ' failed' : '')}
-            onClick={copy} disabled={disabled} title={title} data-testid={testId} data-state={state}>
+            onClick={copy} disabled={disabled} data-testid={testId} data-state={state} {...tipProps(resolvedTip)}>
       {state === 'done' ? (
         <svg class="rab-n-svg" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
           <path d="M3.2 8.4l3 3 6.6-6.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />

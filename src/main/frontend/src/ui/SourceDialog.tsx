@@ -6,10 +6,14 @@ import {
 } from '../core/details';
 import { splitSourceLines } from '../core/javatokens';
 import {
-  classLabel, createRefContext, extractClassOutline, findMethodHeaderLine, linkSourceLine,
-  type HttpMethod, type OutlineItem, type SourceSpan,
+  classLabel, createRefContext, extractClassOutline, findMethodHeaderLine, linkSourceLine, matchOutlineEndpoints,
+  type HttpMethod, type MatchedEndpoint, type OutlineItem, type SourceSpan,
 } from '../core/javarefs';
+import { formatState } from '../core/router';
+import type { Module, Operation } from '../core/types';
 import { buildZip, javaSourceZipPath, type ZipEntry } from '../core/zip';
+import { formatJavaSource } from '../core/javaformat';
+import { tipProps } from '../core/uitips';
 import type { OpenTabRequest, SourceTab, SourceTabsState } from '../core/sourcetabs';
 import { acquireInert, CopyButton, download, formatBytes, MaximizeButton, plural, useFlash } from './bits';
 import { VirtualList } from './VirtualList';
@@ -50,50 +54,72 @@ export function DecompilerLink({ decompiler, label, testId }: {
       href={info.url}
       target="_blank"
       rel="noopener noreferrer"
-      title={`Open ${text} on GitHub`}
       data-testid={testId}
+      {...tipProps({
+        title: `${text} on GitHub`,
+        body: `Open the ${info.fallback} bytecode decompiler repository on GitHub in a new tab.`,
+      })}
     >
       {text}
     </a>
   );
 }
 
-/** In-place segmented toggle between CFR and Vineflower. */
+/** In-place segmented toggle between Vineflower and CFR. */
 export function DecompilerToggle({ value, onChange }: { value: DecompilerId; onChange: (d: DecompilerId) => void }) {
   return (
     <span class="rab-n-seg" role="group" aria-label="Decompiler" data-testid="decompiler-toggle">
-      <button
-        type="button"
-        class={'rab-n-seg-btn' + (value === 'cfr' ? ' on' : '')}
-        aria-pressed={value === 'cfr'}
-        data-testid="decompiler-cfr"
-        onClick={() => onChange('cfr')}
-      >
-        CFR
-      </button>
       <button
         type="button"
         class={'rab-n-seg-btn' + (value === 'vineflower' ? ' on' : '')}
         aria-pressed={value === 'vineflower'}
         data-testid="decompiler-vineflower"
         onClick={() => onChange('vineflower')}
+        {...tipProps({
+          title: 'Vineflower decompiler',
+          body: 'Modern Fernflower fork with clean Java 21 syntax, records, lambdas, and annotations (default).',
+        })}
       >
         Vineflower
       </button>
+      <button
+        type="button"
+        class={'rab-n-seg-btn' + (value === 'cfr' ? ' on' : '')}
+        aria-pressed={value === 'cfr'}
+        data-testid="decompiler-cfr"
+        onClick={() => onChange('cfr')}
+        {...tipProps({
+          title: 'CFR decompiler',
+          body: 'Alternative Java bytecode decompiler — useful for comparing tricky bytecode, switches, or exception handling.',
+        })}
+      >
+        CFR
+      </button>
     </span>
   );
+}
+
+function methodTone(m: string): string {
+  const up = m.toUpperCase();
+  return up === 'GET' || up === 'POST' || up === 'PUT' || up === 'PATCH' || up === 'DELETE' ? up.toLowerCase() : 'other';
+}
+
+function endpointHref(opKey: string): string {
+  const base = typeof location !== 'undefined' ? location.pathname : '/plugins/servlet/rest-api-browser';
+  return base + formatState({ op: opKey, path: {}, q: {}, h: {} });
 }
 
 /**
  * Memoized single code line: skips Preact diffing on unchanged visible rows while scrolling, and uses lightweight
  * `span[role=button]` elements handled by a single delegated click/key listener on the scroll container.
  */
-const SourceLineRow = memo(function SourceLineRow({ lineNo, spans, isFocus, bundleAttr, opKey }: {
+const SourceLineRow = memo(function SourceLineRow({ lineNo, spans, isFocus, bundleAttr, opKey, endpoint }: {
   lineNo: number;
   spans: SourceSpan[];
   isFocus: boolean;
   bundleAttr?: string;
   opKey?: string;
+  endpoint?: MatchedEndpoint;
 }) {
   return (
     <div
@@ -125,6 +151,25 @@ const SourceLineRow = memo(function SourceLineRow({ lineNo, spans, isFocus, bund
           const kindCls = s.kind === 'space' || s.kind === 'name' ? '' : 'rab-n-jc-' + s.kind;
           return <span key={k} class={(kindCls + declCls).trim()}>{s.text}</span>;
         })}
+        {endpoint && (
+          <a
+            class={'rab-n-source-ep-link rab-n-method-' + methodTone(endpoint.op.method)}
+            href={endpointHref(endpoint.op.key)}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="source-endpoint-link"
+            data-op-key={endpoint.op.key}
+            {...tipProps({
+              title: 'Open REST endpoint',
+              body: `Open ${endpoint.op.method.toUpperCase()} ${endpoint.fullPath} in a new REST API Browser tab to inspect parameters and send requests.`,
+            })}
+          >
+            <span>{endpoint.op.method.toUpperCase()} {endpoint.fullPath}</span>
+            <svg class="rab-n-svg" width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M9 3h4v4M13 3L7.5 8.5M11.5 9.5V13h-8.5V4.5H6.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </a>
+        )}
       </span>
     </div>
   );
@@ -136,7 +181,7 @@ const SourceLineRow = memo(function SourceLineRow({ lineNo, spans, isFocus, bund
  */
 export function SourceCode({
   source, className, refs, bundleId, opKey, onOpenClass, focusLine, focusKey, maxAutoHeight, testId,
-  onFirstLineChange, onSelectLine, preSplit,
+  onFirstLineChange, onSelectLine, preSplit, endpoints,
 }: {
   source: string;
   className: string;
@@ -153,6 +198,7 @@ export function SourceCode({
   onFirstLineChange?: (firstLine1Based: number) => void;
   onSelectLine?: (line1Based: number) => void;
   preSplit?: { lines: string[]; inComment: boolean[]; maxCols: number };
+  endpoints?: Map<number, MatchedEndpoint>;
 }) {
   const split = useMemo(() => preSplit ?? splitSourceLines(source), [preSplit, source]);
   const { lines, inComment, maxCols } = split;
@@ -193,6 +239,7 @@ export function SourceCode({
 
   const onDelegatedClick = (e: MouseEvent) => {
     const t = e.target as HTMLElement | null;
+    if (t?.closest?.('a')) return;
     const link = t?.closest?.('[data-class-ref]') as HTMLElement | null;
     if (link) {
       triggerLink(link);
@@ -215,7 +262,16 @@ export function SourceCode({
 
   const bundleAttr = bundleId !== undefined && bundleId >= 0 ? String(bundleId) : undefined;
   const digits = Math.max(2, String(lines.length).length);
-  const innerMinWidth = `${Math.max(40, maxCols + digits + 6)}ch`;
+  const extraEndpointCols = useMemo(() => {
+    if (!endpoints || endpoints.size === 0) return 0;
+    let maxLineWithEp = maxCols;
+    for (const [lineIdx, ep] of endpoints) {
+      const len = (lines[lineIdx]?.length ?? 0) + ep.op.method.length + ep.fullPath.length + 10;
+      if (len > maxLineWithEp) maxLineWithEp = len;
+    }
+    return Math.max(0, maxLineWithEp - maxCols);
+  }, [endpoints, lines, maxCols]);
+  const innerMinWidth = `${Math.max(40, maxCols + extraEndpointCols + digits + 6)}ch`;
   const style: Record<string, string> = { '--rab-gutter-digits': String(digits) };
   if (maxAutoHeight) {
     style.height = Math.min(maxAutoHeight, Math.max(120, lines.length * SOURCE_LINE_HEIGHT + 16)) + 'px';
@@ -250,6 +306,7 @@ export function SourceCode({
             isFocus={focusLine !== undefined && i === focusLine}
             bundleAttr={bundleAttr}
             opKey={opKey}
+            endpoint={endpoints?.get(i)}
           />
         )}
       />
@@ -321,15 +378,20 @@ interface TabStats {
  * ZIP export of all open decompiled sources + metadata.json, and persistent tabs on close (minimize).
  */
 export function SourceDialog({
-  baseUrl, state, decompiler, onDecompiler, outlineWidth, onOutlineWidth,
+  baseUrl, state, decompiler, onDecompiler, pretty, onPretty, outlineWidth, onOutlineWidth,
+  operations, modulesById,
   onSelectTab, onCloseTab, onCloseAll, onUndo, onOpenClass, onResolveTab, onMinimize,
 }: {
   baseUrl: string;
   state: SourceTabsState;
   decompiler: DecompilerId;
   onDecompiler: (d: DecompilerId) => void;
+  pretty?: boolean;
+  onPretty?: () => void;
   outlineWidth?: number;
   onOutlineWidth?: (w: number) => void;
+  operations?: Operation[];
+  modulesById?: Map<string, Module>;
   onSelectTab: (id: string) => void;
   onCloseTab: (id: string) => void;
   onCloseAll: () => void;
@@ -341,6 +403,9 @@ export function SourceDialog({
   const [bounds, setBounds] = useState<Bounds>(defaultBounds);
   const [maximized, setMaximized] = useState(false);
   const [showOutline, setShowOutline] = useState(true);
+  const [localPretty, setLocalPretty] = useState(false);
+  const isPretty = onPretty ? !!pretty : localPretty;
+  const togglePretty = onPretty ?? (() => setLocalPretty((p) => !p));
   const [localOutlineW, setLocalOutlineW] = useState(outlineWidth ?? DEFAULT_OUTLINE_W);
   const effectiveOutlineW = outlineWidth ?? localOutlineW;
   const handleOutlineWidth = useCallback((w: number) => {
@@ -539,7 +604,8 @@ export function SourceDialog({
             file = file.replace(/\.java$/, `_${n++}.java`);
           }
           seenPaths.add(file);
-          entries.push({ name: file, data: src.source.endsWith('\n') ? src.source : src.source + '\n' });
+          const formattedText = isPretty ? formatJavaSource(src.source) : src.source;
+          entries.push({ name: file, data: formattedText.endsWith('\n') ? formattedText : formattedText + '\n' });
 
           let classInfo: ClassInfo | undefined;
           try {
@@ -655,8 +721,8 @@ export function SourceDialog({
                     role="tab"
                     aria-selected={!!selected}
                     class="rab-n-modal-tab-btn"
-                    title={t.id}
                     onClick={() => onSelectTab(t.id)}
+                    {...tipProps({ title: t.label, body: t.id, note: 'Click to view · Middle-click to close' })}
                   >
                     {t.label}
                   </button>
@@ -665,7 +731,7 @@ export function SourceDialog({
                     class="rab-n-modal-tab-close"
                     data-testid="source-dialog-tab-close"
                     aria-label={`Close ${t.label}`}
-                    title={`Close ${t.label}`}
+                    {...tipProps({ title: `Close ${t.label}`, body: 'Close this class tab (can be reopened with Undo).' })}
                     onClick={(e) => { e.stopPropagation(); onCloseTab(t.id); }}
                   >
                     ×
@@ -677,9 +743,9 @@ export function SourceDialog({
               type="button"
               class={'rab-n-modal-hbtn rab-n-modal-add' + (showOpenInput ? ' on' : '')}
               data-testid="source-dialog-add"
-              title="Open any Java class by full name"
               aria-label="Open Java class by name"
               onClick={() => setShowOpenInput((v) => !v)}
+              {...tipProps({ title: 'Open class by name', body: 'Decompile any Java class by entering its fully qualified class name.' })}
             >
               +
             </button>
@@ -690,8 +756,11 @@ export function SourceDialog({
               class={'rab-n-modal-hbtn' + (zipFlash === 'done' ? ' done' : zipFlash === 'failed' ? ' failed' : '')}
               data-testid="source-dialog-download-zip"
               disabled={state.tabs.length === 0 || zipping}
-              title={`Download all ${plural(state.tabs.length, 'open class', 'open classes')} as ZIP (.java files + metadata.json)`}
               onClick={downloadAllZip}
+              {...tipProps({
+                title: 'Download all as ZIP',
+                body: `Export ${plural(state.tabs.length, 'open class', 'open classes')} as .java source files plus a metadata.json manifest.`,
+              })}
             >
               <svg class="rab-n-svg" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                 <path d="M8 2.5v7.5M5 7.2L8 10.2l3-3M2.8 12.8h10.4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -703,8 +772,10 @@ export function SourceDialog({
               class="rab-n-modal-hbtn"
               data-testid="source-dialog-undo"
               disabled={!lastUndo}
-              title={lastUndo ? `Undo close ${lastUndo.label} (Ctrl+Shift+T)` : 'Nothing to undo'}
               onClick={onUndo}
+              {...tipProps(lastUndo
+                ? { title: 'Undo close', body: `Reopen ${lastUndo.label}.`, shortcut: 'Ctrl+Shift+T' }
+                : { title: 'Undo close', body: 'No recently closed tabs to restore.' })}
             >
               Undo
             </button>
@@ -713,8 +784,8 @@ export function SourceDialog({
               class="rab-n-modal-hbtn"
               data-testid="source-dialog-close-all"
               disabled={state.tabs.length === 0}
-              title="Close all open tabs (can be undone)"
               onClick={onCloseAll}
+              {...tipProps({ title: 'Close all tabs', body: 'Close every open class tab (can be restored with Undo).' })}
             >
               Close all
             </button>
@@ -729,9 +800,9 @@ export function SourceDialog({
               type="button"
               class="rab-n-tool rab-n-modal-close"
               aria-label="Hide dialog (keeps open tabs)"
-              title="Hide dialog — keeps open tabs (Esc)"
               data-testid="source-dialog-close"
               onClick={onMinimize}
+              {...tipProps({ title: 'Hide window', body: 'Minimize the decompiler window while keeping all open tabs in the top bar\'s Classes button.', shortcut: 'Esc' })}
             >
               —
             </button>
@@ -759,12 +830,16 @@ export function SourceDialog({
               tab={active}
               decompiler={decompiler}
               onDecompiler={onDecompiler}
+              pretty={isPretty}
+              onPretty={togglePretty}
               onOpenClass={onOpenClass}
               onResolveTab={onResolveTab}
               showOutline={showOutline}
               onToggleOutline={() => setShowOutline((v) => !v)}
               outlineWidth={effectiveOutlineW}
               onOutlineWidth={handleOutlineWidth}
+              operations={operations}
+              modulesById={modulesById}
               onStats={setStats}
             />
           ) : (
@@ -840,18 +915,22 @@ export function SourceDialog({
 }
 
 function DialogTabPane({
-  baseUrl, tab, decompiler, onDecompiler, onOpenClass, onResolveTab, showOutline, onToggleOutline, outlineWidth, onOutlineWidth, onStats,
+  baseUrl, tab, decompiler, onDecompiler, pretty, onPretty, onOpenClass, onResolveTab, showOutline, onToggleOutline, outlineWidth, onOutlineWidth, operations, modulesById, onStats,
 }: {
   baseUrl: string;
   tab: SourceTab;
   decompiler: DecompilerId;
   onDecompiler: (d: DecompilerId) => void;
+  pretty: boolean;
+  onPretty: () => void;
   onOpenClass: (req: OpenTabRequest) => void;
   onResolveTab: (tabId: string, resolvedClass: string) => void;
   showOutline: boolean;
   onToggleOutline: () => void;
   outlineWidth: number;
   onOutlineWidth: (w: number) => void;
+  operations?: Operation[];
+  modulesById?: Map<string, Module>;
   onStats: (s: TabStats | null) => void;
 }) {
   const query = useMemo(
@@ -915,8 +994,13 @@ function DialogTabPane({
     };
   }, [baseUrl, query, tab.id, attempt]);
 
-  const preSplit = useMemo(() => (src ? splitSourceLines(src.source) : undefined), [src]);
+  const displaySource = useMemo(() => (src ? (pretty ? formatJavaSource(src.source) : src.source) : ''), [src, pretty]);
+  const preSplit = useMemo(() => (src ? splitSourceLines(displaySource) : undefined), [src, displaySource]);
   const outline = useMemo<OutlineItem[]>(() => (preSplit ? extractClassOutline(preSplit.lines) : []), [preSplit]);
+  const endpoints = useMemo(
+    () => (operations?.length && modulesById ? matchOutlineEndpoints(outline, operations, modulesById, tab.opKey, tab.focusMethod) : undefined),
+    [outline, operations, modulesById, tab.opKey, tab.focusMethod],
+  );
   const methodCount = useMemo(() => outline.filter((o) => o.kind !== 'type').length, [outline]);
 
   const initialFocusLine = useMemo(() => {
@@ -924,12 +1008,16 @@ function DialogTabPane({
     return findMethodHeaderLine(preSplit.lines, tab.focusMethod, tab.focusParamCount);
   }, [preSplit, tab.focusMethod, tab.focusParamCount]);
 
+  useEffect(() => {
+    setJumpLine(null);
+  }, [pretty]);
+
   const effectiveFocusLine = jumpLine !== null ? jumpLine : initialFocusLine;
 
   useEffect(() => {
     if (effectiveFocusLine >= 0) setCurrentLine(effectiveFocusLine + 1);
     else setCurrentLine(1);
-  }, [effectiveFocusLine, src]);
+  }, [effectiveFocusLine, src, pretty]);
 
   useEffect(() => {
     if (!src || !preSplit) {
@@ -941,14 +1029,14 @@ function DialogTabPane({
       totalLines: preSplit.lines.length,
       methods: methodCount,
       refs: src.refs?.length ?? 0,
-      bytes: src.source.length,
+      bytes: displaySource.length,
       decompiler: src.decompiler,
       decompileMs: src.decompileMs,
       cached: src.cached,
       bundleId: src.bundleId,
       className: src.class,
     });
-  }, [src, preSplit, currentLine, methodCount]);
+  }, [src, preSplit, displaySource.length, currentLine, methodCount]);
 
   const filteredOutline = useMemo(() => {
     const f = outlineFilter.trim().toLowerCase();
@@ -1033,8 +1121,13 @@ function DialogTabPane({
           class={'rab-n-quiet rab-n-outline-btn' + (showOutline ? ' on' : '')}
           data-testid="source-dialog-outline-toggle"
           aria-pressed={showOutline}
-          title={showOutline ? 'Hide method outline' : 'Show method outline'}
           onClick={onToggleOutline}
+          {...tipProps({
+            title: 'Method outline',
+            body: showOutline
+              ? 'Hide the navigable sidebar of constructors, methods, REST endpoints, and nested types.'
+              : 'Show a navigable sidebar of constructors, methods, REST endpoints, and nested types.',
+          })}
         >
           <svg class="rab-n-svg" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <rect x="2" y="2.5" width="12" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
@@ -1048,7 +1141,6 @@ function DialogTabPane({
           data-class-candidates={tab.candidates.join(',')}
           data-class-bundle={src?.bundleId !== undefined && src.bundleId >= 0 ? String(src.bundleId) : tab.fromBundle !== undefined && tab.fromBundle >= 0 ? String(tab.fromBundle) : undefined}
           data-class-op={tab.opKey}
-          title={fqcn}
           data-testid="dialog-class-name"
         >
           {fqcn}
@@ -1056,8 +1148,23 @@ function DialogTabPane({
         <span class="rab-n-spacer" />
         <DecompilerLink decompiler={decompiler} label={src?.decompiler} testId="dialog-decompiler" />
         <DecompilerToggle value={decompiler} onChange={onDecompiler} />
-        <CopyButton quiet label="Copy class" text={() => fqcn} />
-        {src && <CopyButton quiet label="Copy source" text={() => src.source} />}
+        <button
+          type="button"
+          class={'rab-n-quiet rab-n-outline-btn' + (pretty ? ' on' : '')}
+          aria-pressed={pretty}
+          data-testid="toggle-pretty-source"
+          onClick={onPretty}
+          {...tipProps({
+            title: pretty ? 'Original decompiler output' : 'Pretty-reformat Java',
+            body: pretty
+              ? 'Showing reformatted code. Click to return to the raw decompiler output.'
+              : 'Re-indent to 4 spaces, wrap long annotations and method signatures, and normalize brace spacing.',
+          })}
+        >
+          Pretty
+        </button>
+        <CopyButton quiet label="Copy class" tip={{ title: 'Copy class name', body: `Copy ${fqcn} to your clipboard.` }} text={() => fqcn} />
+        {src && <CopyButton quiet label="Copy source" tip={{ title: 'Copy source code', body: 'Copy the currently displayed Java source to your clipboard.' }} text={() => displaySource} />}
       </div>
       <div ref={splitRef} class="rab-n-modal-split">
         {showOutline && (
@@ -1167,15 +1274,16 @@ function DialogTabPane({
             </div>
           ) : src ? (
             <SourceCode
-              source={src.source}
+              source={displaySource}
               className={src.class}
               refs={src.refs}
               bundleId={src.bundleId}
               opKey={tab.opKey}
               onOpenClass={onOpenClass}
               focusLine={effectiveFocusLine}
-              focusKey={(tab.focusSeq ?? 0) * 100 + jumpSeq * 10 + (decompiler === 'vineflower' ? 2 : 1)}
+              focusKey={(tab.focusSeq ?? 0) * 100 + jumpSeq * 10 + (decompiler === 'vineflower' ? 4 : 2) + (pretty ? 1 : 0)}
               preSplit={preSplit}
+              endpoints={endpoints}
               onFirstLineChange={setCurrentLine}
               onSelectLine={setCurrentLine}
               testId="dialog-source-code"

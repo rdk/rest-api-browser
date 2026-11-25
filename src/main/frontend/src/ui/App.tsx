@@ -17,9 +17,11 @@ import { Sidebar } from './Sidebar';
 import { OperationView, emptyDraft, type Draft } from './Operation';
 import { SourceDialog } from './SourceDialog';
 import { ClassHoverCard } from './ClassTip';
+import { UiTipLayer } from './UiTipLayer';
 import { Menu, type MenuItem } from './Menu';
 import { PinHint, plural, useTip } from './bits';
 import { isWaiting, moduleReason } from '../core/explain';
+import { tipProps } from '../core/uitips';
 
 interface Props {
   baseUrl: string;
@@ -190,7 +192,9 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
 
   // ---- shared persistent tabbed decompiler dialog (minimizes on close, keeps tabs across navigation)
   const [sourceTabs, setSourceTabs] = useState<SourceTabsState>(EMPTY_SOURCE_TABS);
-  const [decompiler, setDecompiler] = useState<DecompilerId>('cfr');
+  const [decompiler, setDecompiler] = useState<DecompilerId>('vineflower');
+  const [prettySource, setPrettySource] = useState(false);
+  const onTogglePrettySource = useCallback(() => setPrettySource((p) => !p), []);
   const onOpenClass = useCallback((req: OpenTabRequest) => setSourceTabs((s) => openSourceTab(s, req)), []);
   const onSelectSourceTab = useCallback((id: string) => setSourceTabs((s) => selectSourceTab(s, id)), []);
   const onCloseSourceTab = useCallback((id: string) => setSourceTabs((s) => closeSourceTab(s, id)), []);
@@ -416,16 +420,34 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
           <About version={version} product={productLabel} operations={rows.length} modules={summary?.modules.length} pinned={about.pinned} />
         </span>
         {version && (
-          <a class="rab-n-version" href={`${REPO}/releases`} target="_blank" rel="noopener noreferrer"
-             title="Releases and their notes on GitHub" data-testid="version">
+          <a
+            class="rab-n-version"
+            href={`${REPO}/releases`}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="version"
+            {...tipProps({
+              title: `Version ${version}`,
+              body: 'Open release notes and download history on GitHub in a new tab.',
+            })}
+          >
             v{version}
           </a>
         )}
         </div>
         <div class="rab-n-top-center">
           {site && (
-            <a class="rab-n-site" href={siteUrl} target="_blank" rel="noopener noreferrer"
-               title={`${product || 'The product'}'s base URL: ${siteUrl} (opens in a new tab)`} data-testid="site">
+            <a
+              class="rab-n-site"
+              href={siteUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="site"
+              {...tipProps({
+                title: `${product || 'Product'} base URL`,
+                body: `Open ${siteUrl} in a new tab. All REST requests run against this instance.`,
+              })}
+            >
               <svg class="rab-n-svg" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                 <circle cx="8" cy="8" r="5.8" stroke="currentColor" strokeWidth="1.3" />
                 <path d="M2.4 8h11.2M8 2.2c1.7 1.6 2.5 3.6 2.5 5.8S9.7 12.2 8 13.8M8 2.2C6.3 3.8 5.5 5.8 5.5 8s.8 4.2 2.5 5.8" stroke="currentColor" strokeWidth="1.2" />
@@ -441,11 +463,15 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
             type="button"
             class="rab-n-top-link rab-n-top-classes"
             onClick={onToggleSourceDialog}
-            title={sourceTabs.tabs.length
-              ? `Show decompiled Java classes (${plural(sourceTabs.tabs.length, 'open tab')})`
-              : 'Open the decompiled Java classes window'}
             aria-expanded={sourceTabs.open}
             data-testid="open-classes-dialog"
+            {...tipProps({
+              title: 'Decompiled Java classes',
+              body: sourceTabs.open
+                ? 'Hide the floating decompiler window while keeping your open class tabs.'
+                : 'Open the floating tabbed Java decompiler window to browse and inspect classes.',
+              note: sourceTabs.tabs.length > 0 ? `${plural(sourceTabs.tabs.length, 'open class tab')}` : undefined,
+            })}
           >
             <svg class="rab-n-svg" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path d="M5.5 4.2L2 8l3.5 3.8M10.5 4.2L14 8l-3.5 3.8M9 3.2L7 12.8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
@@ -457,7 +483,15 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
           </button>
         )}
         {classicUrl && (
-          <a class="rab-n-top-link" href={classicUrl} title="The original REST API Browser" data-testid="classic-link">
+          <a
+            class="rab-n-top-link"
+            href={classicUrl}
+            data-testid="classic-link"
+            {...tipProps({
+              title: 'Classic UI',
+              body: 'Switch to the original AngularJS / WADL-based REST API Browser page.',
+            })}
+          >
             <svg class="rab-n-svg" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <rect x="2.5" y="3" width="11" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
               <path d="M6 3v10" stroke="currentColor" strokeWidth="1.4" />
@@ -504,6 +538,8 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
               onOpenClass={summary.sysadmin ? onOpenClass : undefined}
               decompiler={decompiler}
               onDecompiler={setDecompiler}
+              prettySource={prettySource}
+              onTogglePrettySource={onTogglePrettySource}
             />
           ) : (
             <Welcome
@@ -524,8 +560,12 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
           state={sourceTabs}
           decompiler={decompiler}
           onDecompiler={setDecompiler}
+          pretty={prettySource}
+          onPretty={onTogglePrettySource}
           outlineWidth={outlineWidth}
           onOutlineWidth={onOutlineWidth}
+          operations={index?.operations}
+          modulesById={modulesById}
           onSelectTab={onSelectSourceTab}
           onCloseTab={onCloseSourceTab}
           onCloseAll={onCloseAllSourceTabs}
@@ -541,6 +581,7 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
         rootRef={root}
         onOpenClass={onOpenClass}
       />
+      <UiTipLayer rootRef={root} />
     </div>
   );
 }

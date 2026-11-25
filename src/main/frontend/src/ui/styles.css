@@ -1766,6 +1766,28 @@
   background: var(--rab-find-current);
   box-shadow: inset 3px 0 0 var(--rab-brand);
 }
+/* Inline "open endpoint in new REST API Browser tab" link rendered right next to REST endpoint method declarations */
+.rab-n a.rab-n-source-ep-link,
+.rab-n a.rab-n-source-ep-link:link,
+.rab-n a.rab-n-source-ep-link:visited {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 12px;
+  padding: 0 6px;
+  border-radius: var(--rab-radius-pill);
+  border: 1px solid color-mix(in srgb, currentColor 28%, transparent);
+  font: 600 10.5px/16px var(--rab-mono);
+  text-decoration: none;
+  vertical-align: middle;
+  white-space: nowrap;
+  transition: filter var(--rab-ease), border-color var(--rab-ease);
+}
+.rab-n a.rab-n-source-ep-link:hover {
+  border-color: currentColor;
+  text-decoration: underline;
+  filter: brightness(0.95);
+}
 
 .rab-n-modal-backdrop {
   position: fixed;
@@ -1793,10 +1815,9 @@
   pointer-events: none;
 }
 .rab-n-modal.is-max {
-  left: 10px !important;
-  top: 10px !important;
-  width: calc(100vw - 20px) !important;
-  height: calc(100vh - 20px) !important;
+  inset: 10px !important;
+  width: auto !important;
+  height: auto !important;
 }
 /* Themed header matching the app's topbar gradient/color in all skins and dark mode */
 .rab-n-modal-tabs {
@@ -2753,3 +2774,87 @@ body.rab-next-page #footer {
 /* where the app has no room below, or on the right (RichTip measures) */
 .rab-n-tip-wrap.above > .rab-n-tip { top: auto; bottom: calc(100% + 7px); }
 .rab-n-tip-wrap.end > .rab-n-tip { left: auto; right: 0; }
+
+/* Delegated rich tooltip for buttons, links, tabs, and badges carrying [data-tip] */
+.rab-n-uitip {
+  position: fixed;
+  z-index: 98;
+  max-width: min(310px, calc(100vw - 16px));
+  padding: 8px 11px 8px;
+  border-radius: var(--rab-radius-md);
+  border: 1px solid var(--rab-border);
+  background: var(--ds-surface-overlay, var(--rab-raised));
+  color: var(--rab-subtle);
+  font: 12px/1.45 var(--rab-font);
+  box-shadow: var(--rab-shadow-overlay);
+  pointer-events: none;
+  animation: rab-n-card-in 90ms ease-out;
+}
+.rab-n-uitip::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  right: -1px;
+  top: -1px;
+  height: 3px;
+  border-radius: var(--rab-radius-md) var(--rab-radius-md) 0 0;
+  background: var(--rab-grad-accent);
+}
+.rab-n-uitip.tone-warn::before { background: var(--rab-warning); }
+.rab-n-uitip.tone-danger::before { background: var(--rab-danger); }
+.rab-n-uitip.pinned {
+  pointer-events: auto;
+  user-select: text;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--rab-focus) 45%, transparent), var(--rab-shadow-overlay);
+}
+.rab-n-uitip-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+.rab-n-uitip-title {
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--rab-text);
+}
+.rab-n-uitip-keys {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  font-size: 10.5px;
+  color: var(--rab-subtlest);
+}
+.rab-n-uitip-keys kbd, .rab-n-uitip-pin kbd {
+  display: inline-block;
+  padding: 0 4px;
+  border-radius: 3px;
+  border: 1px solid var(--rab-border);
+  background: var(--rab-sunken);
+  color: var(--rab-text);
+  font: 600 10.5px/16px var(--rab-mono);
+}
+.rab-n-uitip-plus { margin: 0 1px; color: var(--rab-subtlest); }
+.rab-n-uitip-body {
+  color: var(--rab-subtle);
+  overflow-wrap: anywhere;
+}
+.rab-n-uitip-note {
+  margin-top: 5px;
+  padding-top: 4px;
+  border-top: 1px solid var(--rab-border-subtle);
+  font-size: 11px;
+  color: var(--rab-subtlest);
+}
+.rab-n-uitip.tone-warn .rab-n-uitip-note { color: var(--rab-warning); }
+.rab-n-uitip.tone-danger .rab-n-uitip-note { color: var(--rab-danger); }
+.rab-n-uitip-pin {
+  margin-top: 5px;
+  padding-top: 4px;
+  border-top: 1px solid var(--rab-border-subtle);
+  font-size: 10.5px;
+  color: var(--rab-focus);
+}
+

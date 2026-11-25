@@ -325,7 +325,7 @@ function sourceCacheKey(q: SourceQuery): string {
     q.classCandidates ?? [],
     q.fromBundle ?? -1,
     q.scope ?? (q.classCandidates?.length ? 'class' : 'method'),
-    q.decompiler ?? 'cfr',
+    q.decompiler ?? 'vineflower',
   ]);
 }
 
