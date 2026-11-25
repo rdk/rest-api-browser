@@ -242,9 +242,13 @@ def wadl_operations(text):
 
 
 def new_ui(j, a, P):
-    """The new UI (servlet /next) and its catalog REST API (/rest/restbrowser/1/catalog)."""
-    NEXT = SERVLET + '/next'
+    """The new UI (servlet /rest-api-browser) and its catalog REST API (/rest/restbrowser/1/catalog)."""
+    NEXT = '/plugins/servlet/rest-api-browser'
     API = '/rest/restbrowser/1/catalog'
+    s_leg, _, h_leg = j.call('GET', SERVLET + '/next?os_authType=basic', headers={'Accept': 'text/html'})
+    check('legacy GET %s/next redirects to %s' % (SERVLET, NEXT),
+          s_leg in (301, 302, 303) and '/plugins/servlet/rest-api-browser' in h_leg.get('location', ''),
+          (s_leg, h_leg.get('location')))
     s, page, h = j.call('GET', NEXT + '?os_authType=basic', headers={'Accept': 'text/html'})
     if s in (301, 302, 303) and '/pulp/' in h.get('location', ''):
         s, page, h = j.call('GET', NEXT + '?os_authType=basic', headers={'Accept': 'text/html'})
@@ -267,7 +271,7 @@ def new_ui(j, a, P):
     s, _, h = j.call('GET', NEXT, auth=False, headers={'Accept': 'text/html'})
     loc = h.get('location', '')
     check('anonymous GET %s is sent to the login page' % NEXT,
-          s in (301, 302, 303) and 'login' in loc.lower() and 'restbrowser' in urllib.parse.unquote(loc), (s, loc))
+          s in (301, 302, 303) and 'login' in loc.lower() and 'rest-api-browser' in urllib.parse.unquote(loc), (s, loc))
 
     # ---- the summary
     s, summary, h = j.json(API)
@@ -456,7 +460,12 @@ def main():
     check('the page has the search field and the "public only" checkbox',
           'id="searchField"' in page and 'id="publicOnlyFilter"' in page, page[:300])
     check('the page links to the new UI (button "Try the new UI")',
-          'id="rab-new-ui-link"' in page and '/plugins/servlet/restbrowser/next' in page, page[:300])
+          'id="rab-new-ui-link"' in page and '/plugins/servlet/rest-api-browser' in page, page[:300])
+    s_llms, llms_body, h_llms = j.call('GET', '/plugins/servlet/rest-api-browser/llms.txt?os_authType=basic',
+                                       headers={'Accept': 'text/plain'})
+    check('GET /plugins/servlet/rest-api-browser/llms.txt answers 200 llmstxt.org guide',
+          s_llms == 200 and llms_body.startswith('# REST API Browser') and '/rest/restbrowser/1/code/graph' in llms_body,
+          (s_llms, h_llms.get('content-type'), llms_body[:200]))
     check('the page is decorated by %s (header and the plugin\'s web resources)' % P['name'],
           'rest-api-browser' in page and re.search(r'download/(batch|resources|contextbatch)', page), page[:300])
     m = re.search(r'RAB\.product = "([^"]*)"', page)

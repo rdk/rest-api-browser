@@ -25,11 +25,18 @@
         <url-pattern>/restbrowser</url-pattern>
     </servlet>
 
-    <!-- The new UI: its page, its REST API (the catalog) and its assets, built by Vite from src/main/frontend -->
+    <!-- The new UI: its page, its llms.txt guide, its REST API (catalog + code) and its assets, built by Vite -->
     <servlet name="REST API Browser (new UI)" key="rest-browser-next-servlet"
            class="com.atlassian.labs.restbrowser.servlet.NextServlet">
-        <description>Serves the new UI's page.</description>
+        <description>Serves the new UI's page (and redirects the legacy /restbrowser/next path).</description>
+        <url-pattern>/rest-api-browser</url-pattern>
         <url-pattern>/restbrowser/next</url-pattern>
+    </servlet>
+
+    <servlet name="REST API Browser llms.txt" key="rest-browser-llms-servlet"
+           class="com.atlassian.labs.restbrowser.servlet.LlmsTxtServlet">
+        <description>Serves the llmstxt.org agent guide for the REST API Browser and its catalog/decompiler APIs.</description>
+        <url-pattern>/rest-api-browser/llms.txt</url-pattern>
     </servlet>
 
     <rest-migration key="rest-migration-key">

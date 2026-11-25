@@ -6,9 +6,11 @@ import {
   type OperationSource, type PluginInfo, type RestModuleInfo, type Section, type SourceScope,
 } from '../core/details';
 import { annotationTokens, toLines, tokenize, type Token } from '../core/javatokens';
-import { classLabel } from '../core/javarefs';
+import { findMethodHeaderLine } from '../core/javarefs';
+import type { OpenTabRequest } from '../core/sourcetabs';
 import { CopyButton, plural, safeHref } from './bits';
-import { DecompilerToggle, describeSourceError, SourceCode, SourceDialog, type SourceTab } from './SourceDialog';
+import { DecompilerToggle, describeSourceError, SourceCode } from './SourceDialog';
+import { JavaTypeButton, JavaTypeExpr } from './ClassTip';
 import { originLabel } from './facts';
 import type { Module } from '../core/types';
 
@@ -21,62 +23,24 @@ let lastPage: Page = 'method';
  * signature, the OSGi bundle with its wiring, the plugin and the REST module, one page each, chosen in a menu on the
  * left. Fetched when the tab opens, once per page load.
  */
-/** `revision`: the catalog's hash; a new one (a rebuild, an app upgraded) reads the details again. */
-export function JavaTab({ baseUrl, opKey, revision }: { baseUrl: string; opKey: string; revision?: string }) {
+export function JavaTab({ baseUrl, opKey, revision, decompiler, onDecompiler, onOpenClass }: {
+  baseUrl: string;
+  opKey: string;
+  revision?: string;
+  decompiler: DecompilerId;
+  onDecompiler: (d: DecompilerId) => void;
+  onOpenClass?: (req: OpenTabRequest) => void;
+}) {
   const [details, setDetails] = useState<OperationDetails | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [full, setFull] = useState(false);
   const [reload, setReload] = useState(0);
-  const [decompiler, setDecompiler] = useState<DecompilerId>('cfr');
-  const [dialogTabs, setDialogTabs] = useState<SourceTab[]>([]);
-  const [activeTabId, setActiveTabId] = useState<string>('');
   const [page, setPageState] = useState<Page>(lastPage);
   const setPage = (p: Page) => {
     lastPage = p;
     setPageState(p);
   };
-  const openClassInDialog = (target: string, candidates: string[], fromBundle?: number) => {
-    const cands = candidates.length ? candidates : [target];
-    setDialogTabs((prev) => {
-      const existing = prev.find((t) => t.id === target || t.candidates.includes(target));
-      if (existing) {
-        setActiveTabId(existing.id);
-        return prev;
-      }
-      const next: SourceTab = {
-        id: target,
-        label: classLabel(target),
-        candidates: cands,
-        fromBundle,
-        opKey,
-      };
-      setActiveTabId(next.id);
-      return [...prev, next];
-    });
-  };
-  const closeDialogTab = (id: string) => {
-    setDialogTabs((prev) => {
-      const idx = prev.findIndex((t) => t.id === id);
-      if (idx < 0) return prev;
-      const next = prev.filter((t) => t.id !== id);
-      if (activeTabId === id) {
-        setActiveTabId(next[Math.min(idx, next.length - 1)]?.id ?? '');
-      }
-      return next;
-    });
-  };
-  const resolveDialogTab = (tabId: string, resolvedClass: string) => {
-    setDialogTabs((prev) => {
-      const existing = prev.find((t) => t.id === resolvedClass && t.id !== tabId);
-      if (existing) {
-        if (activeTabId === tabId) setActiveTabId(existing.id);
-        return prev.filter((t) => t.id !== tabId);
-      }
-      const next = prev.map((t) => (t.id === tabId ? { ...t, id: resolvedClass, label: classLabel(resolvedClass) } : t));
-      if (activeTabId === tabId) setActiveTabId(resolvedClass);
-      return next;
-    });
-  };
+  const openClass = (req: OpenTabRequest) => onOpenClass?.(req);
   // every page opens at its top
   const pageRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -139,8 +103,6 @@ export function JavaTab({ baseUrl, opKey, revision }: { baseUrl: string; opKey: 
   ];
   const shown = pages.filter((p) => !p.hidden);
   const current = shown.some((p) => p.id === page) ? page : 'method';
-  // the page's tools, quiet, at the right of the page's first heading (they scroll with it, never over the content);
-  // "Full names" only where class names are shown
   const tools = (
     <span class="rab-n-java-tools">
       {(current === 'method' || current === 'class' || current === 'types') && (
@@ -154,7 +116,7 @@ export function JavaTab({ baseUrl, opKey, revision }: { baseUrl: string; opKey: 
     </span>
   );
   const onNavKey = (e: KeyboardEvent) => {
-    if (e.ctrlKey || e.metaKey || e.altKey) return; // the browser's shortcuts
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
     const i = shown.findIndex((p) => p.id === current);
     const next = e.key === 'ArrowDown' ? i + 1 : e.key === 'ArrowUp' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? shown.length - 1 : -2;
     if (next === -2) return;
@@ -184,18 +146,42 @@ export function JavaTab({ baseUrl, opKey, revision }: { baseUrl: string; opKey: 
           <Block title="Method" testId="java-method" section={details.method} tools={tools}>
             {(m) => (
               <>
-                <MethodCode m={m} n={n} />
+                <MethodCode m={m} full={full} n={n} bundleId={bundle?.id} opKey={opKey} onOpenClass={onOpenClass} />
                 <dl class="rab-n-java-facts">
-                  <Fact name="Declared in"><Code tokens={tokenize(n(m.class))} /></Fact>
+                  <Fact name="Declared in">
+                    <code>
+                      <JavaTypeButton fqcn={m.class} fromBundle={bundle?.id} opKey={opKey} onOpenClass={openClass}>
+                        <Code tokens={tokenize(n(m.class))} />
+                      </JavaTypeButton>
+                    </code>
+                  </Fact>
                   {details.definition && !isError(details.definition) && (
-                    <Fact name="Annotated in"><Code tokens={tokenize(n(details.definition.class))} />.{details.definition.name}</Fact>
+                    <Fact name="Annotated in">
+                      <code>
+                        <JavaTypeButton fqcn={details.definition.class} fromBundle={bundle?.id} opKey={opKey} onOpenClass={openClass}>
+                          <Code tokens={tokenize(n(details.definition.class))} />
+                        </JavaTypeButton>
+                      </code>.{details.definition.name}
+                    </Fact>
                   )}
                   {!isError(details.locators) && details.locators.length > 0 && (
                     <Fact name="Reached through">
                       {details.locators.map((l, i) => (
-                        <span key={i}>{i > 0 && ' → '}<code><Code tokens={tokenize(n(l.class))} />.{l.name}()</code></span>
+                        <span key={i}>
+                          {i > 0 && ' → '}
+                          <code>
+                            <JavaTypeButton fqcn={l.class} fromBundle={bundle?.id} opKey={opKey} onOpenClass={openClass}>
+                              <Code tokens={tokenize(n(l.class))} />
+                            </JavaTypeButton>.{l.name}()
+                          </code>
+                        </span>
                       ))}
-                      {' → '}<code><Code tokens={tokenize(n(m.class))} />.{m.name}()</code>
+                      {' → '}
+                      <code>
+                        <JavaTypeButton fqcn={m.class} fromBundle={bundle?.id} opKey={opKey} onOpenClass={openClass}>
+                          <Code tokens={tokenize(n(m.class))} />
+                        </JavaTypeButton>.{m.name}()
+                      </code>
                     </Fact>
                   )}
                   {m.deprecated && <Fact name="Status"><span class="rab-n-java-deprecated">Deprecated</span></Fact>}
@@ -205,9 +191,11 @@ export function JavaTab({ baseUrl, opKey, revision }: { baseUrl: string; opKey: 
                   baseUrl={baseUrl}
                   opKey={opKey}
                   initialScope="method"
+                  focusMethod={m.name}
+                  focusParamCount={m.parameters.length}
                   decompiler={decompiler}
-                  onDecompiler={setDecompiler}
-                  onOpenClass={openClassInDialog}
+                  onDecompiler={onDecompiler}
+                  onOpenClass={openClass}
                 />
               </>
             )}
@@ -218,22 +206,24 @@ export function JavaTab({ baseUrl, opKey, revision }: { baseUrl: string; opKey: 
             <Block title="Class" testId="java-class" section={details.resourceClass} tools={tools}>
               {(c) => (
                 <>
-                  <ClassFacts c={c} n={n} onOpenClass={(name) => openClassInDialog(name, [name], bundle?.id)} />
+                  <ClassFacts c={c} full={full} n={n} bundleId={bundle?.id} opKey={opKey} onOpenClass={onOpenClass} />
                   <SourceBlock
                     key={opKey + ':class:' + reload}
                     baseUrl={baseUrl}
                     opKey={opKey}
                     initialScope="class"
+                    focusMethod={method?.name}
+                    focusParamCount={method?.parameters.length}
                     decompiler={decompiler}
-                    onDecompiler={setDecompiler}
-                    onOpenClass={openClassInDialog}
+                    onDecompiler={onDecompiler}
+                    onOpenClass={openClass}
                   />
                 </>
               )}
             </Block>
             {details.declaringClass && (
               <Block title="Declaring class" section={details.declaringClass}>
-                {(c) => <ClassFacts c={c} n={n} onOpenClass={(name) => openClassInDialog(name, [name], bundle?.id)} />}
+                {(c) => <ClassFacts c={c} full={full} n={n} bundleId={bundle?.id} opKey={opKey} onOpenClass={onOpenClass} />}
               </Block>
             )}
           </>
@@ -243,10 +233,9 @@ export function JavaTab({ baseUrl, opKey, revision }: { baseUrl: string; opKey: 
             {(types) => (
               <Filtered key="types" rows={types} text={(t) => t.name + ' ' + t.from} head={['Type', 'From']}
                         row={(t) => [
-                          <button type="button" class="rab-n-jc-link" title={`Decompile ${t.name}`}
-                                  onClick={() => openClassInDialog(t.name, [t.name], bundle?.id)}>
+                          <JavaTypeButton fqcn={t.name} fromBundle={bundle?.id} opKey={opKey} onOpenClass={openClass}>
                             <code><Code tokens={tokenize(n(t.name))} /></code>
-                          </button>,
+                          </JavaTypeButton>,
                           <span class="rab-n-subtle">{t.from}</span>,
                         ]} />
             )}
@@ -289,20 +278,6 @@ export function JavaTab({ baseUrl, opKey, revision }: { baseUrl: string; opKey: 
         )}
         {current === 'rest' && <Block title="REST module" testId="java-rest" section={details.module} tools={tools}>{(r) => <ModuleFacts r={r} />}</Block>}
       </div>
-      {dialogTabs.length > 0 && (
-        <SourceDialog
-          baseUrl={baseUrl}
-          tabs={dialogTabs}
-          activeId={activeTabId}
-          decompiler={decompiler}
-          onDecompiler={setDecompiler}
-          onSelectTab={setActiveTabId}
-          onCloseTab={closeDialogTab}
-          onOpenClass={openClassInDialog}
-          onResolveTab={resolveDialogTab}
-          onClose={() => { setDialogTabs([]); setActiveTabId(''); }}
-        />
-      )}
     </div>
   );
 }
@@ -321,14 +296,16 @@ function describe(e: unknown): string {
   return 'The request failed: ' + (e instanceof Error ? e.message : String(e));
 }
 
-/** Decompiled source of the handler method or full class, loaded on demand with in-place decompiler & scope switchers. */
-function SourceBlock({ baseUrl, opKey, initialScope, decompiler, onDecompiler, onOpenClass }: {
+/** Decompiled source of the handler method or full class, virtualized, with method-header focus and in-place switchers. */
+function SourceBlock({ baseUrl, opKey, initialScope, focusMethod, focusParamCount, decompiler, onDecompiler, onOpenClass }: {
   baseUrl: string;
   opKey: string;
   initialScope: SourceScope;
+  focusMethod?: string;
+  focusParamCount?: number;
   decompiler: DecompilerId;
   onDecompiler: (d: DecompilerId) => void;
-  onOpenClass: (target: string, candidates: string[], fromBundle?: number) => void;
+  onOpenClass: (req: OpenTabRequest) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [scope, setScope] = useState<SourceScope>(initialScope);
@@ -336,6 +313,7 @@ function SourceBlock({ baseUrl, opKey, initialScope, decompiler, onDecompiler, o
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [focusKey, setFocusKey] = useState(0);
 
   const query = useMemo(() => ({ op: opKey, scope, decompiler }), [opKey, scope, decompiler]);
 
@@ -349,6 +327,7 @@ function SourceBlock({ baseUrl, opKey, initialScope, decompiler, onDecompiler, o
         if (!live) return;
         setSrc(s);
         setLoading(false);
+        setFocusKey((k) => k + 1);
       },
       (e) => {
         if (!live) return;
@@ -361,6 +340,14 @@ function SourceBlock({ baseUrl, opKey, initialScope, decompiler, onDecompiler, o
     };
   }, [open, baseUrl, query, attempt]);
 
+  // When decompiling the whole class from under Method, focus on the first line of the method declaration header
+  const focusLine = useMemo(() => {
+    if (!src || scope !== 'class' || !focusMethod) return -1;
+    const found = findMethodHeaderLine(src.source.split('\n'), focusMethod, focusParamCount);
+    if (found >= 0) return found;
+    return src.methodLine && src.methodLine > 0 ? src.methodLine - 1 : -1;
+  }, [src, scope, focusMethod, focusParamCount]);
+
   const retry = () => {
     forgetSource(query);
     setSrc(null);
@@ -370,13 +357,20 @@ function SourceBlock({ baseUrl, opKey, initialScope, decompiler, onDecompiler, o
   const openWith = (nextScope: SourceScope) => {
     setScope(nextScope);
     setOpen(true);
+    setFocusKey((k) => k + 1);
   };
 
   return (
     <div class="rab-n-java-source" data-testid="java-source">
       <div class="rab-n-java-head">
         <h4 class="rab-n-java-title">Source</h4>
-        {open && src && <span class="rab-n-subtle" data-testid="java-source-engine">{src.decompiler}</span>}
+        {open && src && (
+          <span class="rab-n-subtle" data-testid="java-source-engine">
+            {src.decompiler}
+            {src.totalLines ? ` · ${src.totalLines.toLocaleString()} lines` : ''}
+            {focusLine >= 0 ? ` · method at line ${focusLine + 1}` : ''}
+          </span>
+        )}
         <span class="rab-n-java-tools">
           {open && (
             <>
@@ -395,8 +389,15 @@ function SourceBlock({ baseUrl, opKey, initialScope, decompiler, onDecompiler, o
               <DecompilerToggle value={decompiler} onChange={onDecompiler} />
               {src && (
                 <button type="button" class="rab-n-quiet" data-testid="open-source-dialog"
-                        title="Open this class in the tabbed decompiler dialog"
-                        onClick={() => onOpenClass(src.class, [src.class], src.bundleId)}>
+                        title="Open this class in the tabbed decompiler window"
+                        onClick={() => onOpenClass({
+                          target: src.class,
+                          candidates: [src.class],
+                          fromBundle: src.bundleId,
+                          opKey,
+                          focusMethod,
+                          focusParamCount,
+                        })}>
                   Open in dialog
                 </button>
               )}
@@ -433,29 +434,41 @@ function SourceBlock({ baseUrl, opKey, initialScope, decompiler, onDecompiler, o
           <button type="button" class="rab-n-quiet" onClick={retry}>Try again</button>
         </div>
       ) : src ? (
-        <pre class="rab-n-java-code rab-n-java-source-code" data-testid="java-source-code">
-          <SourceCode
-            source={src.source}
-            className={src.class}
-            refs={src.refs}
-            onOpenClass={(target, cands) => onOpenClass(target, cands, src.bundleId)}
-          />
-        </pre>
+        <SourceCode
+          source={src.source}
+          className={src.class}
+          refs={src.refs}
+          bundleId={src.bundleId}
+          opKey={opKey}
+          onOpenClass={onOpenClass}
+          focusLine={focusLine}
+          focusKey={focusKey}
+          maxAutoHeight={520}
+          testId="java-source-code"
+        />
       ) : null}
     </div>
   );
 }
 
 /**
- * An annotation laid out in lines (one member per line when long); a line too long for the box wraps with a hanging
- * indent under its own start, not at the left edge.
+ * An annotation laid out in lines; its leading `@Annotation` token links to the annotation class when `raw` has a FQCN.
  */
-function Annotation({ text, max }: { text: string; max?: number }) {
+function Annotation({ raw, text, max, bundleId, opKey, onOpenClass }: {
+  raw: string; text: string; max?: number; bundleId?: number; opKey?: string; onOpenClass?: (req: OpenTabRequest) => void;
+}) {
+  const annFqcn = /^@([A-Za-z_][\w$.]*)/.exec(raw)?.[1];
   return (
     <div class="rab-n-jc-ann-block">
       {toLines(annotationTokens(text, max)).map((l, i) => (
         <div key={i} class="rab-n-jc-line" style={{ paddingLeft: l.indent + 4 + 'ch', textIndent: '-4ch' }}>
-          <Code tokens={l.tokens} />
+          <Code
+            tokens={l.tokens}
+            annFqcn={i === 0 ? annFqcn : undefined}
+            bundleId={bundleId}
+            opKey={opKey}
+            onOpenClass={onOpenClass}
+          />
         </div>
       ))}
     </div>
@@ -463,10 +476,25 @@ function Annotation({ text, max }: { text: string; max?: number }) {
 }
 
 /** Coloured Java tokens: annotations, members, types, keywords, strings, numbers and punctuation. */
-function Code({ tokens }: { tokens: Token[] }) {
+function Code({ tokens, annFqcn, bundleId, opKey, onOpenClass }: {
+  tokens: Token[]; annFqcn?: string; bundleId?: number; opKey?: string; onOpenClass?: (req: OpenTabRequest) => void;
+}) {
+  let linkedFirstAnn = false;
   return (
     <>
-      {tokens.map((t, i) => (t.kind === 'space' || t.kind === 'name' ? t.text : <span key={i} class={'rab-n-jc-' + t.kind}>{t.text}</span>))}
+      {tokens.map((t, i) => {
+        if (t.kind === 'ann' && annFqcn && onOpenClass && !linkedFirstAnn) {
+          linkedFirstAnn = true;
+          return (
+            <JavaTypeButton key={i} fqcn={annFqcn} fromBundle={bundleId} opKey={opKey} onOpenClass={onOpenClass} kind="ann">
+              {t.text}
+            </JavaTypeButton>
+          );
+        }
+        return t.kind === 'space' || t.kind === 'name'
+          ? t.text
+          : <span key={i} class={'rab-n-jc-' + t.kind}>{t.text}</span>;
+      })}
     </>
   );
 }
@@ -509,7 +537,6 @@ function Filtered<T>({ rows, total, text, head, row }: {
         <input class="rab-n-input" type="search" placeholder="Filter" value={filter} aria-label="Filter the list"
                onInput={(e) => setFilter((e.target as HTMLInputElement).value)}
                onKeyDown={(e) => {
-                 // Escape clears the filter (whatever the browser does on its own), and does nothing else
                  if (e.key !== 'Escape' || !filter) return;
                  e.preventDefault();
                  e.stopPropagation();
@@ -530,54 +557,90 @@ function Filtered<T>({ rows, total, text, head, row }: {
   );
 }
 
-/** The method as Java source would show it: its annotations laid out and coloured, then the declaration. */
-function MethodCode({ m, n }: { m: JavaMethod; n: (s: string) => string }) {
+/** The method as Java source would show it: annotations, return type, parameter types and throws are all clickable. */
+function MethodCode({ m, full, n, bundleId, opKey, onOpenClass }: {
+  m: JavaMethod; full: boolean; n: (s: string) => string; bundleId?: number; opKey: string; onOpenClass?: (req: OpenTabRequest) => void;
+}) {
   return (
     <pre class="rab-n-java-code" data-testid="java-signature">
-      {m.annotations.map((a, i) => <Annotation key={i} text={n(a)} />)}
+      {m.annotations.map((a, i) => (
+        <Annotation key={i} raw={a} text={n(a)} bundleId={bundleId} opKey={opKey} onOpenClass={onOpenClass} />
+      ))}
       <Code tokens={tokenize(m.modifiers)} />{m.modifiers && ' '}
-      <Code tokens={tokenize(n(m.returns))} /> <span class="rab-n-jc-method">{m.name}</span>
+      <JavaTypeExpr typeExpr={m.returns} full={full} fromBundle={bundleId} opKey={opKey} onOpenClass={onOpenClass} />{' '}
+      <span class="rab-n-jc-method">{m.name}</span>
       <span class="rab-n-jc-punct">(</span>
       {m.parameters.map((p, i) => (
         <div key={i} class="rab-n-jc-param">
-          {p.annotations.map((a, k) => <span key={k}><Code tokens={annotationTokens(n(a), 60)} /> </span>)}
-          <Code tokens={tokenize(n(p.type))} />{' '}
+          {p.annotations.map((a, k) => {
+            const annFqcn = /^@([A-Za-z_][\w$.]*)/.exec(a)?.[1];
+            return (
+              <span key={k}>
+                <Code tokens={annotationTokens(n(a), 60)} annFqcn={annFqcn} bundleId={bundleId} opKey={opKey} onOpenClass={onOpenClass} />{' '}
+              </span>
+            );
+          })}
+          <JavaTypeExpr typeExpr={p.type} full={full} fromBundle={bundleId} opKey={opKey} onOpenClass={onOpenClass} />{' '}
           <span class={p.name ? 'rab-n-jc-pname' : 'rab-n-jc-pname rab-n-subtle'}>{p.name ?? 'arg' + i}</span>
           {i < m.parameters.length - 1 && <span class="rab-n-jc-punct">,</span>}
         </div>
       ))}
       <span class="rab-n-jc-punct">)</span>
-      {m.throws.length > 0 && <> <span class="rab-n-jc-kw">throws</span> <Code tokens={tokenize(m.throws.map(n).join(', '))} /></>}
+      {m.throws.length > 0 && (
+        <>
+          {' '}<span class="rab-n-jc-kw">throws</span>{' '}
+          {m.throws.map((t, i) => (
+            <span key={i}>
+              {i > 0 && ', '}
+              <JavaTypeExpr typeExpr={t} full={full} fromBundle={bundleId} opKey={opKey} onOpenClass={onOpenClass} />
+            </span>
+          ))}
+        </>
+      )}
     </pre>
   );
 }
 
-function ClassFacts({ c, n, onOpenClass }: { c: JavaClass; n: (s: string) => string; onOpenClass?: (fqcn: string) => void }) {
-  const link = (fqcn: string) => {
-    const raw = fqcn.replace(/<.*$/, '').trim();
-    if (!onOpenClass) return <code><Code tokens={tokenize(n(fqcn))} /></code>;
-    return (
-      <button type="button" class="rab-n-jc-link" title={`Decompile ${raw}`} onClick={() => onOpenClass(raw)}>
-        <code><Code tokens={tokenize(n(fqcn))} /></code>
-      </button>
-    );
-  };
+function ClassFacts({ c, full, n, bundleId, opKey, onOpenClass }: {
+  c: JavaClass; full: boolean; n: (s: string) => string; bundleId?: number; opKey: string; onOpenClass?: (req: OpenTabRequest) => void;
+}) {
   return (
     <dl class="rab-n-java-facts">
-      <Fact name="Name"><code>{c.name}</code></Fact>
+      <Fact name="Name">
+        <code>
+          {onOpenClass
+            ? <JavaTypeButton fqcn={c.name} fromBundle={bundleId} opKey={opKey} onOpenClass={onOpenClass}>{c.name}</JavaTypeButton>
+            : c.name}
+        </code>
+      </Fact>
       <Fact name="Kind"><Code tokens={tokenize([c.modifiers, c.kind].filter(Boolean).join(' '))} /></Fact>
       {c.superclasses.length > 0 && (
-        <Fact name="Extends">{c.superclasses.map((s, i) => <span key={i}>{i > 0 && ' → '}{link(s)}</span>)}</Fact>
+        <Fact name="Extends">
+          {c.superclasses.map((s, i) => (
+            <span key={i}>
+              {i > 0 && ' → '}
+              <code><JavaTypeExpr typeExpr={s} full={full} fromBundle={bundleId} opKey={opKey} onOpenClass={onOpenClass} /></code>
+            </span>
+          ))}
+        </Fact>
       )}
       {c.interfaces.length > 0 && (
         <Fact name="Implements">
-          <ul class="rab-n-java-list">{c.interfaces.map((s, i) => <li key={i}>{link(s)}</li>)}</ul>
+          <ul class="rab-n-java-list">
+            {c.interfaces.map((s, i) => (
+              <li key={i}>
+                <code><JavaTypeExpr typeExpr={s} full={full} fromBundle={bundleId} opKey={opKey} onOpenClass={onOpenClass} /></code>
+              </li>
+            ))}
+          </ul>
         </Fact>
       )}
       {c.annotations.length > 0 && (
         <Fact name="Annotations">
           <pre class="rab-n-java-code rab-n-java-code-small">
-            {c.annotations.map((a, i) => <Annotation key={i} text={n(a)} max={70} />)}
+            {c.annotations.map((a, i) => (
+              <Annotation key={i} raw={a} text={n(a)} max={70} bundleId={bundleId} opKey={opKey} onOpenClass={onOpenClass} />
+            ))}
           </pre>
         </Fact>
       )}
@@ -614,7 +677,6 @@ function PluginFacts({ p }: { p: PluginInfo }) {
       {p.version && <Fact name="Version">{p.version}</Fact>}
       {p.vendor && (
         <Fact name="Vendor">
-          {/* the descriptor's URL is not trusted: only http(s) becomes a link */}
           {safeHref(p.vendorUrl) ? <a href={safeHref(p.vendorUrl)} target="_blank" rel="noopener noreferrer">{p.vendor}</a> : p.vendor}
         </Fact>
       )}
@@ -644,4 +706,3 @@ function ModuleFacts({ r }: { r: RestModuleInfo }) {
 function CodeList({ items }: { items: string[] }) {
   return <ul class="rab-n-java-list">{items.map((s, i) => <li key={i}><code><Code tokens={tokenize(s)} /></code></li>)}</ul>;
 }
-

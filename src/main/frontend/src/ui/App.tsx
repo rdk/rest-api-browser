@@ -2,14 +2,21 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { memo } from 'preact/compat';
 import type { Index, Module, Operation, Summary } from '../core/types';
 import { CatalogStore, StartStopped, isSessionExpired } from '../core/catalog';
-import { clearDetails } from '../core/details';
+import { clearDetails, type DecompilerId } from '../core/details';
 import { buildRows } from '../core/search';
 import { formatState, parseState, type RouteState } from '../core/router';
 import { findTemplates } from '../core/template';
+import {
+  closeAllSourceTabs, closeSourceTab, EMPTY_SOURCE_TABS, minimizeSourceDialog, openSourceTab,
+  resolveSourceTab, selectSourceTab, showSourceDialog, undoCloseSourceTabs,
+  type OpenTabRequest, type SourceTabsState,
+} from '../core/sourcetabs';
 import { RequestRunner } from './runner';
 import { UserStore, isCredentialHeader } from './userstore';
 import { Sidebar } from './Sidebar';
 import { OperationView, emptyDraft, type Draft } from './Operation';
+import { SourceDialog } from './SourceDialog';
+import { ClassHoverCard } from './ClassTip';
 import { Menu, type MenuItem } from './Menu';
 import { PinHint, plural, useTip } from './bits';
 import { isWaiting, moduleReason } from '../core/explain';
@@ -174,6 +181,21 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
     setSplit(r);
     save({ split: r });
   }, [save]);
+
+  // ---- shared persistent tabbed decompiler dialog (minimizes on close, keeps tabs across navigation)
+  const [sourceTabs, setSourceTabs] = useState<SourceTabsState>(EMPTY_SOURCE_TABS);
+  const [decompiler, setDecompiler] = useState<DecompilerId>('cfr');
+  const onOpenClass = useCallback((req: OpenTabRequest) => setSourceTabs((s) => openSourceTab(s, req)), []);
+  const onSelectSourceTab = useCallback((id: string) => setSourceTabs((s) => selectSourceTab(s, id)), []);
+  const onCloseSourceTab = useCallback((id: string) => setSourceTabs((s) => closeSourceTab(s, id)), []);
+  const onCloseAllSourceTabs = useCallback(() => setSourceTabs((s) => closeAllSourceTabs(s)), []);
+  const onUndoSourceTabs = useCallback(() => setSourceTabs((s) => undoCloseSourceTabs(s)), []);
+  const onResolveSourceTab = useCallback((tabId: string, resolved: string) => setSourceTabs((s) => resolveSourceTab(s, tabId, resolved)), []);
+  const onMinimizeSourceDialog = useCallback(() => setSourceTabs((s) => minimizeSourceDialog(s)), []);
+  const onToggleSourceDialog = useCallback(
+    () => setSourceTabs((s) => (s.open ? minimizeSourceDialog(s) : showSourceDialog(s))),
+    [],
+  );
 
   // ---- selection, kept in the URL (?op=...)
   const routeState = useRef<RouteState>(parseState(location.search));
@@ -400,6 +422,26 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
           )}
         </div>
         <div class="rab-n-top-right">
+        {summary?.sysadmin && (
+          <button
+            type="button"
+            class={'rab-n-top-link rab-n-top-classes' + (sourceTabs.open ? ' on' : '')}
+            onClick={onToggleSourceDialog}
+            title={sourceTabs.tabs.length
+              ? `Show decompiled Java classes (${plural(sourceTabs.tabs.length, 'open tab')})`
+              : 'Open the decompiled Java classes window'}
+            aria-pressed={sourceTabs.open}
+            data-testid="open-classes-dialog"
+          >
+            <svg class="rab-n-svg" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M5.5 4.2L2 8l3.5 3.8M10.5 4.2L14 8l-3.5 3.8M9 3.2L7 12.8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Classes
+            {sourceTabs.tabs.length > 0 && (
+              <span class="rab-n-top-badge" data-testid="classes-tab-count">{sourceTabs.tabs.length}</span>
+            )}
+          </button>
+        )}
         {classicUrl && (
           <a class="rab-n-top-link" href={classicUrl} title="The original REST API Browser" data-testid="classic-link">
             <svg class="rab-n-svg" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -445,6 +487,9 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
               userStore={userStore}
               split={split}
               onSplit={onSplit}
+              onOpenClass={summary.sysadmin ? onOpenClass : undefined}
+              decompiler={decompiler}
+              onDecompiler={setDecompiler}
             />
           ) : (
             <Welcome
@@ -459,6 +504,27 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
           )}
         </div>
       </div>
+      {summary?.sysadmin && (
+        <SourceDialog
+          baseUrl={summary.baseUrl}
+          state={sourceTabs}
+          decompiler={decompiler}
+          onDecompiler={setDecompiler}
+          onSelectTab={onSelectSourceTab}
+          onCloseTab={onCloseSourceTab}
+          onCloseAll={onCloseAllSourceTabs}
+          onUndo={onUndoSourceTabs}
+          onOpenClass={onOpenClass}
+          onResolveTab={onResolveSourceTab}
+          onMinimize={onMinimizeSourceDialog}
+        />
+      )}
+      <ClassHoverCard
+        baseUrl={summary?.baseUrl ?? baseUrl}
+        enabled={!!summary?.sysadmin}
+        rootRef={root}
+        onOpenClass={onOpenClass}
+      />
     </div>
   );
 }

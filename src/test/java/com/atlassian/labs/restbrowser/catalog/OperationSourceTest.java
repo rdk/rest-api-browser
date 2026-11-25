@@ -138,5 +138,57 @@ public class OperationSourceTest {
         assertTrue(m.contains("@Deprecated"));
         assertTrue(m.contains("return \"ok\""));
         assertFalse(m.contains("other"));
+        assertEquals(5, OperationSource.findMethodLine(cls, "bar"));
+        assertEquals(12, OperationSource.findMethodLine(cls, "other"));
+        assertEquals(0, OperationSource.findMethodLine(cls, "missing"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void inspectsClassTraversesGraphSlicesLinesAndBatches() {
+        OperationSource source = new OperationSource(mock(ModuleDiscovery.class), () -> null, () -> true);
+
+        // inspectClass
+        Result inspected = source.inspectClass(null, SampleResource.class.getName(), -1);
+        assertEquals(200, inspected.status());
+        Map<String, Object> info = (Map<String, Object>) parseJson(inspected.json());
+        assertEquals(SampleResource.class.getName(), info.get("name"));
+        assertEquals("class", info.get("kind"));
+        assertTrue(((Number) info.get("methodCount")).intValue() >= 2);
+        assertTrue(((Number) info.get("bytecodeBytes")).intValue() > 0);
+        assertTrue(((String) info.get("bytecodeVersion")).contains("Java"));
+        List<String> refs = (List<String>) info.get("refs");
+        assertTrue(refs.contains(Greeting.class.getName()));
+
+        // line slicing + methodLine + includeMeta
+        Result sliced = source.decompile(null, SampleResource.class.getName(), -1, "class", "cfr", "greet", 1, 5, true);
+        assertEquals(200, sliced.status());
+        Map<String, Object> sBody = (Map<String, Object>) parseJson(sliced.json());
+        assertEquals(1L, sBody.get("startLine"));
+        assertTrue(((Number) sBody.get("endLine")).intValue() <= 5);
+        assertTrue(((Number) sBody.get("methodLine")).intValue() > 0);
+        assertTrue(sBody.get("meta") instanceof Map);
+
+        // graph traversal across class references
+        Result graph = source.traverseGraph(null, SampleResource.class.getName(), -1, 1, 10, false,
+                "com.atlassian.labs.restbrowser.catalog", false, "cfr");
+        assertEquals(200, graph.status());
+        Map<String, Object> gBody = (Map<String, Object>) parseJson(graph.json());
+        assertEquals(SampleResource.class.getName(), gBody.get("root"));
+        List<Map<String, Object>> nodes = (List<Map<String, Object>>) gBody.get("nodes");
+        assertTrue(nodes.stream().anyMatch(n -> Greeting.class.getName().equals(n.get("class"))));
+
+        // batch
+        Result batch = source.batch(List.of(SampleResource.class.getName(), Greeting.class.getName()), -1, null, "cfr",
+                true, false, 10);
+        assertEquals(200, batch.status());
+        Map<String, Object> bBody = (Map<String, Object>) parseJson(batch.json());
+        assertEquals(2L, bBody.get("count"));
+
+        // search exact class fallback
+        Result search = source.searchClasses(Greeting.class.getName(), 10, null);
+        assertEquals(200, search.status());
+        Map<String, Object> srBody = (Map<String, Object>) parseJson(search.json());
+        assertEquals(1L, srBody.get("count"));
     }
 }

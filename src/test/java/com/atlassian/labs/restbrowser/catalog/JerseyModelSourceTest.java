@@ -267,4 +267,27 @@ public class JerseyModelSourceTest {
         assertTrue(JerseyModelSource.isFileType(java.io.InputStream.class));
         assertFalse(JerseyModelSource.isFileType(String.class));
     }
+
+    @Test
+    public void stableTypeNameFormatsAnonymousParameterizedTypeWithoutIdentityHash() {
+        java.lang.reflect.ParameterizedType jerseyLike = new java.lang.reflect.ParameterizedType() {
+            @Override
+            public java.lang.reflect.Type[] getActualTypeArguments() {
+                return new java.lang.reflect.Type[]{Long.class};
+            }
+
+            @Override
+            public java.lang.reflect.Type getRawType() {
+                return List.class;
+            }
+
+            @Override
+            public java.lang.reflect.Type getOwnerType() {
+                return null;
+            }
+        };
+        assertEquals("java.util.List<java.lang.Long>", JerseyModelSource.stableTypeName(jerseyLike, List.class));
+        assertEquals("List<Long>", JerseyModelSource.shortTypeName(jerseyLike));
+        assertEquals("java.lang.String[]", JerseyModelSource.stableTypeName(String[].class, String[].class));
+    }
 }

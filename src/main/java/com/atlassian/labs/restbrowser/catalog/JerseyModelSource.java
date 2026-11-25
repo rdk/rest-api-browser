@@ -15,11 +15,14 @@ import org.slf4j.Logger;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Field;
+import java.lang.reflect.GenericArrayType;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.lang.reflect.TypeVariable;
+import java.lang.reflect.WildcardType;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -273,7 +276,7 @@ public class JerseyModelSource implements SpecSource {
                 return;
             }
             List<Param> params = new ArrayList<>(inherited.params());
-            String[] ignoredBody = new String[1];
+            String[] ignoredBody = new String[2];
             for (Object p : (List<?>) call(invocable, "getParameters")) {
                 param(p, params, ignoredBody);
             }
@@ -307,22 +310,31 @@ public class JerseyModelSource implements SpecSource {
         Method handling = (Method) call(invocable, "getHandlingMethod");
         Method def = definitionMethod(invocable, handling);
         List<Param> params = new ArrayList<>(inherited.params());
-        String[] bodyType = new String[1];
+        String[] bodyType = new String[2];
         for (Object p : (List<?>) call(invocable, "getParameters")) {
             param(p, params, bodyType);
         }
         String access = inherited.access();
         boolean deprecated = inherited.deprecated();
+        String returnType = null;
+        String returnJavaType = null;
         if (handling != null) {
             access = firstNonNull(access(handling), access);
             deprecated |= handling.isAnnotationPresent(Deprecated.class)
                     || handling.getDeclaringClass().isAnnotationPresent(Deprecated.class);
+            Class<?> rawRet = handling.getReturnType();
+            if (rawRet != void.class && rawRet != Void.class) {
+                Type genericRet = handling.getGenericReturnType();
+                returnJavaType = stableTypeName(genericRet, rawRet);
+                returnType = shortTypeName(returnJavaType);
+            }
         }
         OpDoc doc = opDoc(def, handling);
         deprecated |= doc.deprecated();
         List<Param> completed = applyParamDocs(completePathParams(path, params), paramDocs(def, handling));
         OperationSpec spec = new OperationSpec(httpMethod, path, consumes, produces, completed,
-                access, deprecated, bodyType[0], doc.summary(), doc.description());
+                access, deprecated, bodyType[0], doc.summary(), doc.description(), bodyType[1],
+                returnType, returnJavaType);
         if (handlers != null) {
             handlers.put(spec, new Handler(def, handling, handlerClass(invocable),
                     inherited.locators()));
@@ -352,6 +364,7 @@ public class JerseyModelSource implements SpecSource {
         String source = String.valueOf(call(p, "getSource"));
         Class<?> raw = (Class<?>) call(p, "getRawType");
         Type type = (Type) call(p, "getType");
+        String javaType = stableTypeName(type, raw);
         switch (source) {
             case "PATH", "QUERY", "HEADER", "MATRIX", "FORM" -> {
                 String name = (String) call(p, "getSourceName");
@@ -362,9 +375,12 @@ public class JerseyModelSource implements SpecSource {
                 Class<?> element = repeating ? elementClass(type) : raw;
                 String desc = paramDoc(parameterAnnotations(p));
                 out.add(new Param(name, source.toLowerCase(), typeName(element), "PATH".equals(source),
-                        (String) call(p, "getDefaultValue"), options(element), repeating, desc));
+                        (String) call(p, "getDefaultValue"), options(element), repeating, desc, javaType));
             }
-            case "ENTITY" -> bodyType[0] = raw == null ? null : raw.getSimpleName();
+            case "ENTITY" -> {
+                bodyType[0] = javaType != null ? shortTypeName(javaType) : (raw == null ? null : raw.getSimpleName());
+                bodyType[1] = javaType;
+            }
             case "BEAN_PARAM" -> {
                 // Jersey's BeanParameter lists the parameters of the bean's fields
                 Method m = findMethod(p.getClass(), "getParameters", new Class<?>[0]);
@@ -383,10 +399,100 @@ public class JerseyModelSource implements SpecSource {
                     Class<?> element = repeating ? elementClass(type) : raw;
                     String tName = isFileType(element) ? "File" : typeName(element);
                     out.add(new Param(mpName, "form", tName, false,
-                            (String) call(p, "getDefaultValue"), options(element), repeating, paramDoc(anns)));
+                            (String) call(p, "getDefaultValue"), options(element), repeating, paramDoc(anns), javaType));
                 }
             } // context, cookie, suspended: not something a user fills in
         }
+    }
+
+    /**
+     * Deterministic Java type name across cluster nodes: formats {@link ParameterizedType}, {@link GenericArrayType},
+     * {@link WildcardType} and {@link TypeVariable} structurally instead of calling {@link Type#getTypeName()} (which
+     * falls back to {@code Object.toString()} with an identity hash code on Jersey's anonymous {@code ParameterizedType}
+     * implementations such as {@code ReflectionHelper$16}), and unwraps CGLIB / JDK dynamic proxies.
+     */
+    static String stableTypeName(Type type, Class<?> raw) {
+        String formatted = formatType(type, 0);
+        if (formatted != null) {
+            return formatted;
+        }
+        return raw == null ? null : formatType(raw, 0);
+    }
+
+    private static String formatType(Type type, int depth) {
+        if (type == null || depth > 8) {
+            return null;
+        }
+        if (type instanceof Class<?> c) {
+            if (c.isArray()) {
+                String comp = formatType(c.getComponentType(), depth + 1);
+                return comp == null ? null : comp + "[]";
+            }
+            return unwrapProxy(c).getName();
+        }
+        if (type instanceof ParameterizedType pt) {
+            String raw = formatType(pt.getRawType(), depth + 1);
+            if (raw == null) {
+                return null;
+            }
+            Type[] args = pt.getActualTypeArguments();
+            if (args == null || args.length == 0) {
+                return raw;
+            }
+            StringBuilder sb = new StringBuilder(raw).append('<');
+            for (int i = 0; i < args.length; i++) {
+                if (i > 0) {
+                    sb.append(", ");
+                }
+                String arg = formatType(args[i], depth + 1);
+                sb.append(arg == null ? "?" : arg);
+            }
+            return sb.append('>').toString();
+        }
+        if (type instanceof GenericArrayType ga) {
+            String comp = formatType(ga.getGenericComponentType(), depth + 1);
+            return comp == null ? null : comp + "[]";
+        }
+        if (type instanceof WildcardType wt) {
+            Type[] lower = wt.getLowerBounds();
+            if (lower != null && lower.length > 0) {
+                String b = formatType(lower[0], depth + 1);
+                return b == null ? "?" : "? super " + b;
+            }
+            Type[] upper = wt.getUpperBounds();
+            if (upper != null && upper.length > 0 && upper[0] != Object.class) {
+                String b = formatType(upper[0], depth + 1);
+                return b == null ? "?" : "? extends " + b;
+            }
+            return "?";
+        }
+        if (type instanceof TypeVariable<?> tv) {
+            return tv.getName();
+        }
+        return null;
+    }
+
+    private static Class<?> unwrapProxy(Class<?> cls) {
+        Class<?> c = OperationSource.targetClass(cls);
+        if (java.lang.reflect.Proxy.isProxyClass(c) || c.getName().contains("$Proxy")) {
+            Class<?>[] ifaces = c.getInterfaces();
+            if (ifaces.length > 0) {
+                return ifaces[0];
+            }
+        }
+        return c;
+    }
+
+    /** Short display name of a Java type: "java.util.List<com.example.Foo$Bar>" -> "List<Foo.Bar>". */
+    static String shortTypeName(Type type) {
+        return type == null ? null : shortTypeName(stableTypeName(type, null));
+    }
+
+    static String shortTypeName(String full) {
+        if (full == null) {
+            return null;
+        }
+        return full.replaceAll("\\b(?:[a-z_][\\w]*\\.)+(?=[A-Z_$])", "").replaceAll("(\\w)\\$(?=[A-Z])", "$1.");
     }
 
     private static Class<?> elementClass(Type type) {

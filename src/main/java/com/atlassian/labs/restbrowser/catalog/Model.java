@@ -13,24 +13,36 @@ public final class Model {
 
     /** One parameter of an operation. {@code in} is path, query, header, matrix or form. */
     public record Param(String name, String in, String type, boolean required, String defaultValue,
-                        List<String> options, boolean repeating, String description) {
+                        List<String> options, boolean repeating, String description, String javaType) {
         public Param(String name, String in, String type, boolean required, String defaultValue,
                      List<String> options, boolean repeating) {
-            this(name, in, type, required, defaultValue, options, repeating, null);
+            this(name, in, type, required, defaultValue, options, repeating, null, null);
+        }
+
+        public Param(String name, String in, String type, boolean required, String defaultValue,
+                     List<String> options, boolean repeating, String description) {
+            this(name, in, type, required, defaultValue, options, repeating, description, null);
         }
 
         Param withDescription(String description) {
-            return new Param(name, in, type, required, defaultValue, options, repeating, description);
+            return new Param(name, in, type, required, defaultValue, options, repeating, description, javaType);
         }
     }
 
     /** What a source says about one operation, before the catalog gives it a key. */
     public record OperationSpec(String method, String path, List<String> consumes, List<String> produces,
                                 List<Param> params, String access, boolean deprecated, String bodyType,
-                                String summary, String description) {
+                                String summary, String description, String bodyJavaType,
+                                String returnType, String returnJavaType) {
         public OperationSpec(String method, String path, List<String> consumes, List<String> produces,
                              List<Param> params, String access, boolean deprecated, String bodyType) {
-            this(method, path, consumes, produces, params, access, deprecated, bodyType, null, null);
+            this(method, path, consumes, produces, params, access, deprecated, bodyType, null, null, null, null, null);
+        }
+
+        public OperationSpec(String method, String path, List<String> consumes, List<String> produces,
+                             List<Param> params, String access, boolean deprecated, String bodyType,
+                             String summary, String description) {
+            this(method, path, consumes, produces, params, access, deprecated, bodyType, summary, description, null, null, null);
         }
     }
 

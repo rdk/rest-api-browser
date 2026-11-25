@@ -185,6 +185,7 @@ public final class CatalogSnapshot {
                     j.field("repeating", true);
                 }
                 j.optional("description", p.description());
+                j.optional("javaType", p.javaType());
                 j.endObject();
             }
             j.endArray().optional("access", s.access());
@@ -192,6 +193,9 @@ public final class CatalogSnapshot {
                 j.field("deprecated", true);
             }
             j.optional("bodyType", s.bodyType())
+                    .optional("bodyJavaType", s.bodyJavaType())
+                    .optional("returnType", s.returnType())
+                    .optional("returnJavaType", s.returnJavaType())
                     .optional("summary", s.summary())
                     .optional("description", s.description())
                     .endObject();

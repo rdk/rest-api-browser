@@ -52,11 +52,19 @@ public abstract class RequiresLoginServlet extends HttpServlet {
      */
     protected abstract Map<String, Object> getContext(HttpServletRequest request);
 
+    /**
+     * Optional pre-render hook after authentication succeeds. Return {@code true} if the response has been handled
+     * (for example, a redirect from a legacy URL).
+     */
+    protected boolean handleRequest(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+        return false;
+    }
+
     @Override
     protected final void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
         if (loginRequired(req)) {
             redirectToLogin(req, resp);
-        } else {
+        } else if (!handleRequest(req, resp)) {
             resp.setContentType("text/html;charset=utf-8");
             renderer.render(getTemplatePath(), getContext(req), resp.getWriter());
         }

@@ -62,7 +62,9 @@ pages link to it too. The sidebar lists the REST resources of the product and it
 default, limits it to the product's public APIs. Select a resource to see its methods, fill in the parameters and
 **Send** the request as the logged-in user.
 
-The [new UI (preview)](#new-ui-preview) is at `<base URL>/plugins/servlet/restbrowser/next`.
+The [new UI (preview)](#new-ui-preview) is at `<base URL>/plugins/servlet/rest-api-browser` (with an
+[llmstxt.org](https://llmstxt.org/) agent guide at `<base URL>/plugins/servlet/rest-api-browser/llms.txt`; the legacy
+`/plugins/servlet/restbrowser/next` URL redirects there).
 
 Users who are not logged in are sent to the login page. Starting the product with `-Drest.api.browser.anonymous=true`
 lets them use the classic page too, so anyone who can reach the product can open it. The new UI ignores that switch:
@@ -70,7 +72,7 @@ it lists every endpoint and app of the instance, so it needs a user with a produ
 
 ## New UI (preview)
 
-Open `<base URL>/plugins/servlet/restbrowser/next` as a licensed user. It is a second page next to the classic one,
+Open `<base URL>/plugins/servlet/rest-api-browser` as a licensed user. It is a second page next to the classic one,
 which stays as it is.
 
 It works differently: the server builds a catalog of the product's REST API from Jersey's runtime model (served at
@@ -78,12 +80,13 @@ It works differently: the server builds a catalog of the product's REST API from
 the classic page's public list is empty. It reads OpenAPI / Swagger annotations (`@Operation`, `@Parameter`) into
 summaries, descriptions and parameter hints, supports URL-encoded form parameters (`@FormParam`) and multipart file
 uploads (`@MultipartFormParam`), and adds search, a history of sent requests, **Copy as curl** and deep links
-that prefill a request without sending it. System administrators also get a **Java** tab per operation: the method
-that handles it and its class (annotations included), on-demand decompiled method and class source with clickable
-class navigation in a tabbed dialog and in-place switching between CFR 0.152 and Vineflower 1.11.1 (via
-`/rest/restbrowser/1/catalog/details/source`; disable with `-Drest.api.browser.decompile=false`), the OSGi bundle and
-its package wiring, the plugin and the REST module (`/rest/restbrowser/1/catalog/details`). Plan and status:
-[docs/NEW-UI-PLAN.md](docs/NEW-UI-PLAN.md).
+that prefill a request without sending it. System administrators also get clickable Java input/output/parameter types
+with rich hover cards (OSGi bundle wiring, plugin ownership and timestamps, classloader, bytecode info), a **Java**
+tab per operation with virtualized on-demand method and full class decompilation (focusing the method declaration
+header), a draggable/resizable/maximizable persistent tabbed decompiler window with in-place CFR 0.152 / Vineflower
+1.11.1 switching and undoable tab closing, plus an agent-friendly code & traversal REST API under
+`/rest/restbrowser/1/code/*` documented in `<base URL>/plugins/servlet/rest-api-browser/llms.txt` (disable decompilation
+with `-Drest.api.browser.decompile=false`). Plan and status: [docs/NEW-UI-PLAN.md](docs/NEW-UI-PLAN.md).
 
 **Modules that have not started.** Confluence starts a REST module only on the first request to it, on each node of a
 cluster, so right after a node starts most of its modules cannot be read yet, Confluence's own `/rest/api` included.

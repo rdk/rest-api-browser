@@ -1,4 +1,4 @@
-// The new UI (/plugins/servlet/restbrowser/next) in headless Edge/Chrome against a real Jira or Confluence (the one of
+// The new UI (/plugins/servlet/rest-api-browser) in headless Edge/Chrome against a real Jira or Confluence (the one of
 // src/test/product/product.sh): the catalog loads, search, an operation's form, Send, the response viewer, history,
 // URL encoding of a path parameter, a deep link that prefills without sending, and no errors of the plugin.
 //
@@ -24,7 +24,7 @@ const PRODUCT = process.env.RAB_PRODUCT || 'jira', P = PRODUCTS[PRODUCT];
 if (!P) { console.log(`ui_next.js: RAB_PRODUCT is ${Object.keys(PRODUCTS).join(' or ')}, not ${PRODUCT}`); process.exit(2); }
 const BASE = (process.env.RAB_URL || P.url).replace(/\/$/, '');
 const USER = process.env.RAB_USER || 'admin', PASS = process.env.RAB_PASSWORD || 'admin';
-const PAGE = BASE + '/plugins/servlet/restbrowser/next';
+const PAGE = BASE + '/plugins/servlet/rest-api-browser';
 const CONTEXT = new URL(BASE).pathname.replace(/\/$/, '');
 const SHOTS = path.join(__dirname, 'shots');
 const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
@@ -332,13 +332,41 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         c.check(`decompiling ${P.title} in the Java tab shows the method's source (${methodName})`,
             decompiled && !!methodName && srcText.includes(methodName) && srcText.includes('{'),
             { methodName, src: srcText.slice(0, 200) });
-        // switch to Vineflower in place, switch to full class, click a class ref to open the tabbed dialog, and drill into a second tab
+        // switch to Vineflower in place, switch to full class (focused on method header), test rich class tooltip,
+        // open the draggable/resizable/maximizable persistent tabbed dialog, drill into a second tab, minimize & restore,
+        // close individual/all tabs and undo
         await click('[data-testid=decompiler-vineflower]');
         const vfLoaded = await b.waitFor(`/Vineflower/.test((document.querySelector('[data-testid=java-source-engine]') || {}).textContent || '')`, 15000);
         await click('[data-testid=scope-class]');
-        const classLoaded = await b.waitFor(`/\\bclass\\b/.test((document.querySelector('[data-testid=java-source-code]') || {}).textContent || '')`, 15000);
-        c.check('switching to Vineflower and Class scope works in place', vfLoaded && classLoaded,
-            { engine: await javaText('[data-testid=java-source-engine]'), sample: (await javaText('[data-testid=java-source-code]')).slice(0, 120) });
+        const classFocus = await b.waitFor(`(() => {
+            const box = document.querySelector('[data-testid=java-source-code]');
+            const fl = box && box.querySelector('[data-focus-line=true]');
+            return !!box && Number(box.dataset.lineCount) > 5 && !!fl && fl.textContent.includes(${q(methodName)});
+        })()`, 15000);
+        c.check('switching to Vineflower and Class scope works in place and focuses the method declaration header',
+            vfLoaded && classFocus,
+            { engine: await javaText('[data-testid=java-source-engine]'),
+              focusLine: await b.evaluate(`(document.querySelector('[data-testid=java-source-code] [data-focus-line=true]') || {}).textContent || ''`) });
+
+        // hover a Java type in the operation header (Returns) or source to verify the rich class hover card
+        const tipAnchor = await b.evaluate(`(() => {
+            const el = document.querySelector('[data-testid=operation-output-type] [data-class-ref], [data-testid=java-source-code] [data-class-ref]');
+            if (!el) return null;
+            const r = el.getBoundingClientRect();
+            return { x: r.left + r.width / 2, y: r.top + r.height / 2, ref: el.dataset.classRef };
+        })()`);
+        let richTipOk = false;
+        if (tipAnchor) {
+            await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: tipAnchor.x, y: tipAnchor.y });
+            richTipOk = await b.waitFor(`(() => {
+                const card = document.querySelector('[data-testid=class-hover-card]');
+                return !!card && /Bytecode|ClassLoader|OSGi bundle|Origin/.test(card.textContent);
+            })()`, 8000);
+            await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 });
+            await sleep(200);
+        }
+        c.check(`hovering a Java type shows the rich class/OSGi tooltip (${tipAnchor && tipAnchor.ref})`, richTipOk, tipAnchor);
+
         const ref1 = await b.evaluate(`(() => {
             const links = [...document.querySelectorAll('[data-testid=java-source-code] [data-class-ref]')];
             const pick = links.find(e => /Bean|Response|User|Properties/.test(e.dataset.classRef) && !/^java\\.lang\\./.test(e.dataset.classRef)) || links[0];
@@ -361,11 +389,50 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
             return pick.dataset.classRef;
         })()`);
         const twoTabs = !!ref2 && await b.waitFor(`document.querySelectorAll('[data-testid=source-dialog-tab]').length >= 2 && !!document.querySelector('[data-testid=dialog-source-code]')`, 15000);
+        // maximize & restore dialog
+        await click('[data-testid=source-dialog-maximize]');
+        const dlgMax = await b.waitFor(`document.querySelector('[data-testid=source-dialog] [role=dialog]')?.dataset.state === 'max'`, 2000);
+        await click('[data-testid=source-dialog-maximize]');
+        const dlgRestored = await b.waitFor(`document.querySelector('[data-testid=source-dialog] [role=dialog]')?.dataset.state === 'normal'`, 2000);
+        // Escape minimizes dialog while preserving tabs, and top-panel Classes button brings it back
+        await press('Escape');
+        const dlgMinimized = await b.waitFor(`!document.querySelector('[data-testid=source-dialog]') && (document.querySelector('[data-testid=classes-tab-count]') || {}).textContent === '2'`, 3000);
+        await click('[data-testid=open-classes-dialog]');
+        const dlgReopened = await b.waitFor(`document.querySelectorAll('[data-testid=source-dialog-tab]').length === 2`, 3000);
+        // close individual tab + undo, close all + undo
+        await click('[data-testid=source-dialog-tab-close]');
+        const oneLeft = await b.waitFor(`document.querySelectorAll('[data-testid=source-dialog-tab]').length === 1`, 2000);
+        await click('[data-testid=source-dialog-undo]');
+        const backToTwo = await b.waitFor(`document.querySelectorAll('[data-testid=source-dialog-tab]').length === 2`, 2000);
+        await click('[data-testid=source-dialog-close-all]');
+        const zeroLeft = await b.waitFor(`document.querySelectorAll('[data-testid=source-dialog-tab]').length === 0`, 2000);
+        await click('[data-testid=source-dialog-undo]');
+        const restoredAll = await b.waitFor(`document.querySelectorAll('[data-testid=source-dialog-tab]').length === 2`, 2000);
         await press('Escape');
         const dlgClosed = await b.waitFor(`!document.querySelector('[data-testid=source-dialog]')`, 3000);
-        c.check(`clicking class refs opens the tabbed decompiler dialog, switches decompilers in place, and drills into a second tab (${ref1} -> ${ref2})`,
-            dlgOpen && !!dlgClass1 && dlgCfr && twoTabs && dlgClosed,
-            { ref1, dlgClass1, dlgCfr, ref2, twoTabs, dlgClosed });
+        c.check(`tabbed decompiler dialog drills (${ref1} -> ${ref2}), maximizes, minimizes keeping tabs, reopens from top panel, and supports close/close-all/undo`,
+            dlgOpen && !!dlgClass1 && dlgCfr && twoTabs && dlgMax && dlgRestored && dlgMinimized && dlgReopened
+            && oneLeft && backToTwo && zeroLeft && restoredAll && dlgClosed,
+            { ref1, dlgClass1, dlgCfr, ref2, twoTabs, dlgMax, dlgRestored, dlgMinimized, dlgReopened, oneLeft, backToTwo, zeroLeft, restoredAll, dlgClosed });
+
+        // agent REST API & llms.txt live check
+        const agentApi = await b.evaluate(`(async () => {
+            const llms = await fetch(${q(CONTEXT)} + '/plugins/servlet/rest-api-browser/llms.txt', { credentials: 'same-origin' });
+            const llmsText = await llms.text();
+            const cls = encodeURIComponent(${q(dlgClass1)});
+            const meta = await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/code/class?class=' + cls, { credentials: 'same-origin' })).json();
+            const graph = await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/code/graph?class=' + cls + '&depth=1&maxNodes=10', { credentials: 'same-origin' })).json();
+            const plain = await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/code/source?class=' + cls + '&startLine=1&maxLines=10&format=text', { credentials: 'same-origin' });
+            const plainText = await plain.text();
+            return {
+                llmsOk: llms.status === 200 && llmsText.startsWith('# REST API Browser'),
+                metaOk: meta.name === ${q(dlgClass1)} && meta.bytecodeBytes > 0,
+                graphOk: graph.root === ${q(dlgClass1)} && Array.isArray(graph.nodes) && graph.nodes.length >= 1,
+                plainOk: plain.status === 200 && plainText.length > 10,
+            };
+        })()`);
+        c.check('agent-friendly code API (/code/class, /code/graph, /code/source) and /llms.txt respond cleanly',
+            agentApi.llmsOk && agentApi.metaOk && agentApi.graphOk && agentApi.plainOk, agentApi);
         await b.shot(path.join(SHOTS, `${PRODUCT}-next-7-java.png`));
 
         // the request and the response each take the whole screen with their button, and give it back

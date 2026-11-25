@@ -20,7 +20,7 @@ const SOURCE_KEYWORDS = new Set([
   'throw', 'new', 'this', 'implements', 'import', 'package', 'instanceof', 'assert', 'yield', 'var', 'sealed', 'permits',
 ]);
 const TOKEN = /("(?:[^"\\]|\\.)*"?)|('(?:[^'\\]|\\.)*'?)|(@[\w$.]+)|(-?\d[\w.]*)|([A-Za-z_$][\w$]*)|(\s+)|(.)/g;
-const SOURCE_TOKEN = /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|("(?:[^"\\]|\\.)*"?)|('(?:[^'\\]|\\.)*'?)|(@[\w$.]+)|(\b\d[\w.]*)|([A-Za-z_$][\w$]*)|(\s+)|(.)/g;
+const SOURCE_TOKEN = /(\/\/[^\n]*|\/\*[\s\S]*?(?:\*\/|$))|("(?:[^"\\]|\\.)*"?)|('(?:[^'\\]|\\.)*'?)|(@[\w$.]+)|(\b\d[\w.]*)|([A-Za-z_$][\w$]*)|(\s+)|(.)/g;
 
 // The token before index k that is not a space, or -1.
 function before(out: Token[], k: number): number {
@@ -77,6 +77,64 @@ export function tokenizeSource(s: string): Token[] {
     else out.push({ text, kind: 'punct' });
   }
   return out;
+}
+
+/**
+ * Splits decompiled Java source into lines and tracks whether each line begins inside a multiline block comment.
+ * Linear in source length and allocation-light so virtualized source views only tokenize the visible lines.
+ */
+export function splitSourceLines(source: string): { lines: string[]; inComment: boolean[]; maxCols: number } {
+  const lines = source.split('\n');
+  const inComment = new Array<boolean>(lines.length);
+  let comment = false;
+  let maxCols = 0;
+  for (let i = 0; i < lines.length; i++) {
+    inComment[i] = comment;
+    const line = lines[i];
+    if (line.length > maxCols) maxCols = line.length;
+    let inStr = false;
+    let inChr = false;
+    for (let c = 0; c < line.length; c++) {
+      const ch = line.charCodeAt(c);
+      const next = c + 1 < line.length ? line.charCodeAt(c + 1) : 0;
+      if (comment) {
+        if (ch === 42 /* * */ && next === 47 /* / */) {
+          comment = false;
+          c++;
+        }
+        continue;
+      }
+      if (inStr) {
+        if (ch === 92 /* \ */) c++;
+        else if (ch === 34 /* " */) inStr = false;
+        continue;
+      }
+      if (inChr) {
+        if (ch === 92 /* \ */) c++;
+        else if (ch === 39 /* ' */) inChr = false;
+        continue;
+      }
+      if (ch === 47 /* / */ && next === 47 /* / */) break;
+      if (ch === 47 /* / */ && next === 42 /* * */) {
+        comment = true;
+        c++;
+        continue;
+      }
+      if (ch === 34 /* " */) inStr = true;
+      else if (ch === 39 /* ' */) inChr = true;
+    }
+  }
+  return { lines, inComment, maxCols };
+}
+
+/** Tokenizes a single line of Java source given whether it begins inside a multiline block comment. */
+export function tokenizeSourceLine(line: string, startsInComment: boolean): Token[] {
+  if (!startsInComment) return tokenizeSource(line);
+  const end = line.indexOf('*/');
+  if (end < 0) return line ? [{ text: line, kind: 'comment' }] : [];
+  const head: Token = { text: line.slice(0, end + 2), kind: 'comment' };
+  const rest = line.slice(end + 2);
+  return rest ? [head, ...tokenizeSource(rest)] : [head];
 }
 
 // ---- annotations: a small tree, laid out flat when it fits, else one member per line

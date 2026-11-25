@@ -11,7 +11,9 @@ import com.atlassian.sal.api.user.UserKey;
 import com.atlassian.sal.api.user.UserManager;
 import com.atlassian.templaterenderer.TemplateRenderer;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -34,6 +36,22 @@ public class NextServlet extends RequiresLoginServlet {
         this.userManager = requireNonNull(userManager);
         this.applicationProperties = requireNonNull(applicationProperties);
         this.pluginAccessor = requireNonNull(pluginAccessor);
+    }
+
+    @Override
+    protected boolean handleRequest(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+        String uri = req.getRequestURI();
+        if (uri != null && (uri.endsWith("/restbrowser/next") || uri.endsWith("/restbrowser/next/"))) {
+            String base = applicationProperties.getBaseUrl(UrlMode.RELATIVE);
+            String target = (base == null ? "" : base) + "/plugins/servlet/rest-api-browser";
+            String qs = req.getQueryString();
+            if (qs != null && !qs.isEmpty()) {
+                target += "?" + qs;
+            }
+            resp.sendRedirect(target);
+            return true;
+        }
+        return false;
     }
 
     @Override

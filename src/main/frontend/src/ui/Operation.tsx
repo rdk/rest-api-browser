@@ -13,6 +13,10 @@ import { historyUrl, type HistoryEntry, type UserStore } from './userstore';
 import { CheckMark, CopyButton, MaximizeButton, MethodBadge, PathText, Tabs, WarnGlyph, WRITE_METHODS, formatBytes, tabId } from './bits';
 import { ResponseView } from './Response';
 import { JavaTab } from './JavaTab';
+import { JavaTypeButton, JavaTypeExpr } from './ClassTip';
+import { fallbackJavaType } from '../core/javarefs';
+import type { DecompilerId } from '../core/details';
+import type { OpenTabRequest } from '../core/sourcetabs';
 import { statusTone } from '../core/explain';
 
 /** What the user has typed for one operation; kept per operation while the page is open. */
@@ -58,9 +62,14 @@ interface Props {
   userStore: UserStore;
   split: number;
   onSplit: (ratio: number) => void;
+  onOpenClass?: (req: OpenTabRequest) => void;
+  decompiler?: DecompilerId;
+  onDecompiler?: (d: DecompilerId) => void;
 }
 
-export function OperationView({ summary, op, module, initialDraft, onDraft, runner, userStore, split, onSplit }: Props) {
+export function OperationView({
+  summary, op, module, initialDraft, onDraft, runner, userStore, split, onSplit, onOpenClass, decompiler, onDecompiler,
+}: Props) {
   const [tab, setTab] = useState<Tab>('params');
   // a box on the whole screen: the request (with its URL bar) or the response; Escape gives it back its place
   const [max, setMax] = useState<'top' | 'bottom' | null>(null);
@@ -259,6 +268,26 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
                       text={() => (built.request ? toCurl({ ...built.request, url: absolute(built.request.url) }) : '')} />
         </div>
         {(op.summary || op.description) && <OpDoc summary={op.summary} description={op.description} />}
+        {(op.bodyType || op.returnType) && (
+          <div class="rab-n-op-io" data-testid="operation-io-types">
+            {op.bodyType && (
+              <span class="rab-n-op-io-item" data-testid="operation-input-type">
+                <span class="rab-n-subtle">Input</span>{' '}
+                <code class="rab-n-op-io-code">
+                  <JavaTypeExpr typeExpr={op.bodyJavaType ?? op.bodyType} opKey={op.key} onOpenClass={onOpenClass} />
+                </code>
+              </span>
+            )}
+            {op.returnType && (
+              <span class="rab-n-op-io-item" data-testid="operation-output-type">
+                <span class="rab-n-subtle">Returns</span>{' '}
+                <code class="rab-n-op-io-code">
+                  <JavaTypeExpr typeExpr={op.returnJavaType ?? op.returnType} opKey={op.key} onOpenClass={onOpenClass} />
+                </code>
+              </span>
+            )}
+          </div>
+        )}
         <div class={'rab-n-urlbar' + (write ? ' is-write' : '') + (isDelete ? ' is-delete' : '')}>
           <div class="rab-n-url-group">
             <code class="rab-n-url" data-testid="live-url" title={built.url}><UrlText parts={built.parts} /></code>
@@ -342,12 +371,21 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
           <div class={'rab-n-tabpane' + (tab === 'java' ? ' is-java' : '')} id="rab-n-request-pane" role="tabpanel"
                aria-labelledby={tabId('rab-n-request-pane', tab)}>
             {tab === 'params' && (
-              <ParamsTab params={visibleParams} values={draft.values} onValues={setValues} regexes={regexes} />
+              <ParamsTab params={visibleParams} values={draft.values} onValues={setValues} regexes={regexes} opKey={op.key} onOpenClass={onOpenClass} />
             )}
             {tab === 'body' && (
-              <BodyTab op={op} values={draft.values} onValues={setValues} hasForm={hasForm} formActive={formActive} onOpenParams={() => setTab('params')} />
+              <BodyTab op={op} values={draft.values} onValues={setValues} hasForm={hasForm} formActive={formActive} onOpenParams={() => setTab('params')} onOpenClass={onOpenClass} />
             )}
-            {tab === 'java' && <JavaTab baseUrl={summary.baseUrl} opKey={op.key} revision={summary.hash} />}
+            {tab === 'java' && (
+              <JavaTab
+                baseUrl={summary.baseUrl}
+                opKey={op.key}
+                revision={summary.hash}
+                decompiler={decompiler ?? 'cfr'}
+                onDecompiler={onDecompiler ?? (() => undefined)}
+                onOpenClass={onOpenClass}
+              />
+            )}
             {tab === 'headers' && <HeadersTab op={op} draft={draft} onDraft={(d) => editForm(formOf(d))} write={write} />}
             {tab === 'history' && (
               <HistoryTab
@@ -481,8 +519,9 @@ function tryBuild(summary: Summary, op: Operation, draft: Draft): { request?: Bu
   }
 }
 
-function ParamsTab({ params, values, onValues, regexes }: {
+function ParamsTab({ params, values, onValues, regexes, opKey, onOpenClass }: {
   params: Param[]; values: RequestValues; onValues: (v: RequestValues, separate?: boolean) => void; regexes: Record<string, string>;
+  opKey: string; onOpenClass?: (req: OpenTabRequest) => void;
 }) {
   if (!params.length) return <div class="rab-n-subtle rab-n-pad">This operation takes no parameters.</div>;
   const order = ['path', 'query', 'form', 'header', 'matrix'];
@@ -543,13 +582,31 @@ function ParamsTab({ params, values, onValues, regexes }: {
                 {p.description && <div class="rab-n-param-desc" data-testid="param-desc">{p.description}</div>}
               </td>
               <td class="rab-n-param-meta">
-                <span class={'rab-n-in rab-n-in-' + p.in}>{p.in}</span> {p.type}
+                <span class={'rab-n-in rab-n-in-' + p.in}>{p.in}</span>{' '}
+                <ParamTypeLabel param={p} opKey={opKey} onOpenClass={onOpenClass} />
               </td>
             </tr>
           );
         })}
       </tbody>
     </table>
+  );
+}
+
+function ParamTypeLabel({ param, opKey, onOpenClass }: {
+  param: Param; opKey: string; onOpenClass?: (req: OpenTabRequest) => void;
+}) {
+  if (!onOpenClass) return <>{param.type}</>;
+  const javaType = param.javaType;
+  if (javaType && (javaType.includes('<') || javaType.includes('$'))) {
+    return <code class="rab-n-param-jtype"><JavaTypeExpr typeExpr={javaType} opKey={opKey} onOpenClass={onOpenClass} /></code>;
+  }
+  const fqcn = (javaType && javaType.includes('.')) ? javaType : fallbackJavaType(param.type);
+  if (!fqcn) return <>{param.type}</>;
+  return (
+    <JavaTypeButton fqcn={fqcn} opKey={opKey} onOpenClass={onOpenClass}>
+      {param.type}
+    </JavaTypeButton>
   );
 }
 
@@ -642,9 +699,9 @@ function ParamInput({ param, value, invalid, onChange }: { param: Param; value: 
   );
 }
 
-function BodyTab({ op, values, onValues, hasForm, formActive, onOpenParams }: {
+function BodyTab({ op, values, onValues, hasForm, formActive, onOpenParams, onOpenClass }: {
   op: Operation; values: RequestValues; onValues: (v: RequestValues, separate?: boolean) => void;
-  hasForm: boolean; formActive: boolean; onOpenParams: () => void;
+  hasForm: boolean; formActive: boolean; onOpenParams: () => void; onOpenClass?: (req: OpenTabRequest) => void;
 }) {
   const types = mediaChoices(op.consumes);
   const [formatNote, setFormatNote] = useState<string | null>(null);
@@ -687,7 +744,12 @@ function BodyTab({ op, values, onValues, hasForm, formActive, onOpenParams }: {
             {!types.includes(contentType) && <option value={contentType}>{contentType}</option>}
           </select>
         </label>
-        {op.bodyType && <span class="rab-n-subtle">Java type: {op.bodyType}</span>}
+        {op.bodyType && (
+          <span class="rab-n-subtle" data-testid="body-java-type">
+            Java type:{' '}
+            <JavaTypeExpr typeExpr={op.bodyJavaType ?? op.bodyType} opKey={op.key} onOpenClass={onOpenClass} />
+          </span>
+        )}
         {formatNote && <span class="rab-n-subtle" role="status">{formatNote}</span>}
         <span class="rab-n-spacer" />
         {isJson && !!values.body?.trim() && !formActive && (

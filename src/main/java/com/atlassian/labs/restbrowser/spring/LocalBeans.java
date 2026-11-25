@@ -67,7 +67,8 @@ public class LocalBeans {
     }
 
     @Bean
-    public OperationSource operationSource(ModuleDiscovery discovery, CatalogService catalogService) {
-        return new OperationSource(discovery, catalogService::jersey);
+    public OperationSource operationSource(ModuleDiscovery discovery, CatalogService catalogService,
+                                           PluginAccessor pluginAccessor, ProductAdapter productAdapter) {
+        return new OperationSource(discovery, catalogService::jersey, pluginAccessor, productAdapter);
     }
 }

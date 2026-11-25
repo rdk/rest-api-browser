@@ -17,6 +17,7 @@ export type ParamIn = 'path' | 'query' | 'header' | 'matrix' | 'form';
 export interface Param {
   name: string; in: ParamIn; type: string; required: boolean; default?: string; options?: string[]; repeating?: boolean;
   description?: string;
+  javaType?: string;
 }
 export interface Operation {
   key: string;                        // "<moduleId>:<METHOD>:<path with every {template} replaced by {}>" plus optional "#suffix"
@@ -25,6 +26,9 @@ export interface Operation {
   path: string;                       // relative to the module, no leading slash, templates as written: "issue/{issueIdOrKey}"
   consumes: string[]; produces: string[]; params: Param[]; access?: string; deprecated?: boolean;
   bodyType?: string;                  // the Java type of the request body, when the source knows it
+  bodyJavaType?: string;              // full Java type name (FQCN / generic) of the request body
+  returnType?: string;                // short Java return type of the handler method
+  returnJavaType?: string;            // full Java return type (FQCN / generic) of the handler method
   summary?: string;
   description?: string;
 }

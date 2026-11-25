@@ -44,8 +44,86 @@ export interface OperationSource {
   decompilerId?: DecompilerId;
   decompiler: string;
   bundleId?: number;
+  totalLines?: number;
+  startLine?: number;
+  endLine?: number;
+  truncated?: boolean;
+  methodLine?: number;
+  decompileMs?: number;
+  cached?: boolean;
   source: string;
   refs?: string[];
+}
+
+export interface ClassBundleSummary {
+  id: number;
+  symbolicName: string;
+  version: string;
+  state: string;
+  location: string;
+  lastModified: number;
+  lastModifiedIso?: string;
+  fragment?: boolean;
+  headers: Record<string, string>;
+  importCount?: number;
+  exportCount?: number;
+  packageExported?: boolean;
+  packageExportUsers?: number;
+}
+
+export interface ClassPluginSummary {
+  key: string;
+  name: string;
+  version?: string;
+  vendor?: string;
+  vendorUrl?: string;
+  origin?: string;
+  state: string;
+  pluginsVersion: number;
+  artifact?: string;
+  installed?: string;
+  loaded?: string;
+  enabled?: string;
+  moduleCount: number;
+}
+
+export interface ClassInfo {
+  format: 1;
+  name: string;
+  simpleName: string;
+  package: string;
+  kind: string;
+  modifiers: string;
+  deprecated: boolean;
+  superclass?: string;
+  superclasses: string[];
+  interfaces: string[];
+  annotations: string[];
+  enclosingClass?: string;
+  innerClasses: string[];
+  fieldCount: number;
+  constructorCount: number;
+  methodCount: number;
+  methods: string[];
+  bytecodeVersion?: string;
+  bytecodeMajor?: number;
+  bytecodeBytes: number;
+  codeSource: string | null;
+  classLoader: string;
+  origin: string;
+  bundleId: number;
+  bundle?: ClassBundleSummary;
+  plugin?: ClassPluginSummary;
+  refCount: number;
+  refs: string[];
+  inspectMs?: number;
+  cached?: boolean;
+}
+
+export interface ClassQuery {
+  classCandidates: string[];
+  fromBundle?: number;
+  op?: string;
 }
 
 export interface SourceQuery {
@@ -116,7 +194,59 @@ function isDetails(b: unknown): b is OperationDetails {
 
 const cache = new Map<string, Promise<OperationDetails>>();
 const sourceCache = new Map<string, Promise<OperationSource>>();
+const classInfoCache = new Map<string, Promise<ClassInfo>>();
 const CACHE_SIZE = 30;
+const CLASS_INFO_CACHE_SIZE = 200;
+
+function isClassInfo(b: unknown): b is ClassInfo {
+  return isObject(b) && typeof b.name === 'string' && typeof b.kind === 'string' && typeof b.origin === 'string';
+}
+
+function classInfoCacheKey(q: ClassQuery): string {
+  return JSON.stringify([q.classCandidates, q.fromBundle ?? -1, q.op ?? '']);
+}
+
+/** Rich class metadata (reflection, bytecode, OSGi bundle, plugin ownership, timestamps), cached per page load. */
+export function fetchClassInfo(
+  baseUrl: string,
+  q: ClassQuery,
+  fetchFn: typeof fetch = (...a) => fetch(...a),
+): Promise<ClassInfo> {
+  const key = classInfoCacheKey(q);
+  const hit = classInfoCache.get(key);
+  if (hit) return hit;
+  const params = new URLSearchParams();
+  if (q.classCandidates.length) params.set('class', q.classCandidates.join(','));
+  if (q.fromBundle !== undefined && q.fromBundle >= 0) params.set('fromBundle', String(q.fromBundle));
+  if (q.op) params.set('op', q.op);
+  const p = (async () => {
+    const res = await fetchFn(`${baseUrl}/rest/restbrowser/1/code/class?${params.toString()}`, {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' },
+    });
+    if (isLoginAnswer(res, true)) {
+      throw new DetailsError(401, 'session-expired', 'Your session has expired: reload the page to log in again.');
+    }
+    let body: unknown;
+    try {
+      body = JSON.parse(await res.text());
+    } catch {
+      body = undefined;
+    }
+    if (!res.ok) {
+      const reason = isObject(body) && typeof body.error === 'string' ? body.error : `HTTP ${res.status}`;
+      throw new DetailsError(res.status, reason);
+    }
+    if (!isClassInfo(body)) {
+      throw new DetailsError(res.status, 'not-class-info', 'The server answered with something other than class metadata.');
+    }
+    return body;
+  })();
+  classInfoCache.set(key, p);
+  p.catch(() => classInfoCache.get(key) === p && classInfoCache.delete(key));
+  while (classInfoCache.size > CLASS_INFO_CACHE_SIZE) classInfoCache.delete(classInfoCache.keys().next().value!);
+  return p;
+}
 
 function isSource(b: unknown): b is OperationSource {
   return isObject(b) && typeof b.source === 'string' && typeof b.decompiler === 'string'
@@ -232,4 +362,5 @@ export function forgetDetails(key: string): void {
 export function clearDetails(): void {
   cache.clear();
   sourceCache.clear();
+  classInfoCache.clear();
 }

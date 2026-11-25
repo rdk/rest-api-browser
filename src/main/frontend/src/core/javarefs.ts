@@ -1,4 +1,4 @@
-import type { Token, TokenKind } from './javatokens';
+import { tokenizeSourceLine, type Token, type TokenKind } from './javatokens';
 
 /** A token of decompiled Java source, optionally linked to a decompilable Java class. */
 export type SourceSpan =
@@ -7,6 +7,7 @@ export type SourceSpan =
 
 const PKG_RE = /^\s*package\s+([A-Za-z_][\w$.]*)\s*;/m;
 const IMPORT_RE = /^\s*import\s+(?:static\s+)?([A-Za-z_][\w$.*]*)(\s*;)/gm;
+const PRIMITIVES = new Set(['void', 'boolean', 'byte', 'char', 'short', 'int', 'long', 'float', 'double']);
 
 function packageOf(fqcn: string): string {
   const dot = fqcn.lastIndexOf('.');
@@ -25,7 +26,7 @@ export function classLabel(fqcn: string): string {
   return tail.replace(/\$/g, '.');
 }
 
-interface RefContext {
+export interface RefContext {
   pkg: string;
   currentClass: string;
   explicit: Map<string, string>;
@@ -35,12 +36,16 @@ interface RefContext {
   byTail: Map<string, string[]>;
 }
 
-function buildContext(source: string, currentClass: string, refs: string[]): RefContext {
-  const pkgMatch = PKG_RE.exec(source);
+/** Builds a reusable class-reference resolution context from source package/imports and bytecode constant-pool refs. */
+export function createRefContext(source: string, currentClass: string, refs: string[] = []): RefContext {
+  // Package and imports always appear near the top of a decompiled file; avoid regex scanning 200 KB bodies
+  const headerEnd = findHeaderEnd(source);
+  const header = headerEnd < source.length ? source.slice(0, headerEnd) : source;
+  const pkgMatch = PKG_RE.exec(header);
   const pkg = pkgMatch ? pkgMatch[1] : packageOf(currentClass);
   const explicit = new Map<string, string>();
   const wildcards: string[] = [];
-  for (const m of source.matchAll(IMPORT_RE)) {
+  for (const m of header.matchAll(IMPORT_RE)) {
     const imp = m[1];
     if (imp.endsWith('.*')) {
       wildcards.push(imp.slice(0, -2));
@@ -72,6 +77,12 @@ function buildContext(source: string, currentClass: string, refs: string[]): Ref
   return { pkg, currentClass, explicit, wildcards, exactRefs, bySimple, byTail };
 }
 
+function findHeaderEnd(source: string): number {
+  // Imports always precede the first top-level type opening brace '{'
+  const brace = source.indexOf('{');
+  return brace >= 0 ? brace : Math.min(source.length, 16_384);
+}
+
 function unique(list: string[]): string[] {
   return [...new Set(list.filter(Boolean))];
 }
@@ -79,11 +90,9 @@ function unique(list: string[]): string[] {
 /** Resolves a simple, nested ("Response.Status") or qualified ("java.util.List") Java type name to ordered FQCN candidates. */
 function resolveName(name: string, ctx: RefContext, isAnnotation: boolean): string[] {
   if (!name) return [];
-  // Already package-qualified (starts with lowercase segment)
   if (/^[a-z_][\w$]*\.[A-Za-z0-9_.$]+$/.test(name)) {
     return [name];
   }
-  // Nested type like Outer.Inner
   if (name.includes('.')) {
     const fromTail = ctx.byTail.get(name) ?? [];
     const parts = name.split('.');
@@ -92,7 +101,6 @@ function resolveName(name: string, ctx: RefContext, isAnnotation: boolean): stri
     const expanded = headCandidates.map((h) => `${h}$${tail}`);
     return unique([...fromTail, ...expanded]);
   }
-  // Single-letter generic type parameters (T, E, K, V...) are not classes unless explicitly imported/referenced
   if (name.length === 1 && !ctx.explicit.has(name) && !ctx.bySimple.has(name)) {
     return [];
   }
@@ -112,13 +120,18 @@ function resolveName(name: string, ctx: RefContext, isAnnotation: boolean): stri
   return unique(out);
 }
 
-/**
- * Turns tokens from `tokenizeSource` into clickable spans for every Java class and annotation reference.
- * Package declarations stay plain text; explicit imports, qualified names, nested types (`Outer.Inner`),
- * simple type names, and annotations become clickable spans carrying their resolved FQCN candidates.
- */
+/** Turns tokens from `tokenizeSource` into clickable spans for every Java class and annotation reference. */
 export function linkSourceTokens(tokens: Token[], source: string, currentClass: string, refs: string[] = []): SourceSpan[] {
-  const ctx = buildContext(source, currentClass, refs);
+  return linkTokensWithContext(tokens, createRefContext(source, currentClass, refs));
+}
+
+/** Lazily tokenizes and links a single line of decompiled source for virtualized rendering. */
+export function linkSourceLine(line: string, startsInComment: boolean, ctx: RefContext): SourceSpan[] {
+  if (!line) return [];
+  return linkTokensWithContext(tokenizeSourceLine(line, startsInComment), ctx);
+}
+
+export function linkTokensWithContext(tokens: Token[], ctx: RefContext): SourceSpan[] {
   const out: SourceSpan[] = [];
   let inPackage = false;
 
@@ -153,12 +166,9 @@ export function linkSourceTokens(tokens: Token[], source: string, currentClass: 
         }
       }
       if (sawType) {
-        // Keep trailing package segments plain if followed by ".*" (wildcard import)
         const isWildcard = j + 2 < tokens.length && tokens[j + 1].text === '.' && tokens[j + 2].text === '*';
         if (!isWildcard) {
           const dot = chain.lastIndexOf('.');
-          // Render package prefix plain and make the class (and nested classes) clickable, or make the whole FQCN clickable
-          // Keep the first uppercase segment onward as a single clickable type span so styling stays consistent
           let firstTypeIdx = i;
           while (firstTypeIdx <= j && tokens[firstTypeIdx].kind !== 'type') {
             out.push(tokens[firstTypeIdx]);
@@ -215,4 +225,124 @@ export function linkSourceTokens(tokens: Token[], source: string, currentClass: 
     i++;
   }
   return out;
+}
+
+/**
+ * Finds the 0-based line index of the first line of the declaration header of `methodName` in decompiled class lines.
+ * When overloaded and `paramCount` is provided, prefers the overload with the matching number of parameters.
+ */
+export function findMethodHeaderLine(lines: string[], methodName: string, paramCount?: number): number {
+  if (!methodName || !lines.length) return -1;
+  const escaped = methodName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(
+    `^\\s{0,12}(?:(?:public|protected|private|static|final|abstract|synchronized|native|default)\\s+)*`
+      + `(?:<[^>]+>\\s+)?[\\w$.<>?, \\[\\]]+\\s+${escaped}\\s*\\(`,
+  );
+  const hits: number[] = [];
+  let inBlock = false;
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    if (inBlock) {
+      if (trimmed.includes('*/')) inBlock = false;
+      continue;
+    }
+    if (trimmed.startsWith('/*') && !trimmed.includes('*/')) {
+      inBlock = true;
+      continue;
+    }
+    if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('return ') || trimmed.startsWith('new ')) {
+      continue;
+    }
+    if (re.test(lines[i])) {
+      hits.push(i);
+    }
+  }
+  if (!hits.length) return -1;
+  if (hits.length === 1 || paramCount === undefined) return hits[0];
+  for (const idx of hits) {
+    const counted = countParamsAt(lines, idx, methodName);
+    if (counted === paramCount) return idx;
+  }
+  return hits[0];
+}
+
+function countParamsAt(lines: string[], startLine: number, methodName: string): number {
+  const openPos = lines[startLine].indexOf('(', lines[startLine].indexOf(methodName));
+  if (openPos < 0) return -1;
+  let depthParen = 0;
+  let depthAngle = 0;
+  let seenContent = false;
+  let commas = 0;
+  for (let i = startLine; i < Math.min(lines.length, startLine + 25); i++) {
+    const line = lines[i];
+    const from = i === startLine ? openPos : 0;
+    for (let c = from; c < line.length; c++) {
+      const ch = line[c];
+      if (ch === '(') {
+        depthParen++;
+      } else if (ch === ')') {
+        depthParen--;
+        if (depthParen === 0) return seenContent ? commas + 1 : 0;
+      } else if (ch === '<') {
+        depthAngle++;
+      } else if (ch === '>') {
+        if (depthAngle > 0) depthAngle--;
+      } else if (ch === ',' && depthParen === 1 && depthAngle === 0) {
+        commas++;
+      } else if (depthParen === 1 && !/\s/.test(ch)) {
+        seenContent = true;
+      }
+    }
+  }
+  return -1;
+}
+
+export interface TypePart {
+  text: string;
+  fqcn?: string;
+}
+
+/**
+ * Splits a Java type expression (e.g. "java.util.List<com.atlassian.jira.rest.v2.issue.IssueBean>") into display
+ * fragments, where each non-primitive class name carries its FQCN so the UI can make it clickable and tooltip-enabled.
+ */
+export function parseJavaTypeParts(typeExpr: string, showFull = false): TypePart[] {
+  if (!typeExpr) return [];
+  const out: TypePart[] = [];
+  const re = /([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)|([^A-Za-z_$]+)/g;
+  for (const m of typeExpr.matchAll(re)) {
+    const [, ident, other] = m;
+    if (other !== undefined) {
+      out.push({ text: other });
+      continue;
+    }
+    if (PRIMITIVES.has(ident) || ident === 'extends' || ident === 'super') {
+      out.push({ text: ident });
+      continue;
+    }
+    // Single-letter type variables like T, E, K, V
+    if (ident.length === 1 && !ident.includes('.')) {
+      out.push({ text: ident });
+      continue;
+    }
+    const display = showFull ? ident.replace(/\$/g, '.') : classLabel(ident);
+    out.push({ text: display, fqcn: ident });
+  }
+  return out;
+}
+
+/** Maps catalog shorthand parameter types ("string", "int", "File") to a Java class FQCN when no `javaType` is given. */
+export function fallbackJavaType(paramType: string): string | undefined {
+  switch (paramType.toLowerCase()) {
+    case 'string': return 'java.lang.String';
+    case 'int':
+    case 'integer': return 'java.lang.Integer';
+    case 'long': return 'java.lang.Long';
+    case 'boolean': return 'java.lang.Boolean';
+    case 'number':
+    case 'double': return 'java.lang.Double';
+    case 'float': return 'java.lang.Float';
+    case 'file': return 'com.atlassian.plugins.rest.api.multipart.FilePart';
+    default: return /^[A-Z]/.test(paramType) ? paramType : undefined;
+  }
 }
