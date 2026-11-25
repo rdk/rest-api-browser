@@ -4,7 +4,7 @@ import type { Index, Module, Operation, Origin, Stability, Summary } from './typ
 export interface SearchRow {
   op: Operation;
   module: Module;
-  hay: string;        // lowercased: method, full path, plugin name
+  hay: string;        // lowercased: method, full path, plugin name, operation summary
   path: string;       // lowercased module path + "/" + op path (joinPaths: one slash, none at the ends)
   rank: number;       // 0 supported, 1 internal, 2 app
   stability: Stability;
@@ -32,7 +32,7 @@ export function buildRows(summary: Summary, index: Index): SearchRow[] {
       op,
       module,
       path,
-      hay: `${op.method} ${path} ${module.plugin.name}`.toLowerCase(),
+      hay: `${op.method} ${path} ${module.plugin.name}${op.summary ? ' ' + op.summary : ''}`.toLowerCase(),
       rank: STABILITY_RANK[module.stability],
       stability: module.stability,
       origin: module.origin,

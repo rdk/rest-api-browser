@@ -184,7 +184,8 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
   useEffect(() => {
     const onPop = () => {
       const state = (routeState.current = parseState(location.search));
-      const refill = !!state.op && (Object.keys(state.path).length > 0 || Object.keys(state.q).length > 0 || Object.keys(state.h).length > 0);
+      const refill = !!state.op && (Object.keys(state.path).length > 0 || Object.keys(state.q).length > 0
+        || Object.keys(state.h).length > 0 || Object.keys(state.form ?? {}).length > 0);
       if (state.op !== selectedRef.current || refill) runner.abort();
       if (refill) {
         drafts.current.delete(state.op!);
@@ -541,10 +542,12 @@ function prefill(op: Operation, draft: Draft, state: RouteState): Draft {
   const declared = (where: string) => new Set(op.params.filter((p) => p.in === where).map((p) => p.name));
   const pathNames = new Set([...declared('path'), ...findTemplates(op.path).map((t) => t.name)]);
   const queryNames = declared('query');
+  const formNames = declared('form');
   // header names compare case-insensitively; a declared header keeps the operation's spelling
   const headerNames = new Map(op.params.filter((p) => p.in === 'header').map((p) => [p.name.toLowerCase(), p.name]));
   const path = Object.fromEntries(Object.entries(state.path).filter(([k]) => pathNames.has(k)));
   const query = Object.fromEntries(Object.entries(state.q).filter(([k]) => queryNames.has(k)));
+  const form = Object.fromEntries(Object.entries(state.form ?? {}).filter(([k]) => formNames.has(k)));
   const header: Record<string, string> = {};
   const custom: { name: string; value: string }[] = [];
   for (const [raw, value] of Object.entries(state.h)) {
@@ -556,7 +559,13 @@ function prefill(op: Operation, draft: Draft, state: RouteState): Draft {
   }
   return {
     ...draft,
-    values: { ...draft.values, path, query: { ...draft.values.query, ...query }, header },
+    values: {
+      ...draft.values,
+      path,
+      query: { ...draft.values.query, ...query },
+      form: { ...(draft.values.form ?? {}), ...form },
+      header,
+    },
     custom,
   };
 }

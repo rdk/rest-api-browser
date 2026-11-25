@@ -5,12 +5,6 @@ The short list: one line per item, the details in [`docs/todo/`](docs/todo/). Ho
 
 ## Next
 
-- [ ] [OpenAPI annotations as documentation](docs/todo/openapi-docs.md) — the summaries and descriptions are in the running product already.
-- [ ] [Form parameters](docs/todo/form-fields.md) — about 150 parameters per product can only be sent as a hand-written body.
-
-## Later
-
-- [ ] [Decompiled method in the Java tab](docs/todo/decompile-analysis.md) — shows what an endpoint really does; needs a licensing decision first.
 - [ ] [Starting modules: follow-ups](docs/todo/module-start-followups.md) — modules a session cannot start are still offered "start"; a failed build is not retried.
 - [ ] [Long lines in Pretty](docs/todo/json-long-lines.md) — values over 10,000 characters are still cut; Pretty scrolls sideways and Raw wraps up to there.
 

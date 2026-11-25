@@ -199,3 +199,48 @@ describe('request second review', () => {
     expect(r.headers['Content-Type']).toBe('application/xml');
   });
 });
+
+describe('form and multipart requests', () => {
+  it('encodes form parameters as application/x-www-form-urlencoded even when consumes is empty', () => {
+    const o = op('jira:api2', 'POST', 'submit', {
+      consumes: [],
+      params: [param('a', 'form'), param('tag', 'form', { repeating: true }), param('skip', 'form')],
+    });
+    const r = buildRequest(s, o, vals({ form: { a: ['hello world'], tag: ['x', 'y'], skip: ['  '], undeclared: ['no'] } }));
+    expect(r.body).toBe('a=hello+world&tag=x&tag=y');
+    expect(r.headers['Content-Type']).toBe('application/x-www-form-urlencoded');
+    expect(r.headers['X-Atlassian-Token']).toBe('no-check');
+    expect(toCurl(r)).toContain(`--data-raw 'a=hello+world&tag=x&tag=y'`);
+  });
+
+  it('encodes multipart/form-data as FormData without an explicit Content-Type header and keeps XSRF', () => {
+    const o = op('jira:api2', 'POST', 'upload', {
+      consumes: ['multipart/form-data'],
+      params: [param('file', 'form', { type: 'File', repeating: true }), param('comment', 'form')],
+    });
+    const file = new File(['hello'], 'note.txt', { type: 'text/plain' });
+    const r = buildRequest(s, o, vals({ form: { comment: ['first'] }, files: { file: [file] } }));
+    expect(r.body).toBeInstanceOf(FormData);
+    expect(r.headers['Content-Type']).toBeUndefined();
+    expect(r.headers['X-Atlassian-Token']).toBe('no-check');
+    const entries = [...(r.body as FormData).entries()];
+    expect(entries).toHaveLength(2);
+    expect(entries[0]).toEqual(['comment', 'first']);
+    expect(entries[1][0]).toBe('file');
+    expect((entries[1][1] as File).name).toBe('note.txt');
+    const curl = toCurl(r);
+    expect(curl).toContain(`-F 'comment=first'`);
+    expect(curl).toContain(`-F 'file=@note.txt'`);
+    expect(curl).not.toContain('Content-Type');
+  });
+
+  it('falls back to the raw body when form fields are empty', () => {
+    const o = op('jira:api2', 'POST', 'submit', {
+      consumes: ['application/json', 'application/x-www-form-urlencoded'],
+      params: [param('a', 'form')],
+    });
+    const r = buildRequest(s, o, vals({ form: { a: [''] }, body: '{"x":1}' }));
+    expect(r.body).toBe('{"x":1}');
+    expect(r.headers['Content-Type']).toBe('application/json');
+  });
+});

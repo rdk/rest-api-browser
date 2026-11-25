@@ -6,7 +6,7 @@
  * ann "@Operation"; member "summary" (before "="); type "String"; kw public, class, true; str "x"; num 5, 1.0f and
  * constants (MAX_VALUE, Policy.RUNTIME); punct ( ) { } , = < > .
  */
-export type TokenKind = 'ann' | 'member' | 'type' | 'kw' | 'str' | 'num' | 'punct' | 'name' | 'space';
+export type TokenKind = 'ann' | 'member' | 'type' | 'kw' | 'str' | 'num' | 'punct' | 'name' | 'space' | 'comment';
 export interface Token { text: string; kind: TokenKind; }
 
 const KEYWORDS = new Set([
@@ -14,7 +14,13 @@ const KEYWORDS = new Set([
   'volatile', 'strictfp', 'throws', 'class', 'interface', 'enum', 'record', 'extends', 'super', 'true', 'false', 'null',
   'void', 'boolean', 'byte', 'char', 'short', 'int', 'long', 'float', 'double',
 ]);
+const SOURCE_KEYWORDS = new Set([
+  ...KEYWORDS,
+  'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'break', 'continue', 'return', 'try', 'catch', 'finally',
+  'throw', 'new', 'this', 'implements', 'import', 'package', 'instanceof', 'assert', 'yield', 'var', 'sealed', 'permits',
+]);
 const TOKEN = /("(?:[^"\\]|\\.)*"?)|('(?:[^'\\]|\\.)*'?)|(@[\w$.]+)|(-?\d[\w.]*)|([A-Za-z_$][\w$]*)|(\s+)|(.)/g;
+const SOURCE_TOKEN = /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|("(?:[^"\\]|\\.)*"?)|('(?:[^'\\]|\\.)*'?)|(@[\w$.]+)|(\b\d[\w.]*)|([A-Za-z_$][\w$]*)|(\s+)|(.)/g;
 
 // The token before index k that is not a space, or -1.
 function before(out: Token[], k: number): number {
@@ -50,6 +56,24 @@ export function tokenize(s: string): Token[] {
         : isConstant(text, out) ? 'num' : /^[A-Z]/.test(text) ? 'type' : 'name';
       out.push({ text, kind });
     } else if (space !== undefined) out.push({ text: ' ', kind: 'space' });
+    else out.push({ text, kind: 'punct' });
+  }
+  return out;
+}
+
+/** Splits decompiled Java source into coloured tokens, preserving newlines, indentation and comments. */
+export function tokenizeSource(s: string): Token[] {
+  const out: Token[] = [];
+  for (const m of s.matchAll(SOURCE_TOKEN)) {
+    const [text, comment, str, chr, ann, num, ident, space] = m;
+    if (comment !== undefined) out.push({ text, kind: 'comment' });
+    else if (str !== undefined || chr !== undefined) out.push({ text, kind: 'str' });
+    else if (ann !== undefined) out.push({ text, kind: 'ann' });
+    else if (num !== undefined) out.push({ text, kind: 'num' });
+    else if (ident !== undefined) {
+      const kind: TokenKind = SOURCE_KEYWORDS.has(text) ? 'kw' : isConstant(text, out) ? 'num' : /^[A-Z]/.test(text) ? 'type' : 'name';
+      out.push({ text, kind });
+    } else if (space !== undefined) out.push({ text, kind: 'space' });
     else out.push({ text, kind: 'punct' });
   }
   return out;

@@ -50,6 +50,9 @@ public class JerseyModelSource implements SpecSource {
 
     private static final Logger LOGGER = getLogger(JerseyModelSource.class);
     private static final int MAX_LOCATOR_DEPTH = 4;
+    static final int MAX_SUMMARY = 300;
+    static final int MAX_DESCRIPTION = 2000;
+    static final int MAX_PARAM_DESCRIPTION = 500;
 
     private final Supplier<ServletModuleManager> servletModuleManager;
     private final Supplier<ServletContext> servletContext;
@@ -302,6 +305,7 @@ public class JerseyModelSource implements SpecSource {
         List<String> produces = mediaTypes(call(method, "getProducedTypes"));
         Object invocable = call(method, "getInvocable");
         Method handling = (Method) call(invocable, "getHandlingMethod");
+        Method def = definitionMethod(invocable, handling);
         List<Param> params = new ArrayList<>(inherited.params());
         String[] bodyType = new String[1];
         for (Object p : (List<?>) call(invocable, "getParameters")) {
@@ -314,10 +318,13 @@ public class JerseyModelSource implements SpecSource {
             deprecated |= handling.isAnnotationPresent(Deprecated.class)
                     || handling.getDeclaringClass().isAnnotationPresent(Deprecated.class);
         }
-        OperationSpec spec = new OperationSpec(httpMethod, path, consumes, produces, completePathParams(path, params),
-                access, deprecated, bodyType[0]);
+        OpDoc doc = opDoc(def, handling);
+        deprecated |= doc.deprecated();
+        List<Param> completed = applyParamDocs(completePathParams(path, params), paramDocs(def, handling));
+        OperationSpec spec = new OperationSpec(httpMethod, path, consumes, produces, completed,
+                access, deprecated, bodyType[0], doc.summary(), doc.description());
         if (handlers != null) {
-            handlers.put(spec, new Handler(definitionMethod(invocable, handling), handling, handlerClass(invocable),
+            handlers.put(spec, new Handler(def, handling, handlerClass(invocable),
                     inherited.locators()));
         }
         return spec;
@@ -353,8 +360,9 @@ public class JerseyModelSource implements SpecSource {
                 }
                 boolean repeating = raw != null && Collection.class.isAssignableFrom(raw);
                 Class<?> element = repeating ? elementClass(type) : raw;
+                String desc = paramDoc(parameterAnnotations(p));
                 out.add(new Param(name, source.toLowerCase(), typeName(element), "PATH".equals(source),
-                        (String) call(p, "getDefaultValue"), options(element), repeating));
+                        (String) call(p, "getDefaultValue"), options(element), repeating, desc));
             }
             case "ENTITY" -> bodyType[0] = raw == null ? null : raw.getSimpleName();
             case "BEAN_PARAM" -> {
@@ -366,7 +374,18 @@ public class JerseyModelSource implements SpecSource {
                     }
                 }
             }
-            default -> { } // context, cookie, suspended: not something a user fills in
+            default -> {
+                // Atlassian's @MultipartFormParam and Jersey's @FormDataParam show up as UNKNOWN in Jersey's core model
+                Annotation[] anns = parameterAnnotations(p);
+                String mpName = multipartParamName(anns);
+                if (mpName != null) {
+                    boolean repeating = raw != null && Collection.class.isAssignableFrom(raw);
+                    Class<?> element = repeating ? elementClass(type) : raw;
+                    String tName = isFileType(element) ? "File" : typeName(element);
+                    out.add(new Param(mpName, "form", tName, false,
+                            (String) call(p, "getDefaultValue"), options(element), repeating, paramDoc(anns)));
+                }
+            } // context, cookie, suspended: not something a user fills in
         }
     }
 
@@ -439,6 +458,273 @@ public class JerseyModelSource implements SpecSource {
 
     private static String firstNonNull(String a, String b) {
         return a != null ? a : b;
+    }
+
+    /** Operation documentation read from OpenAPI v3 (@Operation) or Swagger v2 (@ApiOperation). */
+    record OpDoc(String summary, String description, boolean deprecated) {
+        static final OpDoc EMPTY = new OpDoc(null, null, false);
+    }
+
+    private static final String OAS_OPERATION = "io.swagger.v3.oas.annotations.Operation";
+    private static final String OAS_PARAMETER = "io.swagger.v3.oas.annotations.Parameter";
+    private static final String OAS_PARAMETERS = "io.swagger.v3.oas.annotations.Parameters";
+    private static final String SWAGGER_OPERATION = "io.swagger.annotations.ApiOperation";
+    private static final String SWAGGER_PARAM = "io.swagger.annotations.ApiParam";
+    private static final String SWAGGER_IMPLICIT_PARAM = "io.swagger.annotations.ApiImplicitParam";
+    private static final String SWAGGER_IMPLICIT_PARAMS = "io.swagger.annotations.ApiImplicitParams";
+    private static final String ATLASSIAN_PATH_PARAM_DOC = "com.atlassian.dc.swagger.annotations.PathParamDoc";
+    private static final String ATLASSIAN_MULTIPART_PARAM = "com.atlassian.plugins.rest.api.multipart.MultipartFormParam";
+    private static final String JERSEY_FORM_DATA_PARAM = "org.glassfish.jersey.media.multipart.FormDataParam";
+
+    static String multipartParamName(Annotation[] annotations) {
+        if (annotations == null) {
+            return null;
+        }
+        for (Annotation a : annotations) {
+            String name = a.annotationType().getName();
+            if (ATLASSIAN_MULTIPART_PARAM.equals(name) || JERSEY_FORM_DATA_PARAM.equals(name)) {
+                String v = annString(a, "value");
+                if (v != null && !v.isBlank()) {
+                    return v.trim();
+                }
+            }
+        }
+        return null;
+    }
+
+    static boolean isFileType(Class<?> c) {
+        if (c == null) {
+            return false;
+        }
+        if (c == java.io.File.class || c == java.io.InputStream.class) {
+            return true;
+        }
+        String n = c.getName();
+        return n.endsWith(".FilePart") || n.endsWith(".FormDataBodyPart");
+    }
+
+    static OpDoc opDoc(Method definition, Method handling) {
+        OpDoc doc = opDocOf(definition);
+        if (doc == OpDoc.EMPTY && handling != null && !handling.equals(definition)) {
+            doc = opDocOf(handling);
+        }
+        return doc;
+    }
+
+    private static OpDoc opDocOf(Method method) {
+        if (method == null) {
+            return OpDoc.EMPTY;
+        }
+        Annotation[] all = safeAnnotations(method);
+        for (Annotation a : all) {
+            String name = a.annotationType().getName();
+            if (OAS_OPERATION.equals(name)) {
+                String summary = cleanDoc(annString(a, "summary"), MAX_SUMMARY);
+                String description = cleanDoc(annString(a, "description"), MAX_DESCRIPTION);
+                boolean deprecated = Boolean.TRUE.equals(annMember(a, "deprecated"));
+                if (summary != null && summary.equals(description)) {
+                    description = null;
+                }
+                return new OpDoc(summary, description, deprecated);
+            }
+        }
+        for (Annotation a : all) {
+            String name = a.annotationType().getName();
+            if (SWAGGER_OPERATION.equals(name)) {
+                String summary = cleanDoc(annString(a, "value"), MAX_SUMMARY);
+                String description = cleanDoc(annString(a, "notes"), MAX_DESCRIPTION);
+                if (summary != null && summary.equals(description)) {
+                    description = null;
+                }
+                return new OpDoc(summary, description, false);
+            }
+        }
+        return OpDoc.EMPTY;
+    }
+
+    /** Parameter descriptions declared on the method (and declaring class), keyed by "in:name" and ":name". */
+    static Map<String, String> paramDocs(Method definition, Method handling) {
+        Map<String, String> out = new java.util.HashMap<>();
+        if (definition != null) {
+            collectMethodParamDocs(definition, out);
+            collectClassParamDocs(definition.getDeclaringClass(), out);
+        }
+        if (handling != null && !handling.equals(definition)) {
+            collectMethodParamDocs(handling, out);
+            collectClassParamDocs(handling.getDeclaringClass(), out);
+        }
+        return out;
+    }
+
+    private static void collectMethodParamDocs(Method method, Map<String, String> out) {
+        for (Annotation a : safeAnnotations(method)) {
+            String name = a.annotationType().getName();
+            if (OAS_PARAMETER.equals(name)) {
+                recordOasParam(a, out);
+            } else if (OAS_PARAMETERS.equals(name)) {
+                recordAnnotationArray(annMember(a, "value"), out, true);
+            } else if (OAS_OPERATION.equals(name)) {
+                recordAnnotationArray(annMember(a, "parameters"), out, true);
+            } else if (SWAGGER_IMPLICIT_PARAM.equals(name)) {
+                recordSwaggerImplicitParam(a, out);
+            } else if (SWAGGER_IMPLICIT_PARAMS.equals(name)) {
+                recordAnnotationArray(annMember(a, "value"), out, false);
+            }
+        }
+    }
+
+    private static void collectClassParamDocs(Class<?> cls, Map<String, String> out) {
+        if (cls == null) {
+            return;
+        }
+        for (Annotation a : safeAnnotations(cls)) {
+            if (ATLASSIAN_PATH_PARAM_DOC.equals(a.annotationType().getName())) {
+                String name = annString(a, "name");
+                String desc = firstNonNull(annString(a, "documentation"), annString(a, "description"));
+                putParamDoc(out, "path", name, desc);
+            }
+        }
+    }
+
+    private static void recordAnnotationArray(Object value, Map<String, String> out, boolean oas) {
+        if (value instanceof Annotation[] array) {
+            for (Annotation a : array) {
+                if (oas) {
+                    recordOasParam(a, out);
+                } else {
+                    recordSwaggerImplicitParam(a, out);
+                }
+            }
+        }
+    }
+
+    private static void recordOasParam(Annotation a, Map<String, String> out) {
+        String name = annString(a, "name");
+        String desc = annString(a, "description");
+        Object inObj = annMember(a, "in");
+        String in = null;
+        if (inObj instanceof Enum<?> e) {
+            String n = e.name().toLowerCase();
+            if (!"default".equals(n)) {
+                in = n;
+            }
+        }
+        putParamDoc(out, in, name, desc);
+    }
+
+    private static void recordSwaggerImplicitParam(Annotation a, Map<String, String> out) {
+        String name = annString(a, "name");
+        String desc = annString(a, "value");
+        String in = annString(a, "paramType");
+        if (in != null) {
+            in = in.trim().toLowerCase();
+            if (in.isEmpty()) {
+                in = null;
+            }
+        }
+        putParamDoc(out, in, name, desc);
+    }
+
+    private static void putParamDoc(Map<String, String> out, String in, String name, String rawDesc) {
+        if (name == null || name.isBlank()) {
+            return;
+        }
+        String desc = cleanDoc(rawDesc, MAX_PARAM_DESCRIPTION);
+        if (desc == null) {
+            return;
+        }
+        String key = name.trim();
+        if (in != null && !in.isEmpty()) {
+            out.putIfAbsent(in + ":" + key, desc);
+        }
+        out.putIfAbsent(":" + key, desc);
+    }
+
+    /** Description from a @Parameter or @ApiParam placed directly on a Java parameter. */
+    static String paramDoc(Annotation[] annotations) {
+        if (annotations == null) {
+            return null;
+        }
+        for (Annotation a : annotations) {
+            String name = a.annotationType().getName();
+            if (OAS_PARAMETER.equals(name)) {
+                String d = cleanDoc(annString(a, "description"), MAX_PARAM_DESCRIPTION);
+                if (d != null) {
+                    return d;
+                }
+            } else if (SWAGGER_PARAM.equals(name)) {
+                String d = cleanDoc(annString(a, "value"), MAX_PARAM_DESCRIPTION);
+                if (d != null) {
+                    return d;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static Annotation[] parameterAnnotations(Object p) {
+        try {
+            Object a = call(p, "getAnnotations");
+            return a instanceof Annotation[] array ? array : null;
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            return null;
+        }
+    }
+
+    static List<Param> applyParamDocs(List<Param> params, Map<String, String> docs) {
+        if (docs.isEmpty() || params.isEmpty()) {
+            return params;
+        }
+        List<Param> out = new ArrayList<>(params.size());
+        for (Param p : params) {
+            if (p.description() != null) {
+                out.add(p);
+            } else {
+                String d = docs.get(p.in() + ":" + p.name());
+                if (d == null) {
+                    d = docs.get(":" + p.name());
+                }
+                out.add(d == null ? p : p.withDescription(d));
+            }
+        }
+        return List.copyOf(out);
+    }
+
+    private static Annotation[] safeAnnotations(AnnotatedElement element) {
+        try {
+            return element.getDeclaredAnnotations();
+        } catch (RuntimeException | LinkageError e) {
+            return new Annotation[0];
+        }
+    }
+
+    private static Object annMember(Annotation a, String name) {
+        try {
+            Method m = a.annotationType().getMethod(name);
+            return invoke(m, a);
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            return null;
+        }
+    }
+
+    private static String annString(Annotation a, String name) {
+        Object v = annMember(a, name);
+        return v instanceof String s ? s : null;
+    }
+
+    static String cleanDoc(String s, int max) {
+        if (s == null) {
+            return null;
+        }
+        String t = s.replace("\r\n", "\n").replace('\r', '\n').trim();
+        if (t.isEmpty()) {
+            return null;
+        }
+        if (t.length() <= max) {
+            return t;
+        }
+        int end = Character.isHighSurrogate(t.charAt(max - 1)) ? max - 1 : max;
+        return t.substring(0, end) + "…";
     }
 
     /**

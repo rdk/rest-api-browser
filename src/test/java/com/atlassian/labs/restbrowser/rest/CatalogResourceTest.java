@@ -2,6 +2,7 @@ package com.atlassian.labs.restbrowser.rest;
 
 import com.atlassian.labs.restbrowser.catalog.CatalogService;
 import com.atlassian.labs.restbrowser.catalog.OperationDetails;
+import com.atlassian.labs.restbrowser.catalog.OperationSource;
 import com.atlassian.labs.restbrowser.catalog.CatalogSnapshot;
 import com.atlassian.labs.restbrowser.catalog.CatalogTestSupport;
 import com.atlassian.labs.restbrowser.catalog.Model.ModuleEntry;
@@ -42,6 +43,7 @@ public class CatalogResourceTest {
     private final ApplicationProperties props = mock(ApplicationProperties.class);
     private final HttpServletRequest request = mock(HttpServletRequest.class);
     private final OperationDetails details = mock(OperationDetails.class);
+    private final OperationSource source = mock(OperationSource.class);
     private final UserKey user = new UserKey("user");
     private CatalogSnapshot snapshot;
     private CatalogResource resource;
@@ -57,7 +59,7 @@ public class CatalogResourceTest {
         when(props.getVersion()).thenReturn("10.3.0");
         when(props.getBuildNumber()).thenReturn("1");
         when(props.getBaseUrl(UrlMode.RELATIVE)).thenReturn("/jira");
-        resource = new CatalogResource(catalog, userManager, props, details);
+        resource = new CatalogResource(catalog, userManager, props, details, source);
     }
 
     @After
@@ -311,6 +313,21 @@ public class CatalogResourceTest {
         assertEquals(404, r.getStatus());
         assertEquals("{\"error\":\"unknown-operation\"}", r.getEntity());
         assertEquals("no-store", r.getHeaderString("Cache-Control"));
+    }
+
+    @Test
+    public void detailsSourceIsForSystemAdminsOnly() {
+        assertEquals(401, resource.detailsSource("a:b:GET:x", null, null, null, null, request).getStatus());
+        login(true, false);
+        assertEquals(403, resource.detailsSource("a:b:GET:x", null, null, null, null, request).getStatus());
+        verify(source, never()).decompile(any(), any(), org.mockito.ArgumentMatchers.anyLong(), any(), any());
+        login(true, true);
+        when(source.decompile("a:b:GET:x", "com.example.Foo", 42L, "class", "vineflower"))
+                .thenReturn(new OperationDetails.Result(200, "{\"source\":\"class Foo {}\"}"));
+        Response r = resource.detailsSource("a:b:GET:x", "com.example.Foo", 42L, "class", "vineflower", request);
+        assertEquals(200, r.getStatus());
+        assertEquals("no-store", r.getHeaderString("Cache-Control"));
+        assertTrue(((String) r.getEntity()).contains("class Foo"));
     }
 
     private static CatalogSnapshot withModules(ModuleEntry... modules) {

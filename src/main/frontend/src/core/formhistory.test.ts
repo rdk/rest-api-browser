@@ -91,4 +91,14 @@ describe('form history second review', () => {
     const later = record(h, form({ b: '2', a: 'y' }), form({ b: '2', a: '' }), 5000)!;
     expect(later.undo.length).toBe(3);
   });
+
+  it('tracks form fields and file selections as changes', () => {
+    const base: FormState = { values: { path: {}, query: {}, header: {}, matrix: {}, form: { a: [''] }, files: {} }, custom: [], noXsrfHeader: false };
+    const withForm: FormState = { ...base, values: { ...base.values, form: { a: ['hi'] } } };
+    expect(changedField(base, withForm)).toBe('form.a');
+    const file = new File(['abc'], 'a.txt', { lastModified: 100 });
+    const withFile: FormState = { ...base, values: { ...base.values, files: { f: [file] } } };
+    expect(changedField(base, withFile)).toBe('files.f');
+    expect(changedField(withFile, withFile)).toBeNull();
+  });
 });

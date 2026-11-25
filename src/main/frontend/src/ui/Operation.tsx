@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { Module, Operation, Param, Summary } from '../core/types';
-import { buildRequest, mediaChoices, setHeader, toCurl, urlParts, type BuiltRequest, type RequestValues, type UrlPart } from '../core/request';
+import {
+  buildRequest, hasActiveFormValues, mediaChoices, setHeader, toCurl, urlParts,
+  type BuiltRequest, type RequestValues, type UrlPart,
+} from '../core/request';
 import { findTemplates } from '../core/template';
 import { checkValue, type Check } from '../core/validate';
 import { changedField, NO_HISTORY, record, redo as redoStep, undo as undoStep, type FormHistory, type FormState } from '../core/formhistory';
@@ -26,10 +29,14 @@ const formOf = (d: FormState): FormState => ({ values: d.values, custom: d.custo
 
 export function emptyDraft(op: Operation): Draft {
   const query: Record<string, string[]> = {};
-  for (const p of op.params) if (p.in === 'query') query[p.name] = [''];
+  const form: Record<string, string[]> = {};
+  for (const p of op.params) {
+    if (p.in === 'query') query[p.name] = [''];
+    else if (p.in === 'form' && p.type !== 'File') form[p.name] = [''];
+  }
   return {
     values: {
-      path: {}, query, header: {}, matrix: {},
+      path: {}, query, header: {}, matrix: {}, form, files: {},
       contentType: mediaChoices(op.consumes)[0], accept: mediaChoices(op.produces)[0],
     },
     custom: [],
@@ -192,11 +199,18 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
   }, []);
   // separate: a step of its own (a button such as Format), never merged with the typing just before
   const setValues = (values: RequestValues, separate = false) => editForm({ ...formOf(latest.current), values }, separate);
-  const visibleParams = withTemplateParams(op).filter((p) => p.in !== 'form');
-  const formParams = op.params.filter((p) => p.in === 'form');
+  const visibleParams = withTemplateParams(op);
+  const hasForm = op.params.some((p) => p.in === 'form');
+  const formActive = hasActiveFormValues(op, draft.values);
   const regexes = useMemo(() => templateRegexes(op.path), [op.path]);
-  const warnings = visibleParams.reduce(
-    (n, p) => n + valuesOf(p, draft.values).filter((v, i, all) => checkAt(p, v, i, all, regexOf(p, regexes))?.state === 'warn').length, 0);
+  const warnings = visibleParams.reduce((n, p) => {
+    if (p.in === 'form' && p.type === 'File') {
+      const hasFiles = (draft.values.files?.[p.name]?.length ?? 0) > 0;
+      const hasText = valuesOf(p, draft.values).some((v) => v.trim());
+      return n + (p.required && !hasFiles && !hasText ? 1 : 0);
+    }
+    return n + valuesOf(p, draft.values).filter((v, i, all) => checkAt(p, v, i, all, regexOf(p, regexes))?.state === 'warn').length;
+  }, 0);
   // the response takes room only once there is one to show; until then a slim line, and the form has the space
   const compact = !draft.result || !!draft.result.error;
   // a response on the whole screen that turns into a slim line (a failed or cancelled re-send) gives the screen back:
@@ -244,6 +258,7 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
           <CopyButton label="Copy curl" testId="copy-curl" disabled={!built.request} title={built.error ?? 'The request as a curl command'}
                       text={() => (built.request ? toCurl({ ...built.request, url: absolute(built.request.url) }) : '')} />
         </div>
+        {(op.summary || op.description) && <OpDoc summary={op.summary} description={op.description} />}
         <div class={'rab-n-urlbar' + (write ? ' is-write' : '') + (isDelete ? ' is-delete' : '')}>
           <div class="rab-n-url-group">
             <code class="rab-n-url" data-testid="live-url" title={built.url}><UrlText parts={built.parts} /></code>
@@ -327,9 +342,11 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
           <div class={'rab-n-tabpane' + (tab === 'java' ? ' is-java' : '')} id="rab-n-request-pane" role="tabpanel"
                aria-labelledby={tabId('rab-n-request-pane', tab)}>
             {tab === 'params' && (
-              <ParamsTab params={visibleParams} formParams={formParams} values={draft.values} onValues={setValues} regexes={regexes} />
+              <ParamsTab params={visibleParams} values={draft.values} onValues={setValues} regexes={regexes} />
             )}
-            {tab === 'body' && <BodyTab op={op} values={draft.values} onValues={setValues} />}
+            {tab === 'body' && (
+              <BodyTab op={op} values={draft.values} onValues={setValues} hasForm={hasForm} formActive={formActive} onOpenParams={() => setTab('params')} />
+            )}
             {tab === 'java' && <JavaTab baseUrl={summary.baseUrl} opKey={op.key} revision={summary.hash} />}
             {tab === 'headers' && <HeadersTab op={op} draft={draft} onDraft={(d) => editForm(formOf(d))} write={write} />}
             {tab === 'history' && (
@@ -353,6 +370,27 @@ export function OperationView({ summary, op, module, initialDraft, onDraft, runn
         <ResponseView result={draft.result} running={running} onCancel={cancel} baseUrl={summary.baseUrl}
                       maximized={max === 'bottom'} onMaximize={() => setMax(max === 'bottom' ? null : 'bottom')} />
       </div>
+    </div>
+  );
+}
+
+/** Undo, redo and reset of the form, at the end of the request's tab bar. */
+function OpDoc({ summary, description }: { summary?: string; description?: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const long = !!description && (description.length > 220 || description.split('\n').length > 2);
+  return (
+    <div class="rab-n-op-doc" data-testid="operation-doc">
+      {summary && <div class="rab-n-op-summary" data-testid="operation-summary">{summary}</div>}
+      {description && (
+        <>
+          <div class={'rab-n-op-desc' + (long && !expanded ? ' is-clamped' : '')} data-testid="operation-description">{description}</div>
+          {long && (
+            <button type="button" class="rab-n-link rab-n-op-desc-toggle" aria-expanded={expanded} onClick={() => setExpanded((e) => !e)}>
+              {expanded ? 'Show less' : 'Show more'}
+            </button>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -403,11 +441,11 @@ function templateRegexes(path: string): Record<string, string> {
   return out;
 }
 
-/** A parameter's values as the form shows them: a query parameter's list (at least one field), else its one value. */
+/** A parameter's values as the form shows them: a query or form parameter's list (at least one field), else its one value. */
 function valuesOf(p: Param, values: RequestValues): string[] {
   const map = (values as any)[p.in] as Record<string, unknown> | undefined;
   const v = map && Object.hasOwn(map, p.name) ? map[p.name] : undefined;
-  if (p.in === 'query') return Array.isArray(v) && v.length ? (v as string[]) : [''];
+  if (p.in === 'query' || p.in === 'form') return Array.isArray(v) && v.length ? (v as string[]) : [''];
   return [typeof v === 'string' ? v : ''];
 }
 
@@ -443,15 +481,22 @@ function tryBuild(summary: Summary, op: Operation, draft: Draft): { request?: Bu
   }
 }
 
-function ParamsTab({ params, formParams, values, onValues, regexes }: {
-  params: Param[]; formParams: Param[]; values: RequestValues; onValues: (v: RequestValues) => void; regexes: Record<string, string>;
+function ParamsTab({ params, values, onValues, regexes }: {
+  params: Param[]; values: RequestValues; onValues: (v: RequestValues, separate?: boolean) => void; regexes: Record<string, string>;
 }) {
-  if (!params.length && !formParams.length) return <div class="rab-n-subtle rab-n-pad">This operation takes no parameters.</div>;
-  const order = ['path', 'query', 'header', 'matrix'];
+  if (!params.length) return <div class="rab-n-subtle rab-n-pad">This operation takes no parameters.</div>;
+  const order = ['path', 'query', 'form', 'header', 'matrix'];
   const sorted = [...params].sort((a, b) => order.indexOf(a.in) - order.indexOf(b.in) || Number(b.required) - Number(a.required));
   const set = (p: Param, list: string[]) => {
     if (p.in === 'query') onValues({ ...values, query: { ...values.query, [p.name]: list } });
+    else if (p.in === 'form') onValues({ ...values, form: { ...(values.form ?? {}), [p.name]: list } });
     else onValues({ ...values, [p.in]: { ...(values as any)[p.in], [p.name]: list[0] ?? '' } });
+  };
+  const setFiles = (p: Param, list: File[]) => {
+    const next = { ...(values.files ?? {}) };
+    if (list.length) next[p.name] = list;
+    else delete next[p.name];
+    onValues({ ...values, files: next }, true);
   };
   const get = (p: Param): string[] => valuesOf(p, values);
   return (
@@ -459,6 +504,7 @@ function ParamsTab({ params, formParams, values, onValues, regexes }: {
       <tbody>
         {sorted.map((p) => {
           const list = get(p);
+          const isFile = p.in === 'form' && p.type === 'File';
           return (
             <tr key={p.in + ':' + p.name}>
               <td class="rab-n-param-name">
@@ -466,22 +512,35 @@ function ParamsTab({ params, formParams, values, onValues, regexes }: {
                 {p.required && <span class="rab-n-required" title="Required">*</span>}
               </td>
               <td class="rab-n-param-value">
-                {list.map((v, i) => {
-                  const check = checkAt(p, v, i, list, regexOf(p, regexes));
-                  return (
-                  <div class="rab-n-param-row" key={i}>
-                    <ParamInput param={p} value={v} invalid={check?.state === 'warn' && !!v.trim()} onChange={(nv) => set(p, list.map((x, j) => (j === i ? nv : x)))} />
-                    <CheckMark check={check} />
-                    {p.repeating && list.length > 1 && (
-                      <button class="rab-n-icon" aria-label={`Remove ${p.name} value ${i + 1}`} title="Remove this value"
-                              onClick={() => set(p, list.filter((_, j) => j !== i))}>×</button>
+                {isFile ? (
+                  <FileParamField
+                    param={p}
+                    files={values.files?.[p.name] ?? []}
+                    textValues={list}
+                    onFiles={(f) => setFiles(p, f)}
+                    onText={(t) => set(p, t)}
+                  />
+                ) : (
+                  <>
+                    {list.map((v, i) => {
+                      const check = checkAt(p, v, i, list, regexOf(p, regexes));
+                      return (
+                        <div class="rab-n-param-row" key={i}>
+                          <ParamInput param={p} value={v} invalid={check?.state === 'warn' && !!v.trim()} onChange={(nv) => set(p, list.map((x, j) => (j === i ? nv : x)))} />
+                          <CheckMark check={check} />
+                          {p.repeating && list.length > 1 && (
+                            <button class="rab-n-icon" aria-label={`Remove ${p.name} value ${i + 1}`} title="Remove this value"
+                                    onClick={() => set(p, list.filter((_, j) => j !== i))}>×</button>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {p.repeating && (p.in === 'query' || p.in === 'form') && (
+                      <button class="rab-n-link" onClick={() => set(p, [...list, ''])}>+ value</button>
                     )}
-                  </div>
-                  );
-                })}
-                {p.repeating && p.in === 'query' && (
-                  <button class="rab-n-link" onClick={() => set(p, [...list, ''])}>+ value</button>
+                  </>
                 )}
+                {p.description && <div class="rab-n-param-desc" data-testid="param-desc">{p.description}</div>}
               </td>
               <td class="rab-n-param-meta">
                 <span class={'rab-n-in rab-n-in-' + p.in}>{p.in}</span> {p.type}
@@ -489,15 +548,64 @@ function ParamsTab({ params, formParams, values, onValues, regexes }: {
             </tr>
           );
         })}
-        {formParams.map((p) => (
-          <tr key={'form:' + p.name} class="rab-n-disabled">
-            <td class="rab-n-param-name">{p.name}</td>
-            <td class="rab-n-param-value rab-n-subtle">Form fields are not supported yet: send a body instead.</td>
-            <td class="rab-n-param-meta"><span class="rab-n-in">form</span> {p.type}</td>
-          </tr>
-        ))}
       </tbody>
     </table>
+  );
+}
+
+/** A multipart FilePart field: file picker by default, with a quiet switch to text for text parts (such as comment). */
+function FileParamField({ param, files, textValues, onFiles, onText }: {
+  param: Param; files: File[]; textValues: string[]; onFiles: (f: File[]) => void; onText: (v: string[]) => void;
+}) {
+  const [asText, setAsText] = useState(() => !files.length && textValues.some((v) => v.trim() !== ''));
+  const inputRef = useRef<HTMLInputElement>(null);
+  const label = `${param.name} (multipart form parameter${param.required ? ', required' : ''})`;
+  const switchMode = () => {
+    if (asText) {
+      onText(['']);
+      setAsText(false);
+    } else {
+      if (files.length) onFiles([]);
+      if (inputRef.current) inputRef.current.value = '';
+      setAsText(true);
+    }
+  };
+  if (asText) {
+    return (
+      <div class="rab-n-param-row">
+        <input class="rab-n-input" name={param.name} aria-label={label} value={textValues[0] ?? ''} placeholder="text part"
+               onInput={(e) => onText([(e.target as HTMLInputElement).value])} />
+        <button type="button" class="rab-n-quiet" onClick={switchMode} title="Upload a file for this part instead">File</button>
+      </div>
+    );
+  }
+  const check: Check = files.length > 0 ? { state: 'ok', message: `${files.length} file${files.length === 1 ? '' : 's'} selected` }
+    : param.required ? { state: 'warn', message: 'Required' } : null;
+  return (
+    <div class="rab-n-file-field">
+      <div class="rab-n-param-row">
+        <input
+          ref={inputRef}
+          class="rab-n-file-input"
+          type="file"
+          name={param.name}
+          multiple={!!param.repeating}
+          aria-label={label}
+          onChange={(e) => onFiles([...((e.target as HTMLInputElement).files ?? [])])}
+        />
+        <CheckMark check={check} />
+        {files.length > 0 && (
+          <button type="button" class="rab-n-icon" aria-label={`Clear ${param.name}`} title="Clear selected files"
+                  onClick={() => { onFiles([]); if (inputRef.current) inputRef.current.value = ''; }}>×</button>
+        )}
+        <button type="button" class="rab-n-quiet" onClick={switchMode} title="Send plain text for this multipart part instead">Text</button>
+      </div>
+      {files.length > 0 && (
+        <div class="rab-n-file-list">
+          {files.map((f, i) => <span key={i} class="rab-n-file-chip">{f.name} ({formatBytes(f.size)})</span>)}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -534,7 +642,10 @@ function ParamInput({ param, value, invalid, onChange }: { param: Param; value: 
   );
 }
 
-function BodyTab({ op, values, onValues }: { op: Operation; values: RequestValues; onValues: (v: RequestValues, separate?: boolean) => void }) {
+function BodyTab({ op, values, onValues, hasForm, formActive, onOpenParams }: {
+  op: Operation; values: RequestValues; onValues: (v: RequestValues, separate?: boolean) => void;
+  hasForm: boolean; formActive: boolean; onOpenParams: () => void;
+}) {
   const types = mediaChoices(op.consumes);
   const [formatNote, setFormatNote] = useState<string | null>(null);
   const contentType = values.contentType ?? types[0];
@@ -556,6 +667,17 @@ function BodyTab({ op, values, onValues }: { op: Operation; values: RequestValue
   };
   return (
     <div class="rab-n-body">
+      {formActive && (
+        <div class="rab-n-body-note" data-testid="form-body-note" role="status">
+          The request body is built from the form parameters in Params.{' '}
+          <button type="button" class="rab-n-link" onClick={onOpenParams}>Edit form fields</button>
+        </div>
+      )}
+      {hasForm && !formActive && (
+        <div class="rab-n-subtle rab-n-body-hint">
+          Fill form parameters in <button type="button" class="rab-n-link" onClick={onOpenParams}>Params</button> to encode the body automatically, or enter a raw body below.
+        </div>
+      )}
       <div class="rab-n-body-bar">
         <label>
           Content-Type{' '}
@@ -568,20 +690,21 @@ function BodyTab({ op, values, onValues }: { op: Operation; values: RequestValue
         {op.bodyType && <span class="rab-n-subtle">Java type: {op.bodyType}</span>}
         {formatNote && <span class="rab-n-subtle" role="status">{formatNote}</span>}
         <span class="rab-n-spacer" />
-        {isJson && !!values.body?.trim() && (
+        {isJson && !!values.body?.trim() && !formActive && (
           <span class={'rab-n-json-check ' + (error ? 'is-warn' : 'is-ok')} data-testid="json-check">
             <CheckMark check={error ? { state: 'warn', message: 'Not valid JSON: ' + error } : { state: 'ok', message: 'Valid JSON' }} />
             <span class="rab-n-json-check-text" title={error ?? undefined}>{error ? 'Not valid JSON: ' + error : 'Valid JSON'}</span>
           </span>
         )}
-        {isJson && <button class="rab-n-button" onClick={format} disabled={!!error || !values.body?.trim()}>Format</button>}
+        {isJson && <button class="rab-n-button" onClick={format} disabled={formActive || !!error || !values.body?.trim()}>Format</button>}
       </div>
       <textarea
-        class={'rab-n-textarea' + (error ? ' invalid' : '')}
+        class={'rab-n-textarea' + (error && !formActive ? ' invalid' : '')}
         spellcheck={false}
+        disabled={formActive}
         value={values.body ?? ''}
         onInput={(e) => onValues({ ...values, body: (e.target as HTMLTextAreaElement).value })}
-        placeholder={isJson ? '{ }' : ''}
+        placeholder={formActive ? 'Built from form parameters in the Params tab' : isJson ? '{ }' : ''}
         aria-label="Request body"
         data-testid="body"
       />

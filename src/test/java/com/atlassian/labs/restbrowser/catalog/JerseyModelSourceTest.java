@@ -169,4 +169,102 @@ public class JerseyModelSourceTest {
         assertNull(JerseyModelSource.access(Methods.class.getMethod("plain")));
         assertNull(JerseyModelSource.access(Methods.class.getMethod("other")));
     }
+
+    public static class Documented {
+        @io.swagger.v3.oas.annotations.Operation(
+                summary = "  Get server info  ",
+                description = "Returns general information\r\nabout the server.",
+                deprecated = true
+        )
+        @io.swagger.v3.oas.annotations.Parameter(name = "id", in = io.swagger.v3.oas.annotations.enums.ParameterIn.PATH,
+                description = "  The issue key  ")
+        @io.swagger.v3.oas.annotations.Parameter(name = "expand", in = io.swagger.v3.oas.annotations.enums.ParameterIn.QUERY,
+                description = "Fields to expand")
+        public void oasV3(
+                @io.swagger.v3.oas.annotations.Parameter(description = "Inline wins") String inlineParam) {
+        }
+
+        @io.swagger.v3.oas.annotations.Operation(
+                summary = "Same text",
+                description = "Same text",
+                parameters = {
+                        @io.swagger.v3.oas.annotations.Parameter(name = "limit", description = "Max items")
+                }
+        )
+        public void sameSummaryAndDescription() {
+        }
+
+        @io.swagger.annotations.ApiOperation(value = "Legacy summary", notes = "Legacy notes")
+        public void swaggerV2(@io.swagger.annotations.ApiParam("Legacy param doc") String q) {
+        }
+
+        public void upload(@com.atlassian.plugins.rest.api.multipart.MultipartFormParam("file")
+                           com.atlassian.plugins.rest.api.multipart.FilePart part) {
+        }
+    }
+
+    @Test
+    public void opDocReadsOpenApiV3AndSwaggerV2() throws Exception {
+        JerseyModelSource.OpDoc v3 = JerseyModelSource.opDoc(Documented.class.getMethod("oasV3", String.class), null);
+        assertEquals("Get server info", v3.summary());
+        assertEquals("Returns general information\nabout the server.", v3.description());
+        assertTrue(v3.deprecated());
+
+        JerseyModelSource.OpDoc dup = JerseyModelSource.opDoc(Documented.class.getMethod("sameSummaryAndDescription"), null);
+        assertEquals("Same text", dup.summary());
+        assertNull(dup.description());
+        assertFalse(dup.deprecated());
+
+        JerseyModelSource.OpDoc v2 = JerseyModelSource.opDoc(Documented.class.getMethod("swaggerV2", String.class), null);
+        assertEquals("Legacy summary", v2.summary());
+        assertEquals("Legacy notes", v2.description());
+        assertFalse(v2.deprecated());
+
+        JerseyModelSource.OpDoc none = JerseyModelSource.opDoc(Methods.class.getMethod("plain"), null);
+        assertNull(none.summary());
+        assertNull(none.description());
+        assertFalse(none.deprecated());
+    }
+
+    @Test
+    public void paramDocsMatchByLocationAndFallbackToName() throws Exception {
+        java.lang.reflect.Method m = Documented.class.getMethod("oasV3", String.class);
+        java.util.Map<String, String> docs = JerseyModelSource.paramDocs(m, null);
+        Param pathId = param("id", "path", "string", true);
+        Param queryExpand = param("expand", "query", "string", false);
+        Param inline = new Param("inlineParam", "query", "string", false, null, List.of(), false,
+                JerseyModelSource.paramDoc(m.getParameters()[0].getAnnotations()));
+        List<Param> enriched = JerseyModelSource.applyParamDocs(List.of(pathId, queryExpand, inline), docs);
+        assertEquals("The issue key", enriched.get(0).description());
+        assertEquals("Fields to expand", enriched.get(1).description());
+        assertEquals("Inline wins", enriched.get(2).description());
+
+        java.lang.reflect.Method embedded = Documented.class.getMethod("sameSummaryAndDescription");
+        List<Param> fromOp = JerseyModelSource.applyParamDocs(
+                List.of(param("limit", "query", "int", false)),
+                JerseyModelSource.paramDocs(embedded, null));
+        assertEquals("Max items", fromOp.get(0).description());
+
+        java.lang.reflect.Method v2 = Documented.class.getMethod("swaggerV2", String.class);
+        assertEquals("Legacy param doc", JerseyModelSource.paramDoc(v2.getParameters()[0].getAnnotations()));
+    }
+
+    @Test
+    public void cleanDocCapsLengthAndDropsBlanks() {
+        assertNull(JerseyModelSource.cleanDoc(null, 10));
+        assertNull(JerseyModelSource.cleanDoc("   \r\n  ", 10));
+        assertEquals("abc", JerseyModelSource.cleanDoc("  abc  ", 10));
+        assertEquals("abcde…", JerseyModelSource.cleanDoc("abcdefgh", 5));
+    }
+
+    @Test
+    public void multipartFormParamAndFileTypesAreRecognized() throws Exception {
+        java.lang.reflect.Method m = Documented.class.getMethod("upload",
+                com.atlassian.plugins.rest.api.multipart.FilePart.class);
+        assertEquals("file", JerseyModelSource.multipartParamName(m.getParameters()[0].getAnnotations()));
+        assertTrue(JerseyModelSource.isFileType(com.atlassian.plugins.rest.api.multipart.FilePart.class));
+        assertTrue(JerseyModelSource.isFileType(java.io.File.class));
+        assertTrue(JerseyModelSource.isFileType(java.io.InputStream.class));
+        assertFalse(JerseyModelSource.isFileType(String.class));
+    }
 }

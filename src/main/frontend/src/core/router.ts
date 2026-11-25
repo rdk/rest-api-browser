@@ -3,6 +3,7 @@ export interface RouteState {
   path: Record<string, string>;
   q: Record<string, string[]>;
   h: Record<string, string>;
+  form?: Record<string, string[]>;
 }
 
 function decode(s: string): string {
@@ -27,6 +28,10 @@ export function parseState(search: string): RouteState {
     else if (key.startsWith('path.')) state.path[key.slice(5)] = value;
     else if (key.startsWith('q.')) (state.q[key.slice(2)] ??= []).push(value);
     else if (key.startsWith('h.')) state.h[key.slice(2)] = value;
+    else if (key.startsWith('form.')) {
+      state.form ??= dict();
+      (state.form[key.slice(5)] ??= []).push(value);
+    }
   }
   return state;
 }
@@ -38,5 +43,6 @@ export function formatState(state: RouteState): string {
   for (const [k, v] of Object.entries(state.path)) parts.push(`${e('path.' + k)}=${e(v)}`);
   for (const [k, list] of Object.entries(state.q)) for (const v of list) parts.push(`${e('q.' + k)}=${e(v)}`);
   for (const [k, v] of Object.entries(state.h)) parts.push(`${e('h.' + k)}=${e(v)}`);
+  for (const [k, list] of Object.entries(state.form ?? {})) for (const v of list) parts.push(`${e('form.' + k)}=${e(v)}`);
   return parts.length ? '?' + parts.join('&') : '';
 }

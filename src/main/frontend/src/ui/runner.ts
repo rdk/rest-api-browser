@@ -139,6 +139,16 @@ export function downloadBlob(result: RunResult): Blob | null {
   return null;
 }
 
+function bodyBytes(body: string | FormData | undefined): number | undefined {
+  if (body === undefined) return undefined;
+  if (typeof body === 'string') return new TextEncoder().encode(body).length;
+  let total = 0;
+  for (const [, v] of body.entries()) {
+    total += typeof v === 'string' ? new TextEncoder().encode(v).length : v.size;
+  }
+  return total;
+}
+
 export class RequestRunner {
   private controller: AbortController | null = null;
 
@@ -166,7 +176,7 @@ export class RequestRunner {
       method: req.method,
       url: req.url,
       requestHeaders: Object.entries(req.headers),
-      requestBodyBytes: req.body === undefined ? undefined : new TextEncoder().encode(req.body).length,
+      requestBodyBytes: bodyBytes(req.body),
     };
     try {
       const res = await this.fetchFn(req.url, {

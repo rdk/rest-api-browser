@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { annotationTokens, toLines, tokenize, type Token } from './javatokens';
+import { annotationTokens, toLines, tokenize, tokenizeSource, type Token } from './javatokens';
 
 const show = (ts: Token[]) => ts.map((t) => (t.kind === 'space' ? t.text : `${t.kind}:${t.text}`)).join('|');
 const text = (ts: Token[]) => ts.map((t) => t.text).join('');
@@ -73,5 +73,15 @@ describe('javatokens review fixes', () => {
       + 'type:Status|punct:.|num:OK|punct:,| |name:java|punct:.|name:net|punct:.|type:URI|punct:,| |type:T|punct:,| |'
       + 'type:Map|punct:<|type:K|punct:,| |type:V|punct:>');
     expect(show(annotationTokens('@Retention(RetentionPolicy.RUNTIME)'))).toBe('ann:@Retention|punct:(|type:RetentionPolicy|punct:.|num:RUNTIME|punct:)');
+  });
+
+  it('tokenizeSource preserves indentation, newlines, comments and statement keywords', () => {
+    const src = 'public String greet() {\n    // hi\n    if (true) return "ok";\n}';
+    const toks = tokenizeSource(src);
+    expect(text(toks)).toBe(src);
+    expect(toks.some((t) => t.kind === 'comment' && t.text === '// hi')).toBe(true);
+    expect(toks.some((t) => t.kind === 'kw' && t.text === 'return')).toBe(true);
+    expect(toks.some((t) => t.kind === 'kw' && t.text === 'if')).toBe(true);
+    expect(toks.some((t) => t.kind === 'str' && t.text === '"ok"')).toBe(true);
   });
 });

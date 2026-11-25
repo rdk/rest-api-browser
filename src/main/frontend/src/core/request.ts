@@ -7,6 +7,8 @@ export interface RequestValues {
   query: Record<string, string[]>;
   header: Record<string, string>;
   matrix: Record<string, string>;
+  form?: Record<string, string[]>;
+  files?: Record<string, File[]>;
   body?: string;
   contentType?: string;
   accept?: string;
@@ -21,7 +23,7 @@ export interface BuiltRequest {
   method: string;
   url: string;
   headers: Record<string, string>;
-  body?: string;
+  body?: string | FormData;
 }
 
 // Slashes stay only for a parameter whose regex lets it span segments (spansSegments).
@@ -136,6 +138,31 @@ export function urlParts(summary: Summary, op: Operation, values: RequestValues)
   return error ? { parts, missing, error } : { parts, missing };
 }
 
+/** Whether the operation (or its chosen content type / attached files) encodes form parameters as multipart/form-data. */
+export function isMultipart(op: Operation, values?: RequestValues): boolean {
+  if (values?.files) {
+    const formNames = declared(op, 'form');
+    for (const [name, list] of Object.entries(values.files)) {
+      if (formNames.has(name) && Array.isArray(list) && list.length > 0) return true;
+    }
+  }
+  if (values?.contentType && !isBlank(values.contentType)) return /multipart\/form-data/i.test(values.contentType);
+  return op.consumes.some((c) => /multipart\/form-data/i.test(c));
+}
+
+/** Whether any declared form field or file has a value that will build the request body. */
+export function hasActiveFormValues(op: Operation, values: RequestValues): boolean {
+  const formNames = declared(op, 'form');
+  if (!formNames.size) return false;
+  for (const [name, list] of Object.entries(values.form ?? {})) {
+    if (formNames.has(name) && Array.isArray(list) && list.some((v) => !isBlank(v))) return true;
+  }
+  for (const [name, list] of Object.entries(values.files ?? {})) {
+    if (formNames.has(name) && Array.isArray(list) && list.length > 0) return true;
+  }
+  return false;
+}
+
 export function buildRequest(summary: Summary, op: Operation, values: RequestValues, options: RequestOptions = {}): BuiltRequest {
   const method = op.method.toUpperCase();
   const { parts, missing, error } = urlParts(summary, op, values);
@@ -154,7 +181,31 @@ export function buildRequest(summary: Summary, op: Operation, values: RequestVal
 
   const req: BuiltRequest = { method, url, headers };
   const bodyAllowed = method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE';
-  if (bodyAllowed && values.body !== undefined && values.body !== '') {
+  const formNames = declared(op, 'form');
+  const formEntries: [string, string][] = [];
+  for (const [name, list] of Object.entries(values.form ?? {})) {
+    if (!formNames.has(name) || !Array.isArray(list)) continue;
+    for (const value of list) if (!isBlank(value)) formEntries.push([name, value]);
+  }
+  const fileEntries: [string, File][] = [];
+  for (const [name, list] of Object.entries(values.files ?? {})) {
+    if (!formNames.has(name) || !Array.isArray(list)) continue;
+    for (const file of list) if (file) fileEntries.push([name, file]);
+  }
+  if (bodyAllowed && (formEntries.length > 0 || fileEntries.length > 0)) {
+    if (fileEntries.length > 0 || isMultipart(op, values)) {
+      const fd = new FormData();
+      for (const [name, value] of formEntries) fd.append(name, value);
+      for (const [name, file] of fileEntries) fd.append(name, file, file.name);
+      req.body = fd;
+      // the browser sets Content-Type with the multipart boundary
+    } else {
+      const sp = new URLSearchParams();
+      for (const [name, value] of formEntries) sp.append(name, value);
+      req.body = sp.toString();
+      if (!hasHeader(headers, 'Content-Type')) setHeader(headers, 'Content-Type', 'application/x-www-form-urlencoded');
+    }
+  } else if (bodyAllowed && values.body !== undefined && values.body !== '') {
     req.body = values.body;
     if (!hasHeader(headers, 'Content-Type')) setHeader(headers, 'Content-Type', filledIn(values.contentType) ?? defaultType(op.consumes));
   }
@@ -176,7 +227,14 @@ export function toCurl(req: BuiltRequest): string {
   else if (req.method !== 'GET') parts.push('-X', req.method);
   if (!hasHeader(req.headers, 'Authorization')) parts.push('-u', '"$USER:$PASSWORD"');
   for (const [name, value] of Object.entries(req.headers)) parts.push('-H', quote(`${name}: ${value}`));
-  if (req.body !== undefined) parts.push('--data-raw', quote(req.body));
+  if (typeof FormData !== 'undefined' && req.body instanceof FormData) {
+    for (const [name, value] of req.body.entries()) {
+      if (typeof value === 'string') parts.push('-F', quote(`${name}=${value}`));
+      else parts.push('-F', quote(`${name}=@${value.name || 'file'}`));
+    }
+  } else if (typeof req.body === 'string') {
+    parts.push('--data-raw', quote(req.body));
+  }
   parts.push(quote(req.url));
   return parts.join(' ');
 }

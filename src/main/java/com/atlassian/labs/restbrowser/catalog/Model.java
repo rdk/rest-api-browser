@@ -13,12 +13,25 @@ public final class Model {
 
     /** One parameter of an operation. {@code in} is path, query, header, matrix or form. */
     public record Param(String name, String in, String type, boolean required, String defaultValue,
-                        List<String> options, boolean repeating) {
+                        List<String> options, boolean repeating, String description) {
+        public Param(String name, String in, String type, boolean required, String defaultValue,
+                     List<String> options, boolean repeating) {
+            this(name, in, type, required, defaultValue, options, repeating, null);
+        }
+
+        Param withDescription(String description) {
+            return new Param(name, in, type, required, defaultValue, options, repeating, description);
+        }
     }
 
     /** What a source says about one operation, before the catalog gives it a key. */
     public record OperationSpec(String method, String path, List<String> consumes, List<String> produces,
-                                List<Param> params, String access, boolean deprecated, String bodyType) {
+                                List<Param> params, String access, boolean deprecated, String bodyType,
+                                String summary, String description) {
+        public OperationSpec(String method, String path, List<String> consumes, List<String> produces,
+                             List<Param> params, String access, boolean deprecated, String bodyType) {
+            this(method, path, consumes, produces, params, access, deprecated, bodyType, null, null);
+        }
     }
 
     /** What a source says about one module. */

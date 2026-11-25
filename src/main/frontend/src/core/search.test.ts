@@ -145,4 +145,15 @@ describe('buildRows second review', () => {
     expect(search(r, '/')).toHaveLength(3);
     expect(search(r, 'api/2/').map((x) => x.path)).toContain('api/2/');
   });
+
+  it('matches operation summaries and ranks path segment hits above summary-only hits', () => {
+    const sm = summary([module('m', 'api/2')]);
+    const r = buildRows(sm, index([
+      op('m', 'GET', 'serverInfo', { summary: 'Get general information about the server' }),
+      op('m', 'GET', 'general/settings', { summary: 'System configuration' }),
+    ]));
+    const hits = search(r, 'general');
+    expect(hits.map((x) => x.op.path)).toEqual(['general/settings', 'serverInfo']);
+    expect(search(r, 'information server').map((x) => x.op.path)).toEqual(['serverInfo']);
+  });
 });

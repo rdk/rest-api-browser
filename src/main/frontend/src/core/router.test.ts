@@ -34,4 +34,10 @@ describe('router', () => {
     expect(Object.entries(s.h)).toEqual([['__proto__', 'h']]);
     expect(parseState(formatState(s))).toEqual(s);
   });
+
+  it('parses and formats form.* parameters safely, including Object.prototype names', () => {
+    const s = parseState('?op=m%3APOST%3Ax&form.a=1&form.a=2&form.__proto__=p&form.toString=t');
+    expect(Object.entries(s.form!)).toEqual([['a', ['1', '2']], ['__proto__', ['p']], ['toString', ['t']]]);
+    expect(parseState(formatState(s))).toEqual(s);
+  });
 });

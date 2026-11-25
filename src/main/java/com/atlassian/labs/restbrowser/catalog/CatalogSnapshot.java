@@ -184,13 +184,17 @@ public final class CatalogSnapshot {
                 if (p.repeating()) {
                     j.field("repeating", true);
                 }
+                j.optional("description", p.description());
                 j.endObject();
             }
             j.endArray().optional("access", s.access());
             if (s.deprecated()) {
                 j.field("deprecated", true);
             }
-            j.optional("bodyType", s.bodyType()).endObject();
+            j.optional("bodyType", s.bodyType())
+                    .optional("summary", s.summary())
+                    .optional("description", s.description())
+                    .endObject();
         }
         return j.endArray().toString();
     }

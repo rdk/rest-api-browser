@@ -14,7 +14,10 @@ export interface Module {
   reason?: string; opCount: number; plugin: { key: string; name: string; version?: string }; error?: string;
 }
 export type ParamIn = 'path' | 'query' | 'header' | 'matrix' | 'form';
-export interface Param { name: string; in: ParamIn; type: string; required: boolean; default?: string; options?: string[]; repeating?: boolean; }
+export interface Param {
+  name: string; in: ParamIn; type: string; required: boolean; default?: string; options?: string[]; repeating?: boolean;
+  description?: string;
+}
 export interface Operation {
   key: string;                        // "<moduleId>:<METHOD>:<path with every {template} replaced by {}>" plus optional "#suffix"
   module: string;                     // Module.id
@@ -22,5 +25,7 @@ export interface Operation {
   path: string;                       // relative to the module, no leading slash, templates as written: "issue/{issueIdOrKey}"
   consumes: string[]; produces: string[]; params: Param[]; access?: string; deprecated?: boolean;
   bodyType?: string;                  // the Java type of the request body, when the source knows it
+  summary?: string;
+  description?: string;
 }
 export interface Index { format: 1; hash: string; operations: Operation[]; }   // GET /rest/restbrowser/1/catalog/index/{hash}

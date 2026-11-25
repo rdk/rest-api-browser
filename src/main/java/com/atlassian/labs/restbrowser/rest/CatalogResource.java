@@ -8,6 +8,7 @@ import com.atlassian.labs.restbrowser.catalog.JerseyModelSource;
 import com.atlassian.labs.restbrowser.catalog.Model.ModuleEntry;
 import com.atlassian.labs.restbrowser.catalog.Model.State;
 import com.atlassian.labs.restbrowser.catalog.OperationDetails;
+import com.atlassian.labs.restbrowser.catalog.OperationSource;
 import com.atlassian.sal.api.ApplicationProperties;
 import com.atlassian.sal.api.UrlMode;
 import com.atlassian.sal.api.user.UserKey;
@@ -54,14 +55,22 @@ public class CatalogResource {
     private final UserManager userManager;
     private final ApplicationProperties applicationProperties;
     private final OperationDetails details;
+    private final OperationSource source;
 
     @Inject
     public CatalogResource(CatalogService catalog, UserManager userManager,
-                           ApplicationProperties applicationProperties, OperationDetails details) {
+                           ApplicationProperties applicationProperties, OperationDetails details,
+                           OperationSource source) {
         this.catalog = catalog;
         this.userManager = userManager;
         this.applicationProperties = applicationProperties;
         this.details = details;
+        this.source = source;
+    }
+
+    CatalogResource(CatalogService catalog, UserManager userManager,
+                    ApplicationProperties applicationProperties, OperationDetails details) {
+        this(catalog, userManager, applicationProperties, details, null);
     }
 
     @GET
@@ -194,6 +203,37 @@ public class CatalogResource {
         }
         catalog.current(request.getServletContext()); // a module that has not started needs the ServletContext
         OperationDetails.Result result = details.describe(op);
+        return Response.status(result.status()).type(JSON).header("Cache-Control", "no-store")
+                .entity(result.json()).build();
+    }
+
+    /**
+     * Decompiled source of the method or class behind one operation, or of any referenced Java class. System
+     * administrators only, on demand, never cached on the client.
+     */
+    @GET
+    @Path("/details/source")
+    @Produces(MediaType.APPLICATION_JSON)
+    @SystemAdminOnly
+    public Response detailsSource(@QueryParam("op") String op,
+                                  @QueryParam("class") String className,
+                                  @QueryParam("fromBundle") Long fromBundle,
+                                  @QueryParam("scope") String scope,
+                                  @QueryParam("decompiler") String decompiler,
+                                  @Context HttpServletRequest request) {
+        UserKey user = userManager.getRemoteUserKey(request);
+        if (user == null) {
+            return unauthorized();
+        }
+        if (!userManager.isSystemAdmin(user)) {
+            return error(Response.Status.FORBIDDEN, "system-admin-only");
+        }
+        if (source == null) {
+            return error(Response.Status.NOT_FOUND, "not-described");
+        }
+        catalog.current(request.getServletContext());
+        long bundleId = fromBundle == null ? -1L : fromBundle;
+        OperationDetails.Result result = source.decompile(op, className, bundleId, scope, decompiler);
         return Response.status(result.status()).type(JSON).header("Cache-Control", "no-store")
                 .entity(result.json()).build();
     }

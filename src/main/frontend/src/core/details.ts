@@ -32,6 +32,30 @@ export interface PluginInfo {
 export interface RestModuleInfo {
   key: string; path: string; basePath: string; version: string; rest: string; description?: string; descriptor?: string;
 }
+export type DecompilerId = 'cfr' | 'vineflower';
+export type SourceScope = 'method' | 'class';
+
+export interface OperationSource {
+  format: 1;
+  key?: string;
+  class: string;
+  method?: string;
+  scope?: SourceScope;
+  decompilerId?: DecompilerId;
+  decompiler: string;
+  bundleId?: number;
+  source: string;
+  refs?: string[];
+}
+
+export interface SourceQuery {
+  op?: string;
+  classCandidates?: string[];
+  fromBundle?: number;
+  scope?: SourceScope;
+  decompiler?: DecompilerId;
+}
+
 export interface OperationDetails {
   format: 1; key: string;
   method: Section<JavaMethod>;
@@ -91,7 +115,79 @@ function isDetails(b: unknown): b is OperationDetails {
 }
 
 const cache = new Map<string, Promise<OperationDetails>>();
+const sourceCache = new Map<string, Promise<OperationSource>>();
 const CACHE_SIZE = 30;
+
+function isSource(b: unknown): b is OperationSource {
+  return isObject(b) && typeof b.source === 'string' && typeof b.decompiler === 'string'
+    && typeof b.class === 'string'
+    && (b.refs === undefined || (Array.isArray(b.refs) && b.refs.every((x) => typeof x === 'string')));
+}
+
+function sourceCacheKey(q: SourceQuery): string {
+  return JSON.stringify([
+    q.op ?? '',
+    q.classCandidates ?? [],
+    q.fromBundle ?? -1,
+    q.scope ?? (q.classCandidates?.length ? 'class' : 'method'),
+    q.decompiler ?? 'cfr',
+  ]);
+}
+
+/** Decompiled source of an operation's method/class or of any referenced Java class, cached per query for the page load. */
+export function fetchSource(
+  baseUrl: string,
+  keyOrQuery: string | SourceQuery,
+  fetchFn: typeof fetch = (...a) => fetch(...a),
+): Promise<OperationSource> {
+  const q: SourceQuery = typeof keyOrQuery === 'string' ? { op: keyOrQuery } : keyOrQuery;
+  const cacheKey = sourceCacheKey(q);
+  const hit = sourceCache.get(cacheKey);
+  if (hit) return hit;
+  const params = new URLSearchParams();
+  if (q.op) params.set('op', q.op);
+  if (q.classCandidates?.length) params.set('class', q.classCandidates.join(','));
+  if (q.fromBundle !== undefined && q.fromBundle >= 0) params.set('fromBundle', String(q.fromBundle));
+  if (q.scope) params.set('scope', q.scope);
+  if (q.decompiler) params.set('decompiler', q.decompiler);
+  const p = (async () => {
+    const res = await fetchFn(`${baseUrl}/rest/restbrowser/1/catalog/details/source?${params.toString()}`, {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' },
+    });
+    if (isLoginAnswer(res, true)) {
+      throw new DetailsError(401, 'session-expired', 'Your session has expired: reload the page to log in again.');
+    }
+    let body: unknown;
+    try {
+      body = JSON.parse(await res.text());
+    } catch {
+      body = undefined;
+    }
+    if (!res.ok) {
+      const reason = isObject(body) && typeof body.error === 'string' ? body.error : `HTTP ${res.status}`;
+      throw new DetailsError(res.status, reason);
+    }
+    if (!isSource(body)) {
+      throw new DetailsError(res.status, 'not-source', 'The server answered with something other than the decompiled source.');
+    }
+    return body;
+  })();
+  sourceCache.set(cacheKey, p);
+  p.catch(() => sourceCache.get(cacheKey) === p && sourceCache.delete(cacheKey));
+  while (sourceCache.size > CACHE_SIZE * 2) sourceCache.delete(sourceCache.keys().next().value!);
+  return p;
+}
+
+export function forgetSource(keyOrQuery: string | SourceQuery): void {
+  if (typeof keyOrQuery === 'string') {
+    for (const k of [...sourceCache.keys()]) {
+      if (k.startsWith(JSON.stringify([keyOrQuery]).slice(0, -1))) sourceCache.delete(k);
+    }
+    return;
+  }
+  sourceCache.delete(sourceCacheKey(keyOrQuery));
+}
 
 /** The details of an operation, fetched once per page load (the Java behind an operation does not change while it runs). */
 export function fetchDetails(baseUrl: string, key: string, fetchFn: typeof fetch = (...a) => fetch(...a)): Promise<OperationDetails> {
@@ -129,9 +225,11 @@ export function fetchDetails(baseUrl: string, key: string, fetchFn: typeof fetch
 
 export function forgetDetails(key: string): void {
   cache.delete(key);
+  sourceCache.delete(key);
 }
 
 /** Forgets every operation's details, e.g. when the catalog was rebuilt and the Java behind it may have changed. */
 export function clearDetails(): void {
   cache.clear();
+  sourceCache.clear();
 }

@@ -375,4 +375,17 @@ describe('UserStore round two', () => {
     }
     for (const n of ['X-Processor', 'X-Author-Id', 'X-Cookies-Enabled']) expect(isCredentialHeader(n), n).toBe(false);
   });
+
+  it('scrubs secret form fields and never persists uploaded files in history', async () => {
+    const st = new FakeStorage();
+    const s = new UserStore('u', st);
+    const file = new File(['hello'], 'secret.bin');
+    const e = await s.addHistory(entry('a', {
+      values: { ...values(), form: { name: ['alice'], password: ['hunter2'] }, files: { file: [file] } },
+    }));
+    expect(e.values.form).toEqual({ name: ['alice'] });
+    expect(e.values.files).toBeUndefined();
+    expect(e.redacted).toBe(true);
+    expect([...st.data.values()].join('')).not.toContain('hunter2');
+  });
 });

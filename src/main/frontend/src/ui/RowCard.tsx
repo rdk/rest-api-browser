@@ -44,14 +44,23 @@ export function RowCard({ id, target, left, top, rowHeight, pinned, boxRef, star
   );
 }
 
+function cardSummary(op: Operation): string | undefined {
+  if (op.summary) return op.summary;
+  if (!op.description) return undefined;
+  const line = op.description.split(/\r?\n/).find((l) => l.trim());
+  return line ? clip(line.trim(), 160) : undefined;
+}
+
 function OpFacts({ op, m }: { op: Operation; m?: Module }) {
   const access = accessFact(op.access);
+  const summary = cardSummary(op);
   return (
     <>
       <div class="rab-n-card-head">
         <MethodBadge method={op.method} />
         <span class="rab-n-card-path"><PathText path={(m ? m.path + '/' : '') + op.path} prefix={m?.path.length} /></span>
       </div>
+      {summary && <div class="rab-n-card-summary" data-testid="card-summary">{summary}</div>}
       <dl class="rab-n-card-facts">
         {m && <Row name="API"><Dot fact={moduleFact(m)} />{stabilityLabel(m)}</Row>}
         <Row name="Access">

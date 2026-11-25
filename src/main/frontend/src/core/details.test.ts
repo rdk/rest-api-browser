@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clearDetails, DetailsError, fetchDetails, forgetDetails, isError, shortJava, type BundleInfo } from './details';
+import { clearDetails, DetailsError, fetchDetails, fetchSource, forgetDetails, isError, shortJava, type BundleInfo } from './details';
 
 const DETAILS = {
   format: 1, key: 'k', method: { error: 'm' }, locators: [], resourceClass: { error: 'c' }, types: [],
@@ -81,5 +81,37 @@ describe('details second review', () => {
   it('a bundle may say it has no wiring', () => {
     const b: BundleInfo = { id: 1, symbolicName: 's', version: '1', state: 'ACTIVE', location: 'l', lastModified: 0, headers: {}, wiring: false };
     expect(b.wiring).toBe(false);
+  });
+
+  it('fetchSource caches by key, handles errors, and clears with clearDetails', async () => {
+    clearDetails();
+    let calls = 0;
+    const ok = (async () => {
+      calls++;
+      return new Response(JSON.stringify({ format: 1, key: 'k', class: 'C', method: 'm', decompiler: 'CFR 0.152', source: 'void m() {}' }));
+    }) as typeof fetch;
+    const s1 = await fetchSource('/jira', 'k', ok);
+    const s2 = await fetchSource('/jira', 'k', ok);
+    expect(s1.source).toBe('void m() {}');
+    expect(s2).toEqual(s1);
+    expect(calls).toBe(1);
+    clearDetails();
+    await fetchSource('/jira', 'k', ok);
+    expect(calls).toBe(2);
+
+    const disabled = answer('{"error":"decompile-disabled"}', { status: 403 });
+    await expect(fetchSource('/jira', 'dis', disabled)).rejects.toMatchObject({ status: 403, reason: 'decompile-disabled' });
+    await expect(fetchSource('/jira', 'bad', answer('{}'))).rejects.toMatchObject({ reason: 'not-source' });
+
+    let lastUrl = '';
+    const spy = (async (url: string) => {
+      lastUrl = String(url);
+      return new Response(JSON.stringify({ format: 1, class: 'com.example.Foo', scope: 'class', decompilerId: 'vineflower', decompiler: 'Vineflower 1.11.1', bundleId: 7, source: 'class Foo {}', refs: [] }));
+    }) as typeof fetch;
+    const vf = await fetchSource('/jira', { op: 'k', classCandidates: ['com.example.Foo'], fromBundle: 4, scope: 'class', decompiler: 'vineflower' }, spy);
+    expect(vf.decompilerId).toBe('vineflower');
+    expect(lastUrl).toContain('class=com.example.Foo');
+    expect(lastUrl).toContain('fromBundle=4');
+    expect(lastUrl).toContain('decompiler=vineflower');
   });
 });

@@ -149,6 +149,8 @@ function cleanValues(values: RequestValues): { values: RequestValues; redacted: 
     matrix: keep(values.matrix, isCredentialParam),
     path: keep(values.path, isCredentialParam),
   };
+  if (values.form) out.form = keep(values.form, isCredentialParam);
+  delete out.files; // never store uploaded files in history
   if (values.body) {
     const clean = cleanBody(values.body, values.contentType);
     if (clean.redacted) {

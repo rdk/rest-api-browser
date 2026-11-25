@@ -32,15 +32,22 @@ const sameRows = (a: FormState['custom'], b: FormState['custom']) => (noRows(a) 
 // A name's own value: names come from links too, and "constructor" must not read Object.prototype's.
 const own = (map: Record<string, unknown>, name: string) => (Object.prototype.hasOwnProperty.call(map, name) ? map[name] : undefined);
 
+const fileKey = (list: File[] | undefined) => (list ?? []).map((f) => `${f.name}:${f.size}:${f.lastModified}`);
+
 // `blanks`: '' is no value and [] or [''] no query value; `rows`: rows of empty headers are none.
 function diff(a: FormState, b: FormState, blanks: boolean, rows: boolean): string | null {
   const eq = blanks ? looks : same;
   const keys: string[] = [];
-  for (const part of ['path', 'query', 'header', 'matrix'] as const) {
-    const x = a.values[part] as Record<string, unknown>, y = b.values[part] as Record<string, unknown>;
+  for (const part of ['path', 'query', 'header', 'matrix', 'form'] as const) {
+    const x = (a.values[part] ?? {}) as Record<string, unknown>, y = (b.values[part] ?? {}) as Record<string, unknown>;
     for (const name of new Set([...Object.keys(x), ...Object.keys(y)])) {
       if (!eq(own(x, name), own(y, name))) keys.push(part + '.' + name);
     }
+  }
+  const fx = a.values.files ?? {}, fy = b.values.files ?? {};
+  for (const name of new Set([...Object.keys(fx), ...Object.keys(fy)])) {
+    const lx = fileKey(own(fx, name) as File[] | undefined), ly = fileKey(own(fy, name) as File[] | undefined);
+    if (!same(lx, ly)) keys.push('files.' + name);
   }
   for (const k of ['body', 'contentType', 'accept'] as const) if (!eq(a.values[k], b.values[k])) keys.push(k);
   if (!(rows ? sameRows : same)(a.custom, b.custom)) keys.push('custom');

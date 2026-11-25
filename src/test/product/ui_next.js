@@ -190,8 +190,12 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         const carded = await b.waitFor(`/App/.test((document.querySelector('[data-testid=row-card]') || {}).textContent || '')
             && /Access/.test(document.querySelector('[data-testid=row-card]').textContent)`, 3000);
         const cardText = await b.evaluate(`(document.querySelector('[data-testid=row-card]') || {}).textContent || 'no card'`);
+        const cardSummary = await b.evaluate(`(document.querySelector('[data-testid=card-summary]') || {}).textContent || ''`);
         c.check('resting on a row opens its card with the app and the access, the path named once', carded
             && cardText.split(P.title).length === 2, cardText);
+        if (PRODUCT === 'jira') {
+            c.check('the hover card of serverInfo shows its OpenAPI summary', /server/i.test(cardSummary), cardSummary);
+        }
         await b.shot(path.join(SHOTS, `${PRODUCT}-next-3-card.png`));
         await pressAltP();
         await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x + 1200, y: rect.y + 300 });
@@ -205,6 +209,12 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
 
         // the operation: form, live URL, send, response
         c.check(`opening ${P.title} shows its form`, await openOp(P.search, P.title));
+        if (PRODUCT === 'jira') {
+            const opSummary = await text('[data-testid=operation-summary]');
+            const opDesc = await text('[data-testid=operation-description]');
+            c.check('serverInfo shows its OpenAPI summary and description in the operation view',
+                /server/i.test(opSummary) && opDesc.length > 10, { opSummary, opDesc });
+        }
         const url = await text('[data-testid=live-url]');
         c.check('the live URL ends with the operation path', url.endsWith('/rest/' + P.title), url);
         const idle = await b.evaluate(`(() => { const e = document.querySelector('[data-testid=response-idle]');
@@ -314,6 +324,48 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
             && java.plugin.includes(java.key.split(':')[0]) && unknown === 404,
             { ...java, signature: java.signature.slice(0, 200), bundle: java.bundle.slice(0, 120), plugin: java.plugin.slice(0, 120), unknown });
         await click('[data-testid=java-nav-method]');
+        await b.waitFor(`!!document.querySelector('[data-testid=load-source]')`, 3000);
+        await click('[data-testid=load-source]');
+        const decompiled = await b.waitFor(`!!document.querySelector('[data-testid=java-source-code]')`, 15000);
+        const srcText = await javaText('[data-testid=java-source-code]');
+        const methodName = (await javaText('[data-testid=java-signature] .rab-n-jc-method')).trim();
+        c.check(`decompiling ${P.title} in the Java tab shows the method's source (${methodName})`,
+            decompiled && !!methodName && srcText.includes(methodName) && srcText.includes('{'),
+            { methodName, src: srcText.slice(0, 200) });
+        // switch to Vineflower in place, switch to full class, click a class ref to open the tabbed dialog, and drill into a second tab
+        await click('[data-testid=decompiler-vineflower]');
+        const vfLoaded = await b.waitFor(`/Vineflower/.test((document.querySelector('[data-testid=java-source-engine]') || {}).textContent || '')`, 15000);
+        await click('[data-testid=scope-class]');
+        const classLoaded = await b.waitFor(`/\\bclass\\b/.test((document.querySelector('[data-testid=java-source-code]') || {}).textContent || '')`, 15000);
+        c.check('switching to Vineflower and Class scope works in place', vfLoaded && classLoaded,
+            { engine: await javaText('[data-testid=java-source-engine]'), sample: (await javaText('[data-testid=java-source-code]')).slice(0, 120) });
+        const ref1 = await b.evaluate(`(() => {
+            const links = [...document.querySelectorAll('[data-testid=java-source-code] [data-class-ref]')];
+            const pick = links.find(e => /Bean|Response|User|Properties/.test(e.dataset.classRef) && !/^java\\.lang\\./.test(e.dataset.classRef)) || links[0];
+            if (!pick) return null;
+            pick.click();
+            return pick.dataset.classRef;
+        })()`);
+        const dlgOpen = !!ref1 && await b.waitFor(`!!document.querySelector('[data-testid=source-dialog] [data-testid=dialog-source-code]')`, 15000);
+        const dlgClass1 = await javaText('[data-testid=dialog-class-name]');
+        // switch decompiler in place inside the dialog
+        await click('[data-testid=source-dialog] [data-testid=decompiler-cfr]');
+        const dlgCfr = await b.waitFor(`/CFR/.test((document.querySelector('[data-testid=dialog-decompiler]') || {}).textContent || '')`, 15000);
+        // click another class reference inside the dialog to open a second tab
+        const ref2 = await b.evaluate(`(() => {
+            const cur = (document.querySelector('[data-testid=dialog-class-name]') || {}).textContent || '';
+            const links = [...document.querySelectorAll('[data-testid=dialog-source-code] [data-class-ref]')];
+            const pick = links.find(e => e.dataset.classRef && e.dataset.classRef !== cur) || null;
+            if (!pick) return null;
+            pick.click();
+            return pick.dataset.classRef;
+        })()`);
+        const twoTabs = !!ref2 && await b.waitFor(`document.querySelectorAll('[data-testid=source-dialog-tab]').length >= 2 && !!document.querySelector('[data-testid=dialog-source-code]')`, 15000);
+        await press('Escape');
+        const dlgClosed = await b.waitFor(`!document.querySelector('[data-testid=source-dialog]')`, 3000);
+        c.check(`clicking class refs opens the tabbed decompiler dialog, switches decompilers in place, and drills into a second tab (${ref1} -> ${ref2})`,
+            dlgOpen && !!dlgClass1 && dlgCfr && twoTabs && dlgClosed,
+            { ref1, dlgClass1, dlgCfr, ref2, twoTabs, dlgClosed });
         await b.shot(path.join(SHOTS, `${PRODUCT}-next-7-java.png`));
 
         // the request and the response each take the whole screen with their button, and give it back
@@ -697,6 +749,33 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         await b.navigate(PAGE + '?op=' + encodeURIComponent(key) + '&q.toString=1&path.constructor=2&h.__proto__=3&valueOf=4');
         const odd = await b.waitFor(`!!document.querySelector('[data-testid=search]') && !!document.querySelector('[data-testid=operation]')`, 60000);
         c.check('a link with parameters named toString, constructor, __proto__ still opens the page and the operation', odd);
+
+        // form parameters: an operation with a form parameter renders an enabled input and builds the body from it
+        const formOp = await b.evaluate(`(async () => {
+            const cat = await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/catalog', { credentials: 'same-origin' })).json();
+            const idx = await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/catalog/index/' + cat.hash, { credentials: 'same-origin' })).json();
+            const o = idx.operations.find(x => ['POST','PUT','PATCH','DELETE'].includes(x.method) && x.params.some(p => p.in === 'form' && p.type !== 'File' && p.type !== 'boolean'));
+            if (!o) return null;
+            const fp = o.params.find(p => p.in === 'form' && p.type !== 'File' && p.type !== 'boolean');
+            return { key: o.key, param: fp.name };
+        })()`);
+        if (formOp) {
+            await b.navigate(PAGE + '?op=' + encodeURIComponent(formOp.key));
+            const hasInput = await b.waitFor(`!!document.querySelector('input[name=${q(formOp.param)}]:not(:disabled), select[name=${q(formOp.param)}]:not(:disabled)')`, 30000);
+            if (hasInput) {
+                await type(`input[name=${q(formOp.param)}]`, 'test-value');
+                await sleep(150);
+                await b.evaluate(`([...document.querySelectorAll('.rab-n-request [role=tab]')].find(t => t.textContent.trim() === 'Body') || {}).click?.(), true`);
+                const bodyNote = await b.waitFor(`!!document.querySelector('[data-testid=form-body-note]')`, 3000);
+                const disabled = await b.evaluate(`!!document.querySelector('[data-testid=body]')?.disabled`);
+                c.check(`form parameters render enabled inputs and drive the Body tab (${formOp.param})`, hasInput && bodyNote && disabled,
+                    { formOp, hasInput, bodyNote, disabled });
+            } else {
+                c.check(`form parameters render enabled inputs (${formOp.param})`, false, formOp);
+            }
+        } else {
+            console.log('SKIP no text form-parameter operation found in this catalog');
+        }
 
         // errors
         const own = b.exceptions.filter(e => /next\.js|rest-api-browser|restbrowser/i.test(e));

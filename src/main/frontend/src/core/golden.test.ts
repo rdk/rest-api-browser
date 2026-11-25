@@ -24,6 +24,7 @@ function checkParam(p: Param) {
   expect(optional(p.default, isString)).toBe(true);
   expect(optional(p.options, isStringArray)).toBe(true);
   expect(optional(p.repeating, (x) => typeof x === 'boolean')).toBe(true);
+  expect(optional(p.description, isString)).toBe(true);
 }
 
 function checkOperation(op: Operation) {
@@ -39,6 +40,8 @@ function checkOperation(op: Operation) {
   expect(optional(op.access, isString)).toBe(true);
   expect(optional(op.deprecated, (x) => typeof x === 'boolean')).toBe(true);
   expect(optional(op.bodyType, isString)).toBe(true);
+  expect(optional(op.summary, isString)).toBe(true);
+  expect(optional(op.description, isString)).toBe(true);
 }
 
 function checkModule(m: Module) {
@@ -97,6 +100,9 @@ describe('golden catalog files from the backend', () => {
     expect(index.operations.some((o) => o.deprecated === true)).toBe(true);
     expect(index.operations.some((o) => o.bodyType !== undefined)).toBe(true);
     expect(index.operations.some((o) => o.access !== undefined)).toBe(true);
+    expect(index.operations.some((o) => o.summary !== undefined)).toBe(true);
+    expect(index.operations.some((o) => o.description !== undefined)).toBe(true);
+    expect(params.some((p) => p.description !== undefined)).toBe(true);
   });
 
   it('buildRows and search work on them', () => {

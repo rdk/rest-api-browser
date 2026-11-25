@@ -75,10 +75,15 @@ which stays as it is.
 
 It works differently: the server builds a catalog of the product's REST API from Jersey's runtime model (served at
 `/rest/restbrowser/1/catalog`), so the browser fetches and parses no WADL. That is why it works on Confluence 10, where
-the classic page's public list is empty. It adds search, a history of sent requests, **Copy as curl** and deep links
+the classic page's public list is empty. It reads OpenAPI / Swagger annotations (`@Operation`, `@Parameter`) into
+summaries, descriptions and parameter hints, supports URL-encoded form parameters (`@FormParam`) and multipart file
+uploads (`@MultipartFormParam`), and adds search, a history of sent requests, **Copy as curl** and deep links
 that prefill a request without sending it. System administrators also get a **Java** tab per operation: the method
-that handles it and its class (annotations included), the OSGi bundle and its package wiring, the plugin and the REST
-module (`/rest/restbrowser/1/catalog/details`). Plan and status: [docs/NEW-UI-PLAN.md](docs/NEW-UI-PLAN.md).
+that handles it and its class (annotations included), on-demand decompiled method and class source with clickable
+class navigation in a tabbed dialog and in-place switching between CFR 0.152 and Vineflower 1.11.1 (via
+`/rest/restbrowser/1/catalog/details/source`; disable with `-Drest.api.browser.decompile=false`), the OSGi bundle and
+its package wiring, the plugin and the REST module (`/rest/restbrowser/1/catalog/details`). Plan and status:
+[docs/NEW-UI-PLAN.md](docs/NEW-UI-PLAN.md).
 
 **Modules that have not started.** Confluence starts a REST module only on the first request to it, on each node of a
 cluster, so right after a node starts most of its modules cannot be read yet, Confluence's own `/rest/api` included.
