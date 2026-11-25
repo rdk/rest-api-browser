@@ -18,13 +18,15 @@ administrators and app developers who need to know what an instance really offer
 
 ## Screenshots
 
-![The new UI on Jira 11: the product's REST operations grouped by module on the left, an operation's form and its JSON response on the right](docs/images/new-ui.png)
+<p align="center">
+  <img src="docs/images/new-ui.png" width="760" alt="The new UI on Jira 11: the product's REST operations grouped by module on the left, an operation's form and its JSON response on the right" /><br />
+  <sub>The new UI (a preview, since 4.2.0) on Jira 11.3: every REST operation of the product and its apps, grouped by module, with the form and the response beside it.</sub>
+</p>
 
-<sub>The new UI (a preview, since 4.2.0) on Jira 11.3: every REST operation of the product and its apps, grouped by module, with the form and the response beside it.</sub>
-
-<p><img src="docs/images/decompiler.png" width="720" alt="Tabbed Java decompiler window in REST API Browser 4.3.0: Vineflower 1.11.1, method outline with REST verb badges, clickable class references and inline REST endpoint links" /></p>
-
-<sub>Embedded Java decompiler (since 4.3.0, sysadmin only): floating tabbed window with Vineflower 1.11.1 (default) and CFR 0.152 switching, method outline with REST verb badges, clickable class references, inline endpoint links and ZIP export.</sub>
+<p align="center">
+  <img src="docs/images/decompiler.png" width="760" alt="Tabbed Java decompiler window in REST API Browser 4.3.0: Vineflower 1.11.1, method outline with REST verb badges, clickable class references and inline REST endpoint links" /><br />
+  <sub>Embedded Java decompiler (since 4.3.0, sysadmin only): floating tabbed window with Vineflower 1.11.1 (default) and CFR 0.152 switching, method outline with REST verb badges, clickable class references, inline endpoint links and ZIP export.</sub>
+</p>
 
 ## Compatibility
 
