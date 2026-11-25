@@ -42,7 +42,8 @@ RAB.rest.services = [
                         <a ng-href="#/search/{{searchQuery | encodeQuery}}" ng-show="searchQuery">Link to filtered results</a>
                         <a class="rab-new-ui-link" id="rab-new-ui-link"
                            href="$textUtils.htmlEncode($applicationProperties.baseUrl)/plugins/servlet/rest-api-browser"
-                           title="The new REST API Browser: faster, searchable, works on Confluence 10">Try the new UI<svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8h9.5M9 4.5L12.5 8 9 11.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+                           target="_blank" rel="noopener noreferrer"
+                           title="Open the new REST API Browser in a new tab: faster, searchable, works on Confluence 10">Try the new UI<svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8h9.5M9 4.5L12.5 8 9 11.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
                     </div>
                 </div>
             </div>

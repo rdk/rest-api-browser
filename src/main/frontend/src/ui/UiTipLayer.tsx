@@ -54,9 +54,10 @@ export function UiTipLayer({ rootRef }: { rootRef: { current: HTMLElement | null
     const findTarget = (node: EventTarget | null): HTMLElement | null => {
       if (!(node instanceof Element)) return null;
       // Yield to dedicated rich tooltips (ClassHoverCard, About, RichTip, sidebar RowCard)
-      if (node.closest('[data-class-ref], .rab-n-tip-wrap, .rab-n-brand-wrap, [data-i]')) return null;
+      if (node.closest('[data-class-ref], .rab-n-class-tip, .rab-n-tip-wrap, .rab-n-brand-wrap, [data-i]')) return null;
       const el = node.closest('[data-tip]') as HTMLElement | null;
       if (!el || !root.contains(el) || el.closest('[inert]')) return null;
+      if (el.hasAttribute('data-class-ref') || el.closest('[data-class-ref]')) return null;
       return el;
     };
 
@@ -69,6 +70,8 @@ export function UiTipLayer({ rootRef }: { rootRef: { current: HTMLElement | null
       lastEl = el;
       const commit = () => {
         if (pinnedRef.current || !el.isConnected) return;
+        // Never compete with an active ClassHoverCard
+        if (root.querySelector('[data-testid=class-hover-card]')) return;
         const fresh = readTipAttrs(el);
         if (!fresh) return;
         setActive({ el, spec: fresh, rect: el.getBoundingClientRect() });
@@ -95,11 +98,15 @@ export function UiTipLayer({ rootRef }: { rootRef: { current: HTMLElement | null
     };
 
     const onOver = (e: MouseEvent) => {
-      const el = findTarget(e.target);
+      const target = e.target instanceof Element ? e.target : null;
+      // Immediately clear/hide when pointer enters a class name or another dedicated rich tooltip
+      if (target?.closest('[data-class-ref], .rab-n-class-tip, .rab-n-tip-wrap, .rab-n-brand-wrap, [data-i]')) {
+        hideNow();
+        return;
+      }
+      const el = findTarget(target);
       if (!el) {
-        if (activeRef.current && !(e.target instanceof Element && e.target.closest('.rab-n-uitip'))) {
-          hideSoon();
-        }
+        if (!target?.closest('.rab-n-uitip')) hideSoon();
         return;
       }
       if (el === lastEl && activeRef.current?.el === el) {
@@ -121,7 +128,11 @@ export function UiTipLayer({ rootRef }: { rootRef: { current: HTMLElement | null
 
     const onFocusIn = (e: FocusEvent) => {
       const el = findTarget(e.target);
-      if (el && el.matches(':focus-visible')) show(el, 220);
+      if (!el) {
+        hideNow();
+        return;
+      }
+      if (el.matches(':focus-visible')) show(el, 220);
     };
 
     const onFocusOut = () => {

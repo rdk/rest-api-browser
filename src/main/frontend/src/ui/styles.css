@@ -2198,7 +2198,7 @@
 /* Shared rich hover card for any Java class / type reference (lives above the decompiler window) */
 .rab-n-class-tip {
   position: fixed;
-  z-index: 95;
+  z-index: 98;
   width: min(440px, calc(100vw - 24px));
   max-height: min(76vh, 560px);
   display: flex;
@@ -2778,7 +2778,7 @@ body.rab-next-page #footer {
 /* Delegated rich tooltip for buttons, links, tabs, and badges carrying [data-tip] */
 .rab-n-uitip {
   position: fixed;
-  z-index: 98;
+  z-index: 97;
   max-width: min(310px, calc(100vw - 16px));
   padding: 8px 11px 8px;
   border-radius: var(--rab-radius-md);

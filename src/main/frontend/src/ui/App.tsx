@@ -486,10 +486,12 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
           <a
             class="rab-n-top-link"
             href={classicUrl}
+            target="_blank"
+            rel="noopener noreferrer"
             data-testid="classic-link"
             {...tipProps({
               title: 'Classic UI',
-              body: 'Switch to the original AngularJS / WADL-based REST API Browser page.',
+              body: 'Open the original AngularJS / WADL-based REST API Browser in a new tab.',
             })}
           >
             <svg class="rab-n-svg" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">

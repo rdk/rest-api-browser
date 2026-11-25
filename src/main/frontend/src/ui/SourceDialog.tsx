@@ -721,8 +721,11 @@ export function SourceDialog({
                     role="tab"
                     aria-selected={!!selected}
                     class="rab-n-modal-tab-btn"
+                    data-class-ref={t.id}
+                    data-class-candidates={t.candidates.join(',')}
+                    data-class-bundle={t.fromBundle !== undefined && t.fromBundle >= 0 ? String(t.fromBundle) : undefined}
+                    data-class-op={t.opKey}
                     onClick={() => onSelectTab(t.id)}
-                    {...tipProps({ title: t.label, body: t.id, note: 'Click to view · Middle-click to close' })}
                   >
                     {t.label}
                   </button>

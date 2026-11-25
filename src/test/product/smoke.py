@@ -459,8 +459,9 @@ def main():
           s == 200 and 'text/html' in h.get('content-type', ''), (s, h.get('content-type'), h.get('location')))
     check('the page has the search field and the "public only" checkbox',
           'id="searchField"' in page and 'id="publicOnlyFilter"' in page, page[:300])
-    check('the page links to the new UI (button "Try the new UI")',
-          'id="rab-new-ui-link"' in page and '/plugins/servlet/rest-api-browser' in page, page[:300])
+    check('the page links to the new UI in a new tab (button "Try the new UI")',
+          'id="rab-new-ui-link"' in page and '/plugins/servlet/rest-api-browser' in page
+          and bool(re.search(r'id="rab-new-ui-link"[^>]*target="_blank"', page)), page[:300])
     s_llms, llms_body, h_llms = j.call('GET', '/plugins/servlet/rest-api-browser/llms.txt?os_authType=basic',
                                        headers={'Accept': 'text/plain'})
     check('GET /plugins/servlet/rest-api-browser/llms.txt answers 200 llmstxt.org guide',

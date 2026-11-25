@@ -179,8 +179,16 @@ export function ClassHoverCard({ baseUrl, enabled, rootRef, onOpenClass }: {
     };
 
     const onOver = (e: MouseEvent) => {
-      const el = (e.target as HTMLElement | null)?.closest?.('[data-class-ref]') as HTMLElement | null;
-      if (!el || el.closest('[inert]')) return;
+      const t = e.target as HTMLElement | null;
+      const el = t?.closest?.('[data-class-ref]') as HTMLElement | null;
+      if (!el || el.closest('[inert]')) {
+        clearTimeout(timer);
+        if (!pinnedRef.current && targetRef.current && !t?.closest?.('.rab-n-class-tip')) {
+          clearTimeout(hideTimer);
+          setTarget(null);
+        }
+        return;
+      }
       if (targetRef.current?.el === el) {
         clearTimeout(hideTimer);
         return;

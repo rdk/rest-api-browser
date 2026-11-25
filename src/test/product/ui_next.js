@@ -97,7 +97,7 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
             !!header.brand && header.brand.tag === 'BUTTON' && !header.brand.href
             && !!header.aboutLink && /^https:\/\/github\.com\/[^/]+\/[^/]+$/.test(header.aboutLink.href) && header.aboutLink.target === '_blank'
             && !!header.version && /^v\d/.test(header.version.text) && /\/releases$/.test(header.version.href) && header.version.target === '_blank'
-            && !!header.classic && /\/plugins\/servlet\/restbrowser$/.test(header.classic.href), header);
+            && !!header.classic && /\/plugins\/servlet\/restbrowser$/.test(header.classic.href) && header.classic.target === '_blank', header);
         const brand = await b.evaluate(`(() => { const r = document.querySelector('[data-testid=brand]').getBoundingClientRect();
             return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
         await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: brand.x, y: brand.y });
@@ -360,7 +360,8 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
             await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: tipAnchor.x, y: tipAnchor.y });
             richTipOk = await b.waitFor(`(() => {
                 const card = document.querySelector('[data-testid=class-hover-card]');
-                return !!card && /Bytecode|ClassLoader|OSGi bundle|Origin/.test(card.textContent);
+                const competing = document.querySelector('[data-testid=ui-tip]');
+                return !!card && !competing && /Bytecode|ClassLoader|OSGi bundle|Origin/.test(card.textContent);
             })()`, 8000);
             await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 });
             await sleep(200);
