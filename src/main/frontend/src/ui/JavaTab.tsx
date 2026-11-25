@@ -1,15 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import {
-  DetailsError, fetchDetails, fetchSource, forgetDetails, forgetSource, isError, shortJava,
+  DetailsError, fetchDetails, fetchSource, forgetDetails, forgetSource, isError, peekDetails, shortJava,
   type BundleInfo, type DecompilerId, type JavaClass, type JavaMethod, type OperationDetails,
-  type OperationSource, type PluginInfo, type RestModuleInfo, type Section, type SourceScope,
+  type OperationSource, type PluginInfo, type RestModuleInfo, type Section,
 } from '../core/details';
 import { annotationTokens, toLines, tokenize, type Token } from '../core/javatokens';
-import { findMethodHeaderLine } from '../core/javarefs';
 import type { OpenTabRequest } from '../core/sourcetabs';
 import { CopyButton, plural, safeHref } from './bits';
-import { DecompilerToggle, describeSourceError, SourceCode } from './SourceDialog';
+import { DecompilerLink, DecompilerToggle, describeSourceError, SourceCode } from './SourceDialog';
 import { JavaTypeButton, JavaTypeExpr } from './ClassTip';
 import { originLabel } from './facts';
 import type { Module } from '../core/types';
@@ -31,8 +30,9 @@ export function JavaTab({ baseUrl, opKey, revision, decompiler, onDecompiler, on
   onDecompiler: (d: DecompilerId) => void;
   onOpenClass?: (req: OpenTabRequest) => void;
 }) {
-  const [details, setDetails] = useState<OperationDetails | null>(null);
+  const [details, setDetails] = useState<OperationDetails | null>(() => peekDetails(opKey));
   const [error, setError] = useState<string | null>(null);
+  const [showSpinner, setShowSpinner] = useState(false);
   const [full, setFull] = useState(false);
   const [reload, setReload] = useState(0);
   const [page, setPageState] = useState<Page>(lastPage);
@@ -47,15 +47,37 @@ export function JavaTab({ baseUrl, opKey, revision, decompiler, onDecompiler, on
     if (pageRef.current) pageRef.current.scrollTop = 0;
   }, [page, opKey]);
   useEffect(() => {
+    const cached = peekDetails(opKey);
+    if (cached) {
+      setDetails(cached);
+      setError(null);
+      setShowSpinner(false);
+      return;
+    }
     let live = true;
     setDetails(null);
     setError(null);
+    setShowSpinner(false);
+    const timer = setTimeout(() => { if (live) setShowSpinner(true); }, 150);
     fetchDetails(baseUrl, opKey).then(
-      (d) => live && setDetails(d),
-      (e) => live && setError(describe(e)),
+      (d) => {
+        clearTimeout(timer);
+        if (live) {
+          setDetails(d);
+          setShowSpinner(false);
+        }
+      },
+      (e) => {
+        clearTimeout(timer);
+        if (live) {
+          setError(describe(e));
+          setShowSpinner(false);
+        }
+      },
     );
     return () => {
       live = false;
+      clearTimeout(timer);
     };
   }, [baseUrl, opKey, reload, revision]);
 
@@ -79,9 +101,31 @@ export function JavaTab({ baseUrl, opKey, revision, decompiler, onDecompiler, on
     );
   }
   if (!details) {
+    // Keep the stable two-column shell and delay the spinner by 150 ms so switching to Java never flashes
+    const placeholderPages: { id: Page; label: string }[] = [
+      { id: 'method', label: 'Method' },
+      { id: 'class', label: 'Class' },
+      { id: 'types', label: 'Types' },
+      { id: 'bundle', label: 'Bundle' },
+      { id: 'plugin', label: 'Plugin' },
+      { id: 'rest', label: 'REST module' },
+    ];
     return (
-      <div class="rab-n-pad rab-n-subtle" data-testid="java-loading" role="status">
-        <span class="rab-n-spinner" aria-hidden="true" /> Reading the Java behind this operation…
+      <div class="rab-n-java" data-testid="java">
+        <nav class="rab-n-java-nav" aria-label="The Java behind the operation">
+          {placeholderPages.map((p) => (
+            <button key={p.id} type="button" class={'rab-n-java-nav-item' + (p.id === page ? ' on' : '')} disabled>
+              <span>{p.label}</span>
+            </button>
+          ))}
+        </nav>
+        <div class="rab-n-java-page">
+          {showSpinner && (
+            <div class="rab-n-pad rab-n-subtle" data-testid="java-loading" role="status">
+              <span class="rab-n-spinner" aria-hidden="true" /> Reading the Java behind this operation…
+            </div>
+          )}
+        </div>
       </div>
     );
   }
@@ -146,6 +190,18 @@ export function JavaTab({ baseUrl, opKey, revision, decompiler, onDecompiler, on
           <Block title="Method" testId="java-method" section={details.method} tools={tools}>
             {(m) => (
               <>
+                <SourceBlock
+                  key={opKey + ':method:' + reload}
+                  baseUrl={baseUrl}
+                  opKey={opKey}
+                  className={m.class}
+                  bundleId={bundle?.id}
+                  focusMethod={m.name}
+                  focusParamCount={m.parameters.length}
+                  decompiler={decompiler}
+                  onDecompiler={onDecompiler}
+                  onOpenClass={openClass}
+                />
                 <MethodCode m={m} full={full} n={n} bundleId={bundle?.id} opKey={opKey} onOpenClass={onOpenClass} />
                 <dl class="rab-n-java-facts">
                   <Fact name="Declared in">
@@ -186,17 +242,6 @@ export function JavaTab({ baseUrl, opKey, revision, decompiler, onDecompiler, on
                   )}
                   {m.deprecated && <Fact name="Status"><span class="rab-n-java-deprecated">Deprecated</span></Fact>}
                 </dl>
-                <SourceBlock
-                  key={opKey + ':method:' + reload}
-                  baseUrl={baseUrl}
-                  opKey={opKey}
-                  initialScope="method"
-                  focusMethod={m.name}
-                  focusParamCount={m.parameters.length}
-                  decompiler={decompiler}
-                  onDecompiler={onDecompiler}
-                  onOpenClass={openClass}
-                />
               </>
             )}
           </Block>
@@ -206,24 +251,50 @@ export function JavaTab({ baseUrl, opKey, revision, decompiler, onDecompiler, on
             <Block title="Class" testId="java-class" section={details.resourceClass} tools={tools}>
               {(c) => (
                 <>
+                  <div class="rab-n-source-actions rab-n-source-top">
+                    <button
+                      type="button"
+                      class="rab-n-button"
+                      data-testid="load-class-source"
+                      onClick={() => openClass({
+                        target: c.name,
+                        candidates: [c.name],
+                        fromBundle: bundle?.id,
+                        opKey,
+                        focusMethod: method?.name,
+                        focusParamCount: method?.parameters.length,
+                      })}
+                    >
+                      Decompile class
+                    </button>
+                  </div>
                   <ClassFacts c={c} full={full} n={n} bundleId={bundle?.id} opKey={opKey} onOpenClass={onOpenClass} />
-                  <SourceBlock
-                    key={opKey + ':class:' + reload}
-                    baseUrl={baseUrl}
-                    opKey={opKey}
-                    initialScope="class"
-                    focusMethod={method?.name}
-                    focusParamCount={method?.parameters.length}
-                    decompiler={decompiler}
-                    onDecompiler={onDecompiler}
-                    onOpenClass={openClass}
-                  />
                 </>
               )}
             </Block>
             {details.declaringClass && (
               <Block title="Declaring class" section={details.declaringClass}>
-                {(c) => <ClassFacts c={c} full={full} n={n} bundleId={bundle?.id} opKey={opKey} onOpenClass={onOpenClass} />}
+                {(c) => (
+                  <>
+                    <div class="rab-n-source-actions rab-n-source-top">
+                      <button
+                        type="button"
+                        class="rab-n-button"
+                        onClick={() => openClass({
+                          target: c.name,
+                          candidates: [c.name],
+                          fromBundle: bundle?.id,
+                          opKey,
+                          focusMethod: method?.name,
+                          focusParamCount: method?.parameters.length,
+                        })}
+                      >
+                        Decompile class
+                      </button>
+                    </div>
+                    <ClassFacts c={c} full={full} n={n} bundleId={bundle?.id} opKey={opKey} onOpenClass={onOpenClass} />
+                  </>
+                )}
               </Block>
             )}
           </>
@@ -296,11 +367,15 @@ function describe(e: unknown): string {
   return 'The request failed: ' + (e instanceof Error ? e.message : String(e));
 }
 
-/** Decompiled source of the handler method or full class, virtualized, with method-header focus and in-place switchers. */
-function SourceBlock({ baseUrl, opKey, initialScope, focusMethod, focusParamCount, decompiler, onDecompiler, onOpenClass }: {
+/**
+ * Top action bar and optional inline method decompiler on the Method page.
+ * "Decompile class" always opens the full class in the tabbed SourceDialog focused on this handler method.
+ */
+function SourceBlock({ baseUrl, opKey, className, bundleId, focusMethod, focusParamCount, decompiler, onDecompiler, onOpenClass }: {
   baseUrl: string;
   opKey: string;
-  initialScope: SourceScope;
+  className: string;
+  bundleId?: number;
   focusMethod?: string;
   focusParamCount?: number;
   decompiler: DecompilerId;
@@ -308,14 +383,12 @@ function SourceBlock({ baseUrl, opKey, initialScope, focusMethod, focusParamCoun
   onOpenClass: (req: OpenTabRequest) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [scope, setScope] = useState<SourceScope>(initialScope);
   const [src, setSrc] = useState<OperationSource | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const [focusKey, setFocusKey] = useState(0);
 
-  const query = useMemo(() => ({ op: opKey, scope, decompiler }), [opKey, scope, decompiler]);
+  const query = useMemo(() => ({ op: opKey, scope: 'method' as const, decompiler }), [opKey, decompiler]);
 
   useEffect(() => {
     if (!open) return;
@@ -327,7 +400,6 @@ function SourceBlock({ baseUrl, opKey, initialScope, focusMethod, focusParamCoun
         if (!live) return;
         setSrc(s);
         setLoading(false);
-        setFocusKey((k) => k + 1);
       },
       (e) => {
         if (!live) return;
@@ -340,93 +412,62 @@ function SourceBlock({ baseUrl, opKey, initialScope, focusMethod, focusParamCoun
     };
   }, [open, baseUrl, query, attempt]);
 
-  // When decompiling the whole class from under Method, focus on the first line of the method declaration header
-  const focusLine = useMemo(() => {
-    if (!src || scope !== 'class' || !focusMethod) return -1;
-    const found = findMethodHeaderLine(src.source.split('\n'), focusMethod, focusParamCount);
-    if (found >= 0) return found;
-    return src.methodLine && src.methodLine > 0 ? src.methodLine - 1 : -1;
-  }, [src, scope, focusMethod, focusParamCount]);
-
   const retry = () => {
     forgetSource(query);
     setSrc(null);
     setAttempt((a) => a + 1);
   };
 
-  const openWith = (nextScope: SourceScope) => {
-    setScope(nextScope);
-    setOpen(true);
-    setFocusKey((k) => k + 1);
-  };
+  const openClassDialog = () => onOpenClass({
+    target: src?.class ?? className,
+    candidates: [src?.class ?? className],
+    fromBundle: src?.bundleId ?? bundleId,
+    opKey,
+    focusMethod,
+    focusParamCount,
+  });
+
+  if (!open) {
+    return (
+      <div class="rab-n-source-actions rab-n-source-top" data-testid="java-source">
+        <button type="button" class="rab-n-button" data-testid="load-class-source" onClick={openClassDialog}>
+          Decompile class
+        </button>
+        <button type="button" class="rab-n-button" data-testid="load-source" onClick={() => setOpen(true)}>
+          Decompile method
+        </button>
+      </div>
+    );
+  }
 
   return (
-    <div class="rab-n-java-source" data-testid="java-source">
+    <div class="rab-n-java-source rab-n-source-top" data-testid="java-source">
       <div class="rab-n-java-head">
-        <h4 class="rab-n-java-title">Source</h4>
-        {open && src && (
-          <span class="rab-n-subtle" data-testid="java-source-engine">
-            {src.decompiler}
-            {src.totalLines ? ` · ${src.totalLines.toLocaleString()} lines` : ''}
-            {focusLine >= 0 ? ` · method at line ${focusLine + 1}` : ''}
+        <h4 class="rab-n-java-title">Method source</h4>
+        {src?.totalLines && (
+          <span class="rab-n-subtle">
+            {src.totalLines.toLocaleString()} lines
           </span>
         )}
         <span class="rab-n-java-tools">
-          {open && (
-            <>
-              {initialScope === 'method' && (
-                <span class="rab-n-seg" role="group" aria-label="Decompile scope" data-testid="scope-toggle">
-                  <button type="button" class={'rab-n-seg-btn' + (scope === 'method' ? ' on' : '')}
-                          aria-pressed={scope === 'method'} data-testid="scope-method" onClick={() => setScope('method')}>
-                    Method
-                  </button>
-                  <button type="button" class={'rab-n-seg-btn' + (scope === 'class' ? ' on' : '')}
-                          aria-pressed={scope === 'class'} data-testid="scope-class" onClick={() => setScope('class')}>
-                    Class
-                  </button>
-                </span>
-              )}
-              <DecompilerToggle value={decompiler} onChange={onDecompiler} />
-              {src && (
-                <button type="button" class="rab-n-quiet" data-testid="open-source-dialog"
-                        title="Open this class in the tabbed decompiler window"
-                        onClick={() => onOpenClass({
-                          target: src.class,
-                          candidates: [src.class],
-                          fromBundle: src.bundleId,
-                          opKey,
-                          focusMethod,
-                          focusParamCount,
-                        })}>
-                  Open in dialog
-                </button>
-              )}
-              {src && <CopyButton quiet label="Copy source" text={() => src.source} />}
-              <button type="button" class="rab-n-quiet" onClick={() => setOpen(false)}>Hide</button>
-            </>
-          )}
+          <DecompilerLink decompiler={decompiler} label={src?.decompiler} testId="java-source-engine" />
+          <DecompilerToggle value={decompiler} onChange={onDecompiler} />
+          <button
+            type="button"
+            class="rab-n-quiet"
+            data-testid="load-class-source"
+            title="Open the full class in the tabbed decompiler window"
+            onClick={openClassDialog}
+          >
+            Decompile class
+          </button>
+          {src && <CopyButton quiet label="Copy source" text={() => src.source} />}
+          <button type="button" class="rab-n-quiet" onClick={() => setOpen(false)}>Hide</button>
         </span>
       </div>
-      {!open ? (
-        <div class="rab-n-source-actions">
-          {initialScope === 'method' ? (
-            <>
-              <button type="button" class="rab-n-button" data-testid="load-source" onClick={() => openWith('method')}>
-                Decompile method
-              </button>
-              <button type="button" class="rab-n-button" data-testid="load-class-source" onClick={() => openWith('class')}>
-                Decompile class
-              </button>
-            </>
-          ) : (
-            <button type="button" class="rab-n-button" data-testid="load-class-source" onClick={() => openWith('class')}>
-              Decompile class
-            </button>
-          )}
-        </div>
-      ) : loading ? (
+      {loading ? (
         <div class="rab-n-subtle" role="status">
-          <span class="rab-n-spinner" aria-hidden="true" /> Decompiling {scope} with {decompiler === 'vineflower' ? 'Vineflower' : 'CFR'}…
+          <span class="rab-n-spinner" aria-hidden="true" /> Decompiling method with {decompiler === 'vineflower' ? 'Vineflower' : 'CFR'}…
         </div>
       ) : error ? (
         <div class="rab-n-java-error" role="alert">
@@ -441,9 +482,7 @@ function SourceBlock({ baseUrl, opKey, initialScope, focusMethod, focusParamCoun
           bundleId={src.bundleId}
           opKey={opKey}
           onOpenClass={onOpenClass}
-          focusLine={focusLine}
-          focusKey={focusKey}
-          maxAutoHeight={520}
+          maxAutoHeight={460}
           testId="java-source-code"
         />
       ) : null}

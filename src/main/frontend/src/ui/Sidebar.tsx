@@ -164,7 +164,7 @@ export function Sidebar(p: SidebarProps) {
   // Alt+P pins the card: it stays until a click outside it or Escape, whatever the pointer, the list or the focus do
   const shownRef = useRef(false);
   shownRef.current = !!card;
-  const pinned = usePin(() => shownRef.current, cardBox, forceHide);
+  const [pinned] = usePin(() => shownRef.current, cardBox, forceHide);
   const pinnedRef = useRef(false);
   pinnedRef.current = pinned;
   const hideCard = () => {

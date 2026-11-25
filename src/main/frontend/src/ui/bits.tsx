@@ -45,11 +45,35 @@ export function MaximizeButton({ on, onToggle, what, testId }: { on: boolean; on
 export const isPinKey = (e: KeyboardEvent) => e.altKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyP';
 
 /**
+ * Ref-counted `inert` guard for stacked overlays (e.g. maximized request pane + floating Classes window) so closing
+ * the inner overlay never strips `inert` while an outer overlay still covers the same elements.
+ */
+const inertCounts = new WeakMap<HTMLElement, number>();
+export function acquireInert(elements: HTMLElement[]): () => void {
+  for (const el of elements) {
+    const n = (inertCounts.get(el) ?? 0) + 1;
+    inertCounts.set(el, n);
+    if (n === 1) el.setAttribute('inert', '');
+  }
+  return () => {
+    for (const el of elements) {
+      const n = Math.max(0, (inertCounts.get(el) ?? 1) - 1);
+      if (n === 0) {
+        inertCounts.delete(el);
+        el.removeAttribute('inert');
+      } else {
+        inertCounts.set(el, n);
+      }
+    }
+  };
+}
+
+/**
  * Pinning of a rich tooltip (the list's hover card, the header's about): Alt+P while it shows pins it, so it stays
  * and takes the pointer (its text can be selected, its links clicked); a click outside `box`, Escape or Alt+P again
  * lets it go, and `onRelease` hides it.
  */
-export function usePin(shown: () => boolean, box: { current: HTMLElement | null }, onRelease?: () => void): boolean {
+export function usePin(shown: () => boolean, box: { current: HTMLElement | null }, onRelease?: () => void): [boolean, (next: boolean) => void] {
   const [pinned, setPinned] = useState(false);
   const latest = useRef({ shown, onRelease });
   latest.current = { shown, onRelease };
@@ -84,31 +108,28 @@ export function usePin(shown: () => boolean, box: { current: HTMLElement | null 
       document.removeEventListener('pointerdown', onDown, true);
     };
   }, [pinned]);
-  return pinned;
+  return [pinned, setPinned];
 }
 
 /**
  * How a rich tooltip behaves (the header's about, RichTip): CSS shows it after a short rest of the pointer on `wrap`
  * or on keyboard focus (:focus-visible) inside it; Escape hides it, and only that, until the pointer or the focus
- * comes back; Alt+P pins it (usePin). `state` is the class to add to `wrap`: " pinned", " dismissed" or "".
+ * comes back; Alt+P pins it (usePin), and non-link/non-button targets can also toggle pinning on click.
  */
-export function useTip(wrap: { current: HTMLElement | null }) {
+export function useTip(wrap: { current: HTMLElement | null }, clickPin = false) {
   const [dismissed, setDismissed] = useState(false);
   const dismissedRef = useRef(false);
   dismissedRef.current = dismissed;
-  // showing now: hovered or focused, not behind a box on the whole screen, and past its delay (the tooltip visible)
   const shown = () => {
     const el = wrap.current;
     const tip = el?.querySelector('[role="tooltip"]');
     return !!el && !dismissedRef.current && !el.closest('[inert]') && (el.matches(':hover') || !!el.querySelector(':focus-visible'))
       && (!tip || getComputedStyle(tip).visibility !== 'hidden');
   };
-  const pinned = usePin(shown, wrap, () => setDismissed(true));
+  const [pinned, setPinned] = usePin(shown, wrap, () => setDismissed(true));
   const pinnedRef = useRef(false);
   pinnedRef.current = pinned;
   useEffect(() => {
-    // in the capture phase, and only when it hides the tooltip: then it is that Escape's only effect; a pinned one is
-    // usePin's to let go
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || pinnedRef.current || !shown()) return;
       e.preventDefault();
@@ -120,24 +141,38 @@ export function useTip(wrap: { current: HTMLElement | null }) {
   }, []);
   return {
     pinned,
+    setPinned,
     state: pinned ? ' pinned' : dismissed ? ' dismissed' : '',
     onMouseEnter: () => setDismissed(false),
-    // keyboard focus only: a click that focuses it must not bring back what Escape hid
     onFocusIn: (e: FocusEvent) => {
       if ((e.target as Element | null)?.matches?.(':focus-visible')) setDismissed(false);
     },
+    onTargetClick: clickPin
+      ? (e: MouseEvent) => {
+          e.stopPropagation();
+          if (pinnedRef.current) {
+            setPinned(false);
+            setDismissed(true);
+          } else {
+            setDismissed(false);
+            setPinned(true);
+          }
+        }
+      : undefined,
   };
 }
 
 /**
- * A small rich tooltip below `children`, which it makes focusable and described by it. It lives outside any live
- * region of the caller (it is a sibling of what it wraps, inside its own span).
+ * A small rich tooltip below `children`, which it makes focusable and described by it. For non-link, non-button
+ * elements (`clickPin = true`, the default), clicking the target also pins/unpins the tooltip.
  */
-export function RichTip({ tip, children, testId }: { tip: ComponentChildren; children: ComponentChildren; testId?: string }) {
+export function RichTip({ tip, children, testId, clickPin = true, onOpen, className }: {
+  tip: ComponentChildren; children: ComponentChildren; testId?: string; clickPin?: boolean;
+  onOpen?: () => void; className?: string;
+}) {
   const id = useId();
   const wrap = useRef<HTMLSpanElement>(null);
-  const { pinned, state, onMouseEnter, onFocusIn } = useTip(wrap);
-  // below and from the left edge, unless the app has no room there: then above, or ending at the right edge
+  const { pinned, state, onMouseEnter, onFocusIn, onTargetClick } = useTip(wrap, clickPin);
   const [side, setSide] = useState('');
   const place = () => {
     const el = wrap.current;
@@ -146,31 +181,49 @@ export function RichTip({ tip, children, testId }: { tip: ComponentChildren; chi
     if (!el || !box || !app) return;
     const r = el.getBoundingClientRect();
     const a = app.getBoundingClientRect();
+    const w = box.offsetWidth;
     const h = box.offsetHeight + 10;
-    const up = r.bottom + h > a.bottom && r.top - h >= a.top;
-    const end = r.left + box.offsetWidth > a.right - 6;
-    setSide((up ? ' above' : '') + (end ? ' end' : ''));
+    const up = r.bottom + h > a.bottom - 8 && r.top - h >= a.top + 8;
+    const clampedLeft = Math.max(a.left + 8, Math.min(r.left, a.right - w - 8));
+    box.style.left = Math.round(clampedLeft - r.left) + 'px';
+    box.style.right = 'auto';
+    setSide(up ? ' above' : '');
   };
+  useEffect(() => {
+    place();
+  }, [tip]);
   return (
-    <span ref={wrap} class={'rab-n-tip-wrap' + state + side}
-          onMouseEnter={() => { place(); onMouseEnter(); }} onFocusIn={(e) => { place(); onFocusIn(e); }}>
-      <span class="rab-n-tip-target" tabIndex={0} aria-describedby={id}>{children}</span>
+    <span ref={wrap} class={'rab-n-tip-wrap' + state + side + (className ? ' ' + className : '')}
+          onMouseEnter={() => { onOpen?.(); place(); onMouseEnter(); }}
+          onFocusIn={(e) => { onOpen?.(); place(); onFocusIn(e); }}>
+      <span
+        class={'rab-n-tip-target' + (clickPin ? ' is-clickable' : '')}
+        tabIndex={0}
+        aria-describedby={id}
+        onClick={onTargetClick ? (e) => { onOpen?.(); place(); onTargetClick(e); } : undefined}
+      >
+        {children}
+      </span>
       <span id={id} class="rab-n-tip" role="tooltip" data-testid={testId}>
         {tip}
-        <PinHint pinned={pinned} />
+        <PinHint pinned={pinned} clickable={clickPin} />
       </span>
     </span>
   );
 }
 
 /** The last line of a rich tooltip: how to pin it, or how to let it go. */
-export function PinHint({ pinned }: { pinned: boolean }) {
+export function PinHint({ pinned, clickable }: { pinned: boolean; clickable?: boolean }) {
   return (
     <span class={'rab-n-pin-hint' + (pinned ? ' pinned' : '')} data-testid="pin-hint">
       <svg class="rab-n-svg" width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true">
         <path d="M6 2.5h4M7 2.5v4L4.5 9h7L9 6.5v-4M8 9v4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
-      {pinned ? <span>Pinned: <kbd>Esc</kbd> or a click outside closes it</span> : <span><kbd>Alt</kbd>+<kbd>P</kbd> pins it</span>}
+      {pinned
+        ? <span>Pinned: <kbd>Esc</kbd> or a click outside closes it</span>
+        : clickable
+          ? <span>Click or <kbd>Alt</kbd>+<kbd>P</kbd> pins it</span>
+          : <span><kbd>Alt</kbd>+<kbd>P</kbd> pins it</span>}
     </span>
   );
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { splitSourceLines, tokenizeSource } from './javatokens';
 import {
-  classLabel, createRefContext, fallbackJavaType, findMethodHeaderLine,
+  classLabel, createRefContext, extractClassOutline, fallbackJavaType, findMethodHeaderLine,
   linkSourceLine, linkSourceTokens, parseJavaTypeParts,
 } from './javarefs';
 
@@ -117,5 +117,70 @@ describe('javarefs', () => {
     expect(parseJavaTypeParts('int').filter((p) => p.fqcn)).toEqual([]);
     expect(fallbackJavaType('string')).toBe('java.lang.String');
     expect(fallbackJavaType('File')).toBe('com.atlassian.plugins.rest.api.multipart.FilePart');
+  });
+
+  it('extracts class outline (constructors, methods, nested types, REST HTTP methods) with exact 0-based line numbers', () => {
+    const lines = [
+      'package com.example;',
+      'public class ServerInfoResource {',
+      '    private final String version;',
+      '    public ServerInfoResource(String version) {',
+      '        this.version = version;',
+      '    }',
+      '    @GET',
+      '    @Path("info")',
+      '    public Response getServerInfo(@QueryParam("doHealthCheck") boolean check) {',
+      '        if (check) { return null; }',
+      '        return Response.ok().build();',
+      '    }',
+      '    @jakarta.ws.rs.POST',
+      '    @Consumes("application/json")',
+      '    public Response createItem(String body) { return null; }',
+      '    @DELETE public void remove(@PathParam("id") long id) {}',
+      '    public static class Helper {',
+      '        private void run() {}',
+      '    }',
+      '}',
+    ];
+    const outline = extractClassOutline(lines);
+    expect(outline).toEqual([
+      { kind: 'ctor', name: 'ServerInfoResource', params: '(String)', returns: '', visibility: 'public', isStatic: false, line: 3, depth: 0 },
+      { kind: 'method', name: 'getServerInfo', params: '(boolean)', returns: 'Response', visibility: 'public', isStatic: false, httpMethod: 'GET', restPath: 'info', line: 8, depth: 0 },
+      { kind: 'method', name: 'createItem', params: '(String)', returns: 'Response', visibility: 'public', isStatic: false, httpMethod: 'POST', line: 14, depth: 0 },
+      { kind: 'method', name: 'remove', params: '(long)', returns: 'void', visibility: 'public', isStatic: false, httpMethod: 'DELETE', line: 15, depth: 0 },
+      { kind: 'type', name: 'Helper', params: '', returns: 'class', visibility: 'public', isStatic: true, line: 16, depth: 0 },
+      { kind: 'method', name: 'run', params: '()', returns: 'void', visibility: 'private', isStatic: false, line: 17, depth: 1 },
+    ]);
+  });
+
+  it('marks class and method/constructor declaration names as bold decl spans without bolding calls', () => {
+    const src = [
+      'package com.example;',
+      'public class ServerInfoResource extends BaseResource {',
+      '    public ServerInfoResource(String v) {',
+      '        super(v);',
+      '    }',
+      '    @GET',
+      '    public <T> List<T> getServerInfo(String id) {',
+      '        Class<?> c = ServerInfoResource.class;',
+      '        String x = helper(id);',
+      '        if (id != null) return Response.ok(x).build();',
+      '        return null;',
+      '    }',
+      '    private static class Inner implements Runnable {',
+      '        public void run() {}',
+      '    }',
+      '}',
+    ].join('\n');
+    const spans = linkSourceTokens(tokenizeSource(src), src, 'com.example.ServerInfoResource', []);
+    expect(spans.map((s) => s.text).join('')).toBe(src);
+    const decls = spans.filter((s) => s.decl).map((s) => `${s.decl}:${s.text}`);
+    expect(decls).toEqual([
+      'type:ServerInfoResource',
+      'method:ServerInfoResource',
+      'method:getServerInfo',
+      'type:Inner',
+      'method:run',
+    ]);
   });
 });

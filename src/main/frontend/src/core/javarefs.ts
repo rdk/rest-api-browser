@@ -1,9 +1,12 @@
 import { tokenizeSourceLine, type Token, type TokenKind } from './javatokens';
 
+/** Declaration role for syntax highlighting (bold class/interface/enum/record and method/constructor names). */
+export type DeclKind = 'type' | 'method';
+
 /** A token of decompiled Java source, optionally linked to a decompilable Java class. */
 export type SourceSpan =
-  | { text: string; kind: TokenKind; target?: undefined; candidates?: undefined }
-  | { text: string; kind: 'type' | 'ann'; target: string; candidates: string[] };
+  | { text: string; kind: TokenKind; decl?: DeclKind; target?: undefined; candidates?: undefined }
+  | { text: string; kind: 'type' | 'ann'; decl?: DeclKind; target: string; candidates: string[] };
 
 const PKG_RE = /^\s*package\s+([A-Za-z_][\w$.]*)\s*;/m;
 const IMPORT_RE = /^\s*import\s+(?:static\s+)?([A-Za-z_][\w$.*]*)(\s*;)/gm;
@@ -131,12 +134,164 @@ export function linkSourceLine(line: string, startsInComment: boolean, ctx: RefC
   return linkTokensWithContext(tokenizeSourceLine(line, startsInComment), ctx);
 }
 
+const MODIFIER_KW = new Set([
+  'public', 'protected', 'private', 'static', 'final', 'abstract', 'synchronized', 'native', 'default', 'strictfp',
+  'sealed', 'non-sealed',
+]);
+const TYPE_DECL_KW = new Set(['class', 'interface', 'enum', 'record']);
+const NON_METHOD_KW = new Set([
+  'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'break', 'continue', 'return', 'try', 'catch', 'finally',
+  'throw', 'new', 'this', 'super', 'assert', 'yield', 'package', 'import', 'instanceof', 'extends', 'implements',
+  'throws', 'class', 'interface', 'enum', 'record',
+]);
+const PRIMITIVE_KW = new Set(['void', 'boolean', 'byte', 'char', 'short', 'int', 'long', 'float', 'double']);
+const NON_METHOD_PUNCT = new Set(['=', ';', '{', '}', '?', ':', '+', '-', '*', '/', '%', '&', '|', '^', '!', '~']);
+
+/**
+ * Identifies token indices that name a class/interface/enum/record declaration or a method/constructor declaration so
+ * the syntax renderer can style declaration identifiers bold without false-positiving on calls or expressions.
+ */
+function detectDeclarations(tokens: Token[], currentClass: string): Map<number, DeclKind> {
+  const decls = new Map<number, DeclKind>();
+  const curSimple = currentClass ? simpleName(currentClass) : '';
+  let lineStart = 0;
+  for (let i = 0; i <= tokens.length; i++) {
+    const isEnd = i === tokens.length || (tokens[i].kind === 'space' && tokens[i].text.includes('\n'));
+    if (!isEnd) continue;
+    scanLineDeclarations(tokens, lineStart, i, curSimple, decls);
+    lineStart = i + 1;
+  }
+  return decls;
+}
+
+function nextNonSpace(tokens: Token[], from: number, end: number): number {
+  let i = from;
+  while (i < end && (tokens[i].kind === 'space' || tokens[i].kind === 'comment')) i++;
+  return i;
+}
+
+function prevNonSpace(tokens: Token[], from: number, start: number): number {
+  let i = from;
+  while (i >= start && (tokens[i].kind === 'space' || tokens[i].kind === 'comment')) i--;
+  return i;
+}
+
+function scanLineDeclarations(
+  tokens: Token[],
+  start: number,
+  end: number,
+  curSimple: string,
+  decls: Map<number, DeclKind>,
+): void {
+  // 1. Class / interface / enum / record / @interface declaration name
+  for (let i = start; i < end; i++) {
+    const t = tokens[i];
+    const isTypeKw = (t.kind === 'kw' && TYPE_DECL_KW.has(t.text)) || (t.kind === 'ann' && t.text === '@interface');
+    if (!isTypeKw) continue;
+    const prev = prevNonSpace(tokens, i - 1, start);
+    if (prev >= start && tokens[prev].text === '.') continue; // skip Foo.class
+    const next = nextNonSpace(tokens, i + 1, end);
+    if (next < end && (tokens[next].kind === 'type' || tokens[next].kind === 'name')) {
+      decls.set(next, 'type');
+    }
+  }
+
+  // 2. Method / constructor declaration name
+  let p = nextNonSpace(tokens, start, end);
+  // Skip leading inline annotations (e.g. "@GET public Response foo()")
+  while (p < end && tokens[p].kind === 'ann') {
+    if (tokens[p].text === '@interface') return;
+    p = nextNonSpace(tokens, p + 1, end);
+    if (p < end && tokens[p].text === '(') {
+      let depth = 1;
+      p++;
+      while (p < end && depth > 0) {
+        if (tokens[p].text === '(') depth++;
+        else if (tokens[p].text === ')') depth--;
+        p++;
+      }
+      p = nextNonSpace(tokens, p, end);
+    }
+  }
+  if (p >= end) return;
+
+  let sawModifier = false;
+  while (p < end && tokens[p].kind === 'kw' && MODIFIER_KW.has(tokens[p].text)) {
+    sawModifier = true;
+    p = nextNonSpace(tokens, p + 1, end);
+  }
+  // Skip optional method-level generic parameters: <T extends Foo>
+  if (p < end && tokens[p].text === '<') {
+    let angle = 1;
+    p++;
+    while (p < end && angle > 0) {
+      if (tokens[p].text === '<') angle++;
+      else if (tokens[p].text === '>') angle--;
+      p++;
+    }
+    p = nextNonSpace(tokens, p, end);
+  }
+
+  // Scan up to the opening '(' of the parameter list
+  let openParen = -1;
+  let angle = 0;
+  for (let i = p; i < end; i++) {
+    const t = tokens[i];
+    if (t.kind === 'space' || t.kind === 'comment') continue;
+    if (t.text === '<') {
+      angle++;
+      continue;
+    }
+    if (t.text === '>') {
+      if (angle === 0) return; // comparison operator, not generic type
+      angle--;
+      continue;
+    }
+    if (angle > 0) continue;
+    if (t.text === '(') {
+      openParen = i;
+      break;
+    }
+    if (t.kind === 'kw' && NON_METHOD_KW.has(t.text)) return;
+    if (t.kind === 'punct' && NON_METHOD_PUNCT.has(t.text)) return;
+  }
+  if (openParen < 0) return;
+
+  const nameIdx = prevNonSpace(tokens, openParen - 1, p);
+  if (nameIdx < p) return;
+  const nameTok = tokens[nameIdx];
+  if (nameTok.kind !== 'name' && nameTok.kind !== 'type') return;
+
+  const beforeName = prevNonSpace(tokens, nameIdx - 1, p);
+  if (beforeName < p) {
+    // Constructor: directly after modifiers (or package-private constructor matching current class name)
+    if (nameTok.kind === 'type' && (sawModifier || (curSimple && nameTok.text === curSimple))) {
+      decls.set(nameIdx, 'method');
+    }
+    return;
+  }
+
+  // Regular method: preceded by a return type token (not '.' or ',')
+  const prevTok = tokens[beforeName];
+  if (prevTok.text === '.' || prevTok.text === ',') return;
+  if (
+    prevTok.kind === 'type'
+    || (prevTok.kind === 'kw' && PRIMITIVE_KW.has(prevTok.text))
+    || prevTok.text === '>'
+    || prevTok.text === ']'
+  ) {
+    decls.set(nameIdx, 'method');
+  }
+}
+
 export function linkTokensWithContext(tokens: Token[], ctx: RefContext): SourceSpan[] {
   const out: SourceSpan[] = [];
+  const decls = detectDeclarations(tokens, ctx.currentClass);
   let inPackage = false;
 
   for (let i = 0; i < tokens.length; ) {
     const t = tokens[i];
+    const decl = decls.get(i);
     if (t.kind === 'kw' && t.text === 'package') {
       inPackage = true;
       out.push(t);
@@ -204,7 +359,7 @@ export function linkTokensWithContext(tokens: Token[], ctx: RefContext): SourceS
     if (t.kind === 'type') {
       const candidates = resolveName(t.text, ctx, false);
       if (candidates.length > 0) {
-        out.push({ text: t.text, kind: 'type', target: candidates[0], candidates });
+        out.push(decl ? { text: t.text, kind: 'type', decl, target: candidates[0], candidates } : { text: t.text, kind: 'type', target: candidates[0], candidates });
         i++;
         continue;
       }
@@ -221,10 +376,314 @@ export function linkTokensWithContext(tokens: Token[], ctx: RefContext): SourceS
       }
     }
 
-    out.push(t);
+    out.push(decl ? { text: t.text, kind: t.kind, decl } : t);
     i++;
   }
-  return out;
+  // Coalesce adjacent plain-text tokens (space/name) so virtualized lines emit fewer VNodes while scrolling
+  const compact: SourceSpan[] = [];
+  for (const span of out) {
+    const prev = compact[compact.length - 1];
+    if (
+      prev && !prev.target && !span.target && !prev.decl && !span.decl
+      && (prev.kind === 'space' || prev.kind === 'name') && (span.kind === 'space' || span.kind === 'name')
+    ) {
+      prev.text += span.text;
+    } else {
+      compact.push(span.target ? span : span.decl ? { text: span.text, kind: span.kind, decl: span.decl } : { text: span.text, kind: span.kind });
+    }
+  }
+  return compact;
+}
+
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'HEAD' | 'OPTIONS';
+
+export interface OutlineItem {
+  kind: 'method' | 'ctor' | 'type';
+  name: string;
+  params: string;
+  returns: string;
+  visibility: 'public' | 'protected' | 'private' | 'package';
+  isStatic: boolean;
+  /** HTTP method when annotated as a REST endpoint (e.g. @GET, @POST, @PutMapping). */
+  httpMethod?: HttpMethod;
+  /** Optional @Path("...") value on the method. */
+  restPath?: string;
+  /** 0-based line index of the declaration header. */
+  line: number;
+  depth: number;
+}
+
+const OUTLINE_TYPE_RE = /^\s*(?:(?:public|protected|private|static|final|abstract|sealed|non-sealed|strictfp)\s+)*(class|interface|enum|record|@interface)\s+([A-Za-z_$][\w$]*)/;
+const OUTLINE_METHOD_RE = /^\s*((?:(?:public|protected|private|static|final|abstract|synchronized|native|default)\s+)*)(?:<[^>]+>\s+)?(?:([\w$.<>?,[\] ]+?)\s+)?([A-Za-z_$][\w$]*)\s*\(([^)]*)/;
+const CONTROL_KW = new Set(['if', 'for', 'while', 'switch', 'catch', 'synchronized', 'try', 'return', 'throw', 'new', 'else', 'do', 'assert', 'super', 'this']);
+const REST_VERB_RE = /@(?:[\w$.]+\.)?(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\b/;
+const SPRING_MAPPING_RE = /@(?:[\w$.]+\.)?(Get|Post|Put|Delete|Patch)Mapping\b/;
+const REST_PATH_RE = /@(?:[\w$.]+\.)?Path\s*\(\s*(?:value\s*=\s*)?"([^"]*)"/;
+
+function stripLeadingAnnotations(code: string): string {
+  let s = code.trimStart();
+  while (s.startsWith('@') && !s.startsWith('@interface')) {
+    const m = /^@[\w$.]+/.exec(s);
+    if (!m) break;
+    let pos = m[0].length;
+    while (pos < s.length && /\s/.test(s[pos])) pos++;
+    if (s[pos] === '(') {
+      let depth = 1;
+      pos++;
+      let inStr = false;
+      while (pos < s.length && depth > 0) {
+        const ch = s[pos];
+        if (inStr) {
+          if (ch === '\\') pos++;
+          else if (ch === '"') inStr = false;
+        } else if (ch === '"') {
+          inStr = true;
+        } else if (ch === '(') {
+          depth++;
+        } else if (ch === ')') {
+          depth--;
+        }
+        pos++;
+      }
+      if (depth > 0) return ''; // multiline annotation continues on next line
+    }
+    s = s.slice(pos).trimStart();
+  }
+  return s;
+}
+
+/**
+ * Extracts constructors, methods, and nested types from decompiled Java source lines for the collapsible outline panel,
+ * including REST HTTP method markers (@GET, @POST, @PUT, @DELETE, @PATCH, @HEAD, @OPTIONS, and Spring *Mapping).
+ * Tracks brace depth so only class-body declarations (not local calls inside method bodies) are listed.
+ */
+export function extractClassOutline(lines: string[]): OutlineItem[] {
+  const items: OutlineItem[] = [];
+  let depth = 0;
+  let inBlock = false;
+  let annParenDepth = 0;
+  let pendingHttp: HttpMethod | undefined;
+  let pendingPath: string | undefined;
+  const typeStack: { name: string; depth: number }[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    const depthBefore = depth;
+
+    // Update comment & brace depth across this line (keep string literals in raw for @Path("...") extraction)
+    let inStr = false;
+    let inChr = false;
+    let lineCode = '';
+    for (let c = 0; c < raw.length; c++) {
+      const ch = raw[c];
+      const next = c + 1 < raw.length ? raw[c + 1] : '';
+      if (inBlock) {
+        if (ch === '*' && next === '/') {
+          inBlock = false;
+          c++;
+        }
+        continue;
+      }
+      if (inStr) {
+        if (ch === '\\') c++;
+        else if (ch === '"') inStr = false;
+        continue;
+      }
+      if (inChr) {
+        if (ch === '\\') c++;
+        else if (ch === '\'') inChr = false;
+        continue;
+      }
+      if (ch === '/' && next === '/') break;
+      if (ch === '/' && next === '*') {
+        inBlock = true;
+        c++;
+        continue;
+      }
+      if (ch === '"') {
+        inStr = true;
+      } else if (ch === '\'') {
+        inChr = true;
+      } else {
+        lineCode += ch;
+        if (ch === '{') depth++;
+        else if (ch === '}') depth = Math.max(0, depth - 1);
+      }
+    }
+
+    while (typeStack.length > 0 && depth < typeStack[typeStack.length - 1].depth) {
+      typeStack.pop();
+      pendingHttp = undefined;
+      pendingPath = undefined;
+      annParenDepth = 0;
+    }
+
+    const codeTrim = lineCode.trim();
+    if (!codeTrim || codeTrim.startsWith('package ') || codeTrim.startsWith('import ')) {
+      continue;
+    }
+
+    // Track REST annotations at class-body depth (even across multiline annotations or inline with the method)
+    const currentType = typeStack[typeStack.length - 1];
+    if (currentType && depthBefore === currentType.depth) {
+      if (annParenDepth > 0) {
+        for (const ch of codeTrim) {
+          if (ch === '(') annParenDepth++;
+          else if (ch === ')') annParenDepth = Math.max(0, annParenDepth - 1);
+        }
+        continue;
+      }
+      if (codeTrim.startsWith('@') && !codeTrim.startsWith('@interface')) {
+        const vm = REST_VERB_RE.exec(codeTrim);
+        if (vm) pendingHttp = vm[1] as HttpMethod;
+        else {
+          const sm = SPRING_MAPPING_RE.exec(codeTrim);
+          if (sm) pendingHttp = sm[1].toUpperCase() as HttpMethod;
+        }
+        const pm = REST_PATH_RE.exec(raw);
+        if (pm) pendingPath = pm[1];
+        const afterAnn = stripLeadingAnnotations(codeTrim);
+        if (!afterAnn) {
+          for (const ch of codeTrim) {
+            if (ch === '(') annParenDepth++;
+            else if (ch === ')') annParenDepth = Math.max(0, annParenDepth - 1);
+          }
+          continue;
+        }
+        // Inline annotation followed by declaration on the same line: fall through using `afterAnn`
+      }
+    }
+
+    const declLine = codeTrim.startsWith('@') && !codeTrim.startsWith('@interface')
+      ? stripLeadingAnnotations(codeTrim)
+      : codeTrim;
+    if (!declLine) continue;
+
+    // Class / interface / enum / record declaration
+    const tm = OUTLINE_TYPE_RE.exec(declLine);
+    if (tm && !declLine.includes('=')) {
+      const name = tm[2];
+      const targetDepth = depthBefore + 1;
+      pendingHttp = undefined;
+      pendingPath = undefined;
+      if (depthBefore >= 1) {
+        items.push({
+          kind: 'type',
+          name,
+          params: '',
+          returns: tm[1],
+          visibility: visibilityOf(declLine),
+          isStatic: /\bstatic\b/.test(declLine),
+          line: i,
+          depth: Math.max(0, typeStack.length - 1),
+        });
+      }
+      if (lineCode.includes('{')) {
+        typeStack.push({ name, depth: targetDepth });
+      }
+      continue;
+    }
+
+    // Member declaration directly inside a class body
+    if (!currentType || depthBefore !== currentType.depth) continue;
+    if (declLine.includes('=') && (!declLine.includes('(') || declLine.indexOf('=') < declLine.indexOf('('))) {
+      pendingHttp = undefined;
+      pendingPath = undefined;
+      continue;
+    }
+
+    const mm = OUTLINE_METHOD_RE.exec(declLine);
+    if (!mm) {
+      if (declLine.endsWith(';') || declLine === '}') {
+        pendingHttp = undefined;
+        pendingPath = undefined;
+      }
+      continue;
+    }
+    const mods = mm[1] ?? '';
+    const ret = (mm[2] ?? '').trim();
+    const name = mm[3];
+    if (!name || CONTROL_KW.has(name)) continue;
+    const isCtor = !ret && name === currentType.name;
+    if (!isCtor && !ret) continue;
+    const rawParams = collectCompactParams(lines, i, name);
+    const item: OutlineItem = {
+      kind: isCtor ? 'ctor' : 'method',
+      name,
+      params: rawParams,
+      returns: isCtor ? '' : compactReturn(ret),
+      visibility: visibilityOf(mods),
+      isStatic: /\bstatic\b/.test(mods),
+      line: i,
+      depth: Math.max(0, typeStack.length - 1),
+    };
+    if (!isCtor && pendingHttp) item.httpMethod = pendingHttp;
+    if (!isCtor && pendingPath !== undefined) item.restPath = pendingPath;
+    pendingHttp = undefined;
+    pendingPath = undefined;
+    items.push(item);
+  }
+  return items;
+}
+
+function visibilityOf(mods: string): 'public' | 'protected' | 'private' | 'package' {
+  if (/\bpublic\b/.test(mods)) return 'public';
+  if (/\bprotected\b/.test(mods)) return 'protected';
+  if (/\bprivate\b/.test(mods)) return 'private';
+  return 'package';
+}
+
+function compactReturn(ret: string): string {
+  return ret.replace(/\b(?:[a-z_][\w]*\.)+(?=[A-Z_$])/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function collectCompactParams(lines: string[], startLine: number, methodName: string): string {
+  const openPos = lines[startLine].indexOf('(', lines[startLine].indexOf(methodName));
+  if (openPos < 0) return '()';
+  let depthParen = 0;
+  let buf = '';
+  outer:
+  for (let i = startLine; i < Math.min(lines.length, startLine + 12); i++) {
+    const line = lines[i];
+    const from = i === startLine ? openPos : 0;
+    for (let c = from; c < line.length; c++) {
+      const ch = line[c];
+      if (ch === '(') {
+        depthParen++;
+        if (depthParen > 1) buf += ch;
+      } else if (ch === ')') {
+        depthParen--;
+        if (depthParen === 0) break outer;
+        buf += ch;
+      } else if (depthParen >= 1) {
+        buf += ch;
+      }
+    }
+    buf += ' ';
+  }
+  const clean = buf.replace(/@[\w$.]+(?:\([^)]*\))?\s*/g, '').replace(/\bfinal\s+/g, '').replace(/\s+/g, ' ').trim();
+  if (!clean) return '()';
+  // Extract just the parameter types (drop trailing parameter names)
+  const parts: string[] = [];
+  let angle = 0;
+  let cur = '';
+  for (const ch of clean) {
+    if (ch === '<') angle++;
+    else if (ch === '>' && angle > 0) angle--;
+    if (ch === ',' && angle === 0) {
+      parts.push(cur.trim());
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  if (cur.trim()) parts.push(cur.trim());
+  const types = parts.map((p) => {
+    const m = /^(.+?)\s+[a-z_$][\w$]*$/.exec(p);
+    const t = m ? m[1].trim() : p;
+    return t.replace(/\b(?:[a-z_][\w]*\.)+(?=[A-Z_$])/g, '');
+  });
+  return `(${types.join(', ')})`;
 }
 
 /**

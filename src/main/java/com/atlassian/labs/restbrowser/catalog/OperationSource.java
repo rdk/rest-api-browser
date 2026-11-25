@@ -409,6 +409,90 @@ public class OperationSource {
         return new Result(200, enriched);
     }
 
+    /** Rich plugin & OSGi bundle metadata for the App lozenge hover card and agent tooling. */
+    public Result inspectPlugin(String pluginKey) {
+        if (pluginKey == null || pluginKey.isBlank()) {
+            return error(400, "missing-plugin");
+        }
+        if (pluginAccessor == null) {
+            return error(404, "plugin-not-found");
+        }
+        long t0 = System.nanoTime();
+        Plugin p = pluginAccessor.getPlugin(pluginKey.trim());
+        if (p == null) {
+            return error(404, "plugin-not-found");
+        }
+        PluginInformation info = p.getPluginInformation();
+        Json j = new Json().beginObject()
+                .field("format", 1)
+                .field("key", p.getKey())
+                .field("name", p.getName())
+                .optional("version", info == null ? null : info.getVersion())
+                .optional("vendor", info == null ? null : info.getVendorName())
+                .optional("vendorUrl", info == null ? null : info.getVendorUrl())
+                .optional("description", info == null ? null : OperationDetails.clip(info.getDescription()))
+                .optional("origin", product == null ? null : product.origin(p))
+                .field("state", String.valueOf(p.getPluginState()))
+                .field("pluginsVersion", p.getPluginsVersion())
+                .optional("artifact", p.getPluginArtifact() == null ? null : p.getPluginArtifact().getName())
+                .optional("installed", iso(p.getDateInstalled()))
+                .optional("loaded", iso(p.getDateLoaded()))
+                .optional("enabled", iso(p.getDateEnabled()));
+        Set<String> mandatory = new TreeSet<>();
+        Set<String> optional = new TreeSet<>();
+        try {
+            com.atlassian.plugin.PluginDependencies deps = p.getDependencies();
+            if (deps != null) {
+                mandatory.addAll(deps.getMandatory());
+                optional.addAll(deps.getOptional());
+                optional.addAll(deps.getDynamic());
+            }
+        } catch (RuntimeException | LinkageError ignored) {
+            // older plugin types
+        }
+        optional.removeAll(mandatory);
+        j.strings("dependsOn", mandatory).strings("optionallyDependsOn", optional);
+        Collection<com.atlassian.plugin.ModuleDescriptor<?>> mods = p.getModuleDescriptors();
+        int totalMods = mods == null ? 0 : mods.size();
+        int enabledMods = 0;
+        if (mods != null) {
+            for (com.atlassian.plugin.ModuleDescriptor<?> md : mods) {
+                if (md.isEnabled()) {
+                    enabledMods++;
+                }
+            }
+        }
+        j.field("moduleCount", totalMods).field("enabledModuleCount", enabledMods);
+        Bundle b = bundleForPluginKey(p.getKey());
+        if (b != null) {
+            j.name("bundle");
+            writeBundleSummary(j, b, null);
+        }
+        long elapsedMs = Math.max(1, (System.nanoTime() - t0) / 1_000_000L);
+        j.field("inspectMs", elapsedMs).endObject();
+        return new Result(200, j.toString());
+    }
+
+    private static Bundle bundleForPluginKey(String pluginKey) {
+        try {
+            Bundle self = FrameworkUtil.getBundle(OperationSource.class);
+            BundleContext ctx = self == null ? null : self.getBundleContext();
+            if (ctx == null) {
+                return null;
+            }
+            for (Bundle b : ctx.getBundles()) {
+                Dictionary<String, String> headers = b.getHeaders();
+                String key = headers == null ? null : headers.get("Atlassian-Plugin-Key");
+                if (pluginKey.equals(key == null ? null : key.trim()) || pluginKey.equals(b.getSymbolicName())) {
+                    return b;
+                }
+            }
+        } catch (RuntimeException | LinkageError ignored) {
+            // outside OSGi
+        }
+        return null;
+    }
+
     private String buildClassInfoJson(ResolvedClass resolved, long[] elapsedMs, boolean[] fromCache) {
         InspectKey key = new InspectKey(resolved.name(), resolved.bundleId(), resolved.bundleModified());
         String hit = inspectCache.get(key);

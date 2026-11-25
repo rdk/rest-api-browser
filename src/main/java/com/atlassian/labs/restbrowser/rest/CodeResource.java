@@ -68,6 +68,19 @@ public class CodeResource {
         return jsonResponse(source.inspectClass(op, className, bundleId));
     }
 
+    /** Rich plugin & OSGi bundle metadata for an app lozenge tooltip or agent query. */
+    @GET
+    @Path("/plugin")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response inspectPlugin(@QueryParam("key") String pluginKey,
+                                  @Context HttpServletRequest request) {
+        Response denied = checkSysadmin(request);
+        if (denied != null) {
+            return denied;
+        }
+        return jsonResponse(source.inspectPlugin(pluginKey));
+    }
+
     /**
      * Decompiled source of a class or method with optional line slicing ({@code startLine}, {@code maxLines}),
      * {@code methodLine} anchoring, optional {@code includeMeta=true}, and raw plain-text mode ({@code format=text}

@@ -107,6 +107,7 @@ const NONE = new Set<string>();
 const KEEP_RESPONSES = 5;
 const SIDEBAR_WIDTH = 430;
 const SPLIT = 0.45;
+const OUTLINE_WIDTH = 240;
 /** The list may take up to this share of the width. */
 const MAX_SIDEBAR = 0.75;
 
@@ -157,6 +158,7 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
   const [collapsed, setCollapsed] = useState<Set<string> | null>(stored.collapsed ? new Set(stored.collapsed) : null);
   const [sidebarWidth, setSidebarWidth] = useState(stored.sidebarWidth || SIDEBAR_WIDTH);
   const [split, setSplit] = useState(stored.split || SPLIT);
+  const [outlineWidth, setOutlineWidth] = useState(stored.outlineWidth || OUTLINE_WIDTH);
   const [skin, setSkin] = useState(skinOf(stored.skin));
   // the colour mode: the product's until the user chooses one here; applied before the browser paints
   const [mode, setMode] = useState<Mode | null>(isMode(stored.mode) ? stored.mode : null);
@@ -180,6 +182,10 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
   const onSplit = useCallback((r: number) => {
     setSplit(r);
     save({ split: r });
+  }, [save]);
+  const onOutlineWidth = useCallback((w: number) => {
+    setOutlineWidth(w);
+    save({ outlineWidth: w });
   }, [save]);
 
   // ---- shared persistent tabbed decompiler dialog (minimizes on close, keeps tabs across navigation)
@@ -321,9 +327,9 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
   const linkWaiting = selectedKey && !op && !loadError
     ? summary?.modules.find((m) => selectedKey.startsWith(m.id + ':') && isWaiting(m)) : undefined;
   const productLabel = summary ? `${summary.product.name} ${summary.product.version}` : product;
-  // the header's tooltip about the project: on hover or keyboard focus of the brand, pinned with Alt+P
+  // the header's tooltip about the project: on hover or keyboard focus of the brand, pinned on click or Alt+P
   const brandWrap = useRef<HTMLSpanElement>(null);
-  const about = useTip(brandWrap);
+  const about = useTip(brandWrap, true);
   const site = siteUrl.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').replace(/\/+$/, '');
   const siteHost = site.split('/')[0];
   const menu: MenuItem[] = [
@@ -334,7 +340,8 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
       onSelect: () => {
         setSidebarWidth(SIDEBAR_WIDTH);
         setSplit(SPLIT);
-        save({ sidebarWidth: SIDEBAR_WIDTH, split: SPLIT });
+        setOutlineWidth(OUTLINE_WIDTH);
+        save({ sidebarWidth: SIDEBAR_WIDTH, split: SPLIT, outlineWidth: OUTLINE_WIDTH });
       },
     },
     ...(summary?.sysadmin
@@ -393,12 +400,19 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
       <div class="rab-n-topbar">
         <div class="rab-n-top-left">
         <span ref={brandWrap} class={'rab-n-brand-wrap' + about.state} onMouseEnter={about.onMouseEnter} onFocusIn={about.onFocusIn}>
-          <a class="rab-n-brand" href={REPO} target="_blank" rel="noopener noreferrer" aria-describedby="rab-n-about" data-testid="brand">
+          <button
+            type="button"
+            class="rab-n-brand"
+            aria-describedby="rab-n-about"
+            aria-pressed={about.pinned}
+            data-testid="brand"
+            onClick={about.onTargetClick}
+          >
             <span class="rab-n-brand-mark" aria-hidden="true">
               <BrandIcon size={15} />
             </span>
             <strong class="rab-n-topbar-title">REST API Browser</strong>
-          </a>
+          </button>
           <About version={version} product={productLabel} operations={rows.length} modules={summary?.modules.length} pinned={about.pinned} />
         </span>
         {version && (
@@ -425,12 +439,12 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
         {summary?.sysadmin && (
           <button
             type="button"
-            class={'rab-n-top-link rab-n-top-classes' + (sourceTabs.open ? ' on' : '')}
+            class="rab-n-top-link rab-n-top-classes"
             onClick={onToggleSourceDialog}
             title={sourceTabs.tabs.length
               ? `Show decompiled Java classes (${plural(sourceTabs.tabs.length, 'open tab')})`
               : 'Open the decompiled Java classes window'}
-            aria-pressed={sourceTabs.open}
+            aria-expanded={sourceTabs.open}
             data-testid="open-classes-dialog"
           >
             <svg class="rab-n-svg" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -510,6 +524,8 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
           state={sourceTabs}
           decompiler={decompiler}
           onDecompiler={setDecompiler}
+          outlineWidth={outlineWidth}
+          onOutlineWidth={onOutlineWidth}
           onSelectTab={onSelectSourceTab}
           onCloseTab={onCloseSourceTab}
           onCloseAll={onCloseAllSourceTabs}
@@ -572,13 +588,13 @@ function About({ version, product, operations, modules, pinned }: {
         <dt>License</dt>
         <dd>Apache License 2.0</dd>
       </dl>
-      <a class="rab-n-about-foot" href={REPO} target="_blank" rel="noopener noreferrer" tabIndex={-1} aria-hidden="true">
+      <a class="rab-n-about-foot" href={REPO} target="_blank" rel="noopener noreferrer" tabIndex={pinned ? 0 : -1} aria-hidden={!pinned || undefined}>
         <svg class="rab-n-svg" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
           <path d="M9 3h4v4M13 3L7.5 8.5M11.5 9.5V13h-8.5V4.5H6.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
-        Click to open github.com/rdk/rest-api-browser
+        github.com/rdk/rest-api-browser
       </a>
-      <PinHint pinned={pinned} />
+      <PinHint pinned={pinned} clickable />
     </div>
   );
 }

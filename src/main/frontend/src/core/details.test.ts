@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clearDetails, DetailsError, fetchDetails, fetchSource, forgetDetails, isError, shortJava, type BundleInfo } from './details';
+import { clearDetails, DetailsError, fetchDetails, fetchSource, forgetDetails, isError, peekDetails, peekSource, shortJava, type BundleInfo } from './details';
 
 const DETAILS = {
   format: 1, key: 'k', method: { error: 'm' }, locators: [], resourceClass: { error: 'c' }, types: [],
@@ -113,5 +113,17 @@ describe('details second review', () => {
     expect(lastUrl).toContain('class=com.example.Foo');
     expect(lastUrl).toContain('fromBundle=4');
     expect(lastUrl).toContain('decompiler=vineflower');
+    expect(peekSource({ op: 'k', classCandidates: ['com.example.Foo'], fromBundle: 4, scope: 'class', decompiler: 'vineflower' })).toEqual(vf);
+    clearDetails();
+    expect(peekSource({ op: 'k', classCandidates: ['com.example.Foo'], fromBundle: 4, scope: 'class', decompiler: 'vineflower' })).toBeNull();
+  });
+
+  it('peekDetails returns cached details synchronously and clears on forgetDetails/clearDetails', async () => {
+    clearDetails();
+    expect(peekDetails('sync-k')).toBeNull();
+    const d = await fetchDetails('/jira', 'sync-k', answer(JSON.stringify(DETAILS)));
+    expect(peekDetails('sync-k')).toEqual(d);
+    forgetDetails('sync-k');
+    expect(peekDetails('sync-k')).toBeNull();
   });
 });

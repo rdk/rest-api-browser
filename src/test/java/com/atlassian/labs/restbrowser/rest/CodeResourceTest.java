@@ -69,5 +69,9 @@ public class CodeResourceTest {
         Response batch = resource.batch(body, request);
         assertEquals(200, batch.getStatus());
         assertTrue(String.valueOf(batch.getEntity()).contains("\"count\":1"));
+
+        // plugin endpoint validation
+        assertEquals(400, resource.inspectPlugin("", request).getStatus());
+        assertEquals(404, resource.inspectPlugin("com.example.missing", request).getStatus());
     }
 }

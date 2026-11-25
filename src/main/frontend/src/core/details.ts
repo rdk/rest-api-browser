@@ -120,6 +120,16 @@ export interface ClassInfo {
   cached?: boolean;
 }
 
+export interface PluginDetailInfo extends ClassPluginSummary {
+  format: 1;
+  description?: string;
+  dependsOn: string[];
+  optionallyDependsOn: string[];
+  enabledModuleCount: number;
+  bundle?: ClassBundleSummary;
+  inspectMs?: number;
+}
+
 export interface ClassQuery {
   classCandidates: string[];
   fromBundle?: number;
@@ -193,10 +203,65 @@ function isDetails(b: unknown): b is OperationDetails {
 }
 
 const cache = new Map<string, Promise<OperationDetails>>();
+const resolvedDetails = new Map<string, OperationDetails>();
 const sourceCache = new Map<string, Promise<OperationSource>>();
+const resolvedSources = new Map<string, OperationSource>();
 const classInfoCache = new Map<string, Promise<ClassInfo>>();
+const pluginInfoCache = new Map<string, Promise<PluginDetailInfo>>();
 const CACHE_SIZE = 30;
 const CLASS_INFO_CACHE_SIZE = 200;
+
+/** Synchronous cache read for already-loaded operation details so switching back to the Java tab never flashes. */
+export function peekDetails(key: string): OperationDetails | null {
+  return resolvedDetails.get(key) ?? null;
+}
+
+/** Synchronous cache read for already-decompiled source so switching class tabs never flashes a loading state. */
+export function peekSource(keyOrQuery: string | SourceQuery): OperationSource | null {
+  const q: SourceQuery = typeof keyOrQuery === 'string' ? { op: keyOrQuery } : keyOrQuery;
+  return resolvedSources.get(sourceCacheKey(q)) ?? null;
+}
+
+function isPluginDetailInfo(b: unknown): b is PluginDetailInfo {
+  return isObject(b) && typeof b.key === 'string' && typeof b.name === 'string' && typeof b.state === 'string';
+}
+
+/** Rich plugin & OSGi bundle metadata for an app lozenge tooltip, cached per page load. */
+export function fetchPluginInfo(
+  baseUrl: string,
+  pluginKey: string,
+  fetchFn: typeof fetch = (...a) => fetch(...a),
+): Promise<PluginDetailInfo> {
+  const hit = pluginInfoCache.get(pluginKey);
+  if (hit) return hit;
+  const p = (async () => {
+    const res = await fetchFn(`${baseUrl}/rest/restbrowser/1/code/plugin?key=${encodeURIComponent(pluginKey)}`, {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' },
+    });
+    if (isLoginAnswer(res, true)) {
+      throw new DetailsError(401, 'session-expired', 'Your session has expired: reload the page to log in again.');
+    }
+    let body: unknown;
+    try {
+      body = JSON.parse(await res.text());
+    } catch {
+      body = undefined;
+    }
+    if (!res.ok) {
+      const reason = isObject(body) && typeof body.error === 'string' ? body.error : `HTTP ${res.status}`;
+      throw new DetailsError(res.status, reason);
+    }
+    if (!isPluginDetailInfo(body)) {
+      throw new DetailsError(res.status, 'not-plugin-info', 'The server answered with something other than plugin metadata.');
+    }
+    return body;
+  })();
+  pluginInfoCache.set(pluginKey, p);
+  p.catch(() => pluginInfoCache.get(pluginKey) === p && pluginInfoCache.delete(pluginKey));
+  while (pluginInfoCache.size > CACHE_SIZE * 2) pluginInfoCache.delete(pluginInfoCache.keys().next().value!);
+  return p;
+}
 
 function isClassInfo(b: unknown): b is ClassInfo {
   return isObject(b) && typeof b.name === 'string' && typeof b.kind === 'string' && typeof b.origin === 'string';
@@ -301,22 +366,34 @@ export function fetchSource(
     if (!isSource(body)) {
       throw new DetailsError(res.status, 'not-source', 'The server answered with something other than the decompiled source.');
     }
+    resolvedSources.set(cacheKey, body);
+    while (resolvedSources.size > CACHE_SIZE * 2) resolvedSources.delete(resolvedSources.keys().next().value!);
     return body;
   })();
   sourceCache.set(cacheKey, p);
   p.catch(() => sourceCache.get(cacheKey) === p && sourceCache.delete(cacheKey));
-  while (sourceCache.size > CACHE_SIZE * 2) sourceCache.delete(sourceCache.keys().next().value!);
+  while (sourceCache.size > CACHE_SIZE * 2) {
+    const oldest = sourceCache.keys().next().value!;
+    sourceCache.delete(oldest);
+    resolvedSources.delete(oldest);
+  }
   return p;
 }
 
 export function forgetSource(keyOrQuery: string | SourceQuery): void {
   if (typeof keyOrQuery === 'string') {
+    const prefix = JSON.stringify([keyOrQuery]).slice(0, -1);
     for (const k of [...sourceCache.keys()]) {
-      if (k.startsWith(JSON.stringify([keyOrQuery]).slice(0, -1))) sourceCache.delete(k);
+      if (k.startsWith(prefix)) {
+        sourceCache.delete(k);
+        resolvedSources.delete(k);
+      }
     }
     return;
   }
-  sourceCache.delete(sourceCacheKey(keyOrQuery));
+  const k = sourceCacheKey(keyOrQuery);
+  sourceCache.delete(k);
+  resolvedSources.delete(k);
 }
 
 /** The details of an operation, fetched once per page load (the Java behind an operation does not change while it runs). */
@@ -345,22 +422,32 @@ export function fetchDetails(baseUrl: string, key: string, fetchFn: typeof fetch
     if (!isDetails(body)) {
       throw new DetailsError(res.status, 'not-details', 'The server answered with something other than the details of the operation.');
     }
+    resolvedDetails.set(key, body);
+    while (resolvedDetails.size > CACHE_SIZE) resolvedDetails.delete(resolvedDetails.keys().next().value!);
     return body;
   })();
   cache.set(key, p);
   p.catch(() => cache.get(key) === p && cache.delete(key)); // a failure is asked again next time
-  while (cache.size > CACHE_SIZE) cache.delete(cache.keys().next().value!);
+  while (cache.size > CACHE_SIZE) {
+    const oldest = cache.keys().next().value!;
+    cache.delete(oldest);
+    resolvedDetails.delete(oldest);
+  }
   return p;
 }
 
 export function forgetDetails(key: string): void {
   cache.delete(key);
-  sourceCache.delete(key);
+  resolvedDetails.delete(key);
+  forgetSource(key);
 }
 
 /** Forgets every operation's details, e.g. when the catalog was rebuilt and the Java behind it may have changed. */
 export function clearDetails(): void {
   cache.clear();
+  resolvedDetails.clear();
   sourceCache.clear();
+  resolvedSources.clear();
   classInfoCache.clear();
+  pluginInfoCache.clear();
 }

@@ -348,18 +348,23 @@
 .rab-n-site-host { font-weight: 700; overflow: hidden; text-overflow: ellipsis; }
 .rab-n-site-path { opacity: 0.88; overflow: hidden; text-overflow: ellipsis; }
 .rab-n-brand-wrap { position: relative; display: flex; align-items: center; }
-.rab-n a.rab-n-brand, .rab-n a.rab-n-brand:link, .rab-n a.rab-n-brand:visited, .rab-n a.rab-n-brand:hover {
+.rab-n .rab-n-brand {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   padding: 2px 6px 2px 2px;
   margin-left: -2px;
+  border: 0;
   border-radius: var(--rab-radius-sm);
+  background: transparent;
   color: var(--rab-topbar-fg);
+  font: inherit;
   text-decoration: none;
+  cursor: pointer;
   transition: background var(--rab-ease);
 }
-.rab-n a.rab-n-brand:hover { background: var(--rab-topbar-glass); }
+.rab-n .rab-n-brand:hover,
+.rab-n-brand-wrap.pinned .rab-n-brand { background: var(--rab-topbar-glass); }
 .rab-n a.rab-n-version, .rab-n a.rab-n-version:link, .rab-n a.rab-n-version:visited {
   display: inline-flex;
   align-items: center;
@@ -384,22 +389,28 @@
   border-color: color-mix(in srgb, var(--rab-topbar-fg) 40%, transparent);
   text-decoration: none;
 }
-.rab-n a.rab-n-top-link, .rab-n a.rab-n-top-link:link, .rab-n a.rab-n-top-link:visited {
+.rab-n a.rab-n-top-link, .rab-n a.rab-n-top-link:link, .rab-n a.rab-n-top-link:visited,
+.rab-n button.rab-n-top-link {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   height: 26px;
   padding: 0 8px;
+  border: 0;
   border-radius: var(--rab-radius-sm);
+  background: transparent;
+  font: inherit;
   font-size: 12.5px;
   font-weight: 600;
   color: color-mix(in srgb, var(--rab-topbar-fg) 88%, transparent);
   text-decoration: none;
   white-space: nowrap;
   flex: none;
+  cursor: pointer;
   transition: background var(--rab-ease), color var(--rab-ease);
 }
-.rab-n a.rab-n-top-link:hover { color: var(--rab-topbar-fg); background: var(--rab-topbar-glass); text-decoration: none; }
+.rab-n a.rab-n-top-link:hover,
+.rab-n button.rab-n-top-link:hover { color: var(--rab-topbar-fg); background: var(--rab-topbar-glass); text-decoration: none; }
 
 /* Rich tooltips: Alt+P pins one; a pinned one takes the pointer, its text can be selected */
 .rab-n-card.pinned {
@@ -501,24 +512,26 @@
   color: var(--rab-link);
   font-size: 12px;
 }
-.rab-n-menu-wrap { position: relative; display: flex; }
+.rab-n-menu-wrap { position: relative; display: flex; margin-left: 8px; margin-right: 4px; }
 .rab-n-menu-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
+  width: 30px;
   height: 26px;
   padding: 0;
   border-radius: var(--rab-radius-sm);
-  border: 1px solid var(--rab-topbar-glass-border);
-  background: var(--rab-topbar-glass);
+  border: 1px solid color-mix(in srgb, var(--rab-topbar-fg) 42%, transparent);
+  background: color-mix(in srgb, var(--rab-topbar-fg) 20%, transparent);
   color: var(--rab-topbar-fg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14), inset 0 1px 0 color-mix(in srgb, #fff 20%, transparent);
   cursor: pointer;
-  transition: background var(--rab-ease), border-color var(--rab-ease);
+  transition: background var(--rab-ease), border-color var(--rab-ease), box-shadow var(--rab-ease);
 }
 .rab-n-menu-button:hover, .rab-n-menu-button.open {
-  background: var(--rab-topbar-glass-hover);
-  border-color: color-mix(in srgb, var(--rab-topbar-fg) 48%, transparent);
+  background: color-mix(in srgb, var(--rab-topbar-fg) 30%, transparent);
+  border-color: color-mix(in srgb, var(--rab-topbar-fg) 62%, transparent);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), inset 0 1px 0 color-mix(in srgb, #fff 28%, transparent);
 }
 .rab-n-menu {
   position: absolute;
@@ -1211,7 +1224,7 @@
 .rab-n-card-summary { margin-top: 6px; font-size: 12px; line-height: 1.4; color: var(--rab-subtle); overflow-wrap: anywhere; }
 .rab-n-card-facts {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 3px 12px;
   margin: 8px 0 0;
   padding-top: 7px;
@@ -1654,6 +1667,8 @@
 .rab-n-jc-kw { color: var(--ds-text-accent-magenta, #943d73); font-weight: 600; }
 .rab-n-jc-comment { color: var(--rab-subtlest); font-style: italic; }
 .rab-n-jc-punct { color: var(--rab-subtlest); }
+.rab-n-jc-decl-method { color: var(--rab-text); font-weight: 700; }
+.rab-n-jc-decl-type { font-weight: 700; }
 .rab-n-jc-link {
   display: inline;
   padding: 0;
@@ -1673,6 +1688,8 @@
   background: color-mix(in srgb, var(--rab-brand) 12%, transparent);
 }
 .rab-n-java-source { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--rab-border-subtle); }
+.rab-n-source-top { margin-top: 0; margin-bottom: 10px; padding-top: 0; border-top: 0; }
+.rab-n-java-source.rab-n-source-top { padding-bottom: 10px; border-bottom: 1px solid var(--rab-border-subtle); }
 .rab-n-java-source-code { white-space: pre; overflow-x: auto; overflow-wrap: normal; margin-bottom: 0; }
 .rab-n-source-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 
@@ -1706,14 +1723,7 @@
   box-shadow: var(--rab-shadow-sm);
 }
 
-/* Tabbed decompiled class window (draggable, resizable, maximizable, persistent) */
-.rab-n-top-classes {
-  font: inherit;
-  cursor: pointer;
-}
-.rab-n-top-classes.on {
-  background: color-mix(in srgb, var(--rab-on-brand) 24%, transparent);
-}
+/* Tabbed decompiled class window (draggable, resizable, maximizable, persistent, themed header + outline + status bar) */
 .rab-n-top-badge {
   display: inline-flex;
   align-items: center;
@@ -1722,7 +1732,8 @@
   height: 16px;
   padding: 0 4px;
   border-radius: var(--rab-radius-pill);
-  background: color-mix(in srgb, var(--rab-on-brand) 22%, transparent);
+  background: color-mix(in srgb, var(--rab-topbar-fg) 20%, transparent);
+  color: var(--rab-topbar-fg);
   font-size: 10.5px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -1742,6 +1753,7 @@
   flex: 1;
   min-height: 120px;
   overflow: hidden;
+  contain: strict;
 }
 .rab-n-java-vcode.is-inline {
   flex: none;
@@ -1749,6 +1761,7 @@
   border-radius: var(--rab-radius-md);
 }
 .rab-n-java-code-list { background: var(--rab-code-bg); }
+.rab-n-java-code-list .rab-n-vrow { contain: layout style paint; }
 .rab-n-java-focus-line {
   background: var(--rab-find-current);
   box-shadow: inset 3px 0 0 var(--rab-brand);
@@ -1765,11 +1778,19 @@
   display: flex;
   flex-direction: column;
   border-radius: var(--rab-radius-lg);
-  border: 1px solid var(--rab-border);
+  border: 1px solid color-mix(in srgb, var(--rab-brand) 28%, var(--rab-border));
   background: var(--rab-surface);
   color: var(--rab-text);
   box-shadow: var(--rab-shadow-overlay);
   overflow: hidden;
+  contain: layout style;
+}
+.rab-n-modal[data-dragging="true"] {
+  will-change: transform;
+  user-select: none;
+}
+.rab-n-modal[data-dragging="true"] .rab-n-modal-main {
+  pointer-events: none;
 }
 .rab-n-modal.is-max {
   left: 10px !important;
@@ -1777,13 +1798,15 @@
   width: calc(100vw - 20px) !important;
   height: calc(100vh - 20px) !important;
 }
+/* Themed header matching the app's topbar gradient/color in all skins and dark mode */
 .rab-n-modal-tabs {
   display: flex;
   align-items: stretch;
   gap: 4px;
-  padding: 5px 8px 0 8px;
-  border-bottom: 1px solid var(--rab-border);
-  background: color-mix(in srgb, var(--rab-sunken) 70%, var(--rab-surface));
+  padding: 6px 8px 0 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--rab-brand) 30%, var(--rab-border));
+  background: var(--rab-topbar-bg);
+  color: var(--rab-topbar-fg);
   flex: none;
   cursor: move;
   user-select: none;
@@ -1791,10 +1814,10 @@
 .rab-n-modal.is-max .rab-n-modal-tabs { cursor: default; }
 .rab-n-modal-grip {
   align-self: center;
-  color: var(--rab-subtlest);
+  color: color-mix(in srgb, var(--rab-topbar-fg) 68%, transparent);
   font-size: 12px;
   letter-spacing: -2px;
-  padding: 0 4px 4px 2px;
+  padding: 0 4px 5px 2px;
   flex: none;
 }
 .rab-n-modal-tabstrip {
@@ -1815,13 +1838,14 @@
   border: 1px solid transparent;
   border-bottom: 0;
   border-radius: var(--rab-radius-sm) var(--rab-radius-sm) 0 0;
-  background: transparent;
-  color: var(--rab-subtle);
+  background: color-mix(in srgb, var(--rab-topbar-fg) 10%, transparent);
+  color: color-mix(in srgb, var(--rab-topbar-fg) 88%, transparent);
+  transition: background var(--rab-ease), color var(--rab-ease);
 }
-.rab-n-modal-tab:hover { background: var(--rab-hover); color: var(--rab-text); }
+.rab-n-modal-tab:hover { background: var(--rab-topbar-glass-hover); color: var(--rab-topbar-fg); }
 .rab-n-modal-tab.on {
   background: var(--rab-surface);
-  border-color: var(--rab-border);
+  border-color: color-mix(in srgb, var(--rab-brand) 25%, var(--rab-border));
   color: var(--rab-info);
   font-weight: 600;
 }
@@ -1849,7 +1873,8 @@
 .rab-n-modal-tab-close {
   border: 0;
   background: none;
-  color: var(--rab-subtlest);
+  color: inherit;
+  opacity: 0.72;
   padding: 2px 6px 2px 2px;
   margin-right: 2px;
   border-radius: 3px;
@@ -1857,14 +1882,55 @@
   font-size: 14px;
   line-height: 1;
 }
-.rab-n-modal-tab-close:hover { color: var(--rab-danger); background: var(--rab-hover); }
-.rab-n-modal-add { align-self: center; margin: 0 2px 4px; font-size: 15px; font-weight: 600; }
+.rab-n-modal-tab-close:hover { opacity: 1; background: color-mix(in srgb, currentColor 14%, transparent); }
+.rab-n-modal-tab.on .rab-n-modal-tab-close:hover { color: var(--rab-danger); background: var(--rab-hover); }
+.rab-n-modal-hbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: var(--rab-radius-sm);
+  background: transparent;
+  color: color-mix(in srgb, var(--rab-topbar-fg) 90%, transparent);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--rab-ease), color var(--rab-ease);
+}
+.rab-n-modal-hbtn:hover:not(:disabled) { background: var(--rab-topbar-glass); color: var(--rab-topbar-fg); }
+.rab-n-modal-hbtn:disabled { opacity: 0.42; cursor: default; }
+.rab-n-modal-hbtn.on { background: var(--rab-topbar-glass-hover); color: var(--rab-topbar-fg); }
+.rab-n-modal-hbtn.done { color: var(--rab-topbar-fg); background: color-mix(in srgb, var(--rab-success-bold) 45%, transparent); }
+.rab-n-modal-hbtn.failed { color: var(--rab-topbar-fg); background: color-mix(in srgb, var(--rab-danger-bold) 45%, transparent); }
+.rab-n-modal-add { align-self: center; margin: 0 2px 4px; padding: 0 7px; font-size: 15px; font-weight: 700; }
 .rab-n-modal-win-tools {
   display: inline-flex;
   align-items: center;
   gap: 2px;
   align-self: center;
-  margin-bottom: 4px;
+  margin-bottom: 5px;
+  flex: none;
+}
+.rab-n-modal-win-tools .rab-n-tool {
+  color: color-mix(in srgb, var(--rab-topbar-fg) 90%, transparent);
+}
+.rab-n-modal-win-tools .rab-n-tool:hover:not(:disabled) {
+  background: var(--rab-topbar-glass);
+  color: var(--rab-topbar-fg);
+}
+.rab-n-modal-win-tools .rab-n-tool.on {
+  background: var(--rab-topbar-glass-hover);
+  color: var(--rab-topbar-fg);
+}
+.rab-n-modal-hsep {
+  width: 1px;
+  height: 15px;
+  margin: 0 3px;
+  background: color-mix(in srgb, var(--rab-topbar-fg) 26%, transparent);
   flex: none;
 }
 .rab-n-modal-close { font-size: 15px; }
@@ -1877,6 +1943,12 @@
   flex: none;
 }
 .rab-n-modal-quickopen .rab-n-input { flex: 1; font-family: var(--rab-mono); font-size: 12.5px; }
+.rab-n-modal-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
 .rab-n-modal-empty {
   flex: 1;
   display: flex;
@@ -1906,19 +1978,183 @@
   font-size: 12px;
   flex: none;
 }
+.rab-n-outline-btn.on { color: var(--rab-info); background: var(--rab-selected); }
 .rab-n-modal-fqcn {
   font: 600 12px/1.4 var(--rab-mono);
   color: var(--rab-text);
   overflow-wrap: anywhere;
 }
-.rab-n-modal-engine { white-space: nowrap; }
+.rab-n a.rab-n-decompiler-link,
+.rab-n a.rab-n-decompiler-link:link,
+.rab-n a.rab-n-decompiler-link:visited {
+  font-size: 11.5px;
+  color: var(--rab-subtle);
+  text-decoration: none;
+  white-space: nowrap;
+  padding: 1px 4px;
+  border-radius: 3px;
+  transition: color var(--rab-ease), background var(--rab-ease);
+}
+.rab-n a.rab-n-decompiler-link:hover {
+  color: var(--rab-link);
+  background: var(--rab-hover);
+  text-decoration: underline;
+}
+.rab-n-modal-split {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+.rab-n-modal-split[data-dragging="true"] {
+  user-select: none;
+  cursor: col-resize;
+}
+.rab-n-modal-split[data-dragging="true"] .rab-n-modal-body {
+  pointer-events: none;
+}
+.rab-n-modal-outline {
+  min-width: 150px;
+  max-width: 65%;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  background: color-mix(in srgb, var(--rab-sunken) 65%, var(--rab-surface));
+  overflow: hidden;
+}
+.rab-n-outline-split {
+  flex: none;
+  width: 5px;
+  cursor: col-resize;
+  background: transparent;
+  border-left: 1px solid var(--rab-border-subtle);
+  transition: background var(--rab-ease), border-color var(--rab-ease);
+}
+.rab-n-outline-split:hover,
+.rab-n-outline-split:focus-visible,
+.rab-n-modal-split[data-dragging="true"] .rab-n-outline-split {
+  background: color-mix(in srgb, var(--rab-brand) 22%, transparent);
+  border-left-color: var(--rab-brand);
+  outline: none;
+}
+.rab-n-modal-outline-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--rab-border-subtle);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--rab-subtle);
+  flex: none;
+}
+.rab-n-modal-outline-filter {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--rab-border-subtle);
+  flex: none;
+}
+.rab-n-modal-outline-filter .rab-n-input {
+  width: 100%;
+  height: 24px;
+  padding: 2px 7px;
+  font-size: 12px;
+}
+.rab-n-modal-outline-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.rab-n-outline-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: var(--rab-radius-sm);
+  background: none;
+  color: var(--rab-text);
+  font: 12px/1.35 var(--rab-mono);
+  text-align: left;
+  cursor: pointer;
+}
+.rab-n-outline-item:hover { background: var(--rab-hover); }
+.rab-n-outline-item.on { background: var(--rab-grad-selected); color: var(--rab-info); font-weight: 600; }
+.rab-n-outline-badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  font: 700 10px/1 var(--rab-mono);
+  background: var(--rab-neutral);
+  color: var(--rab-subtle);
+}
+.rab-n-outline-badge.kind-ctor { background: var(--rab-bg-success); color: var(--rab-success); }
+.rab-n-outline-badge.kind-type { background: var(--rab-bg-discovery); color: var(--rab-discovery); }
+.rab-n-outline-badge.vis-private { opacity: 0.65; }
+.rab-n-outline-rest {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  font: 700 10px/1 var(--rab-mono);
+  box-shadow: 0 1px 1px color-mix(in srgb, var(--rab-text) 14%, transparent);
+}
+.rab-n-outline-rest.rest-get { background: var(--rab-brand); color: var(--rab-on-brand); }
+.rab-n-outline-rest.rest-post { background: var(--rab-success-bold); color: var(--rab-on-brand); }
+.rab-n-outline-rest.rest-put { background: var(--rab-warning-bold); color: var(--rab-on-warning); }
+.rab-n-outline-rest.rest-delete { background: var(--rab-danger-bold); color: var(--rab-on-brand); }
+.rab-n-outline-rest.rest-patch { background: var(--rab-teal-bold); color: var(--rab-on-brand); }
+.rab-n-outline-rest.rest-other { background: var(--rab-discovery-bold); color: var(--rab-on-brand); }
+.rab-n-outline-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rab-n-outline-params { color: var(--rab-subtlest); font-weight: 400; }
+.rab-n-outline-ln {
+  flex: none;
+  font-size: 11px;
+  color: var(--rab-subtlest);
+  font-variant-numeric: tabular-nums;
+}
 .rab-n-modal-body {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
+.rab-n-modal-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-top: 1px solid var(--rab-border-subtle);
+  background: color-mix(in srgb, var(--rab-sunken) 75%, var(--rab-surface));
+  color: var(--rab-subtle);
+  font-size: 11.5px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  flex: none;
+}
+.rab-n-modal-stat-sep { color: var(--rab-subtlest); }
 
 /* Resize handles on all edges & corners of the floating decompiler window */
 .rab-n-resize { position: absolute; z-index: 4; }
@@ -1969,6 +2205,7 @@
 }
 .rab-n-class-tip-body {
   padding: 11px 13px 10px;
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -2482,6 +2719,7 @@ body.rab-next-page #footer {
 /* RichTip: a small tooltip below what it wraps (the box and its states are the about's, above) */
 .rab-n-tip-wrap { position: relative; display: inline-flex; }
 .rab-n-tip-target { display: inline-flex; border-radius: 3px; }
+.rab-n-tip-target.is-clickable { cursor: pointer; }
 .rab-n-tip {
   top: calc(100% + 7px);
   left: 0;
@@ -2489,12 +2727,26 @@ body.rab-next-page #footer {
   flex-direction: column;
   gap: 4px;
   width: max-content;
-  max-width: min(340px, calc(100vw - 32px));
+  max-width: min(360px, calc(100vw - 32px));
   padding: 10px 11px 8px;
   color: var(--rab-subtle);
   font-weight: 400;
   white-space: normal;
   text-align: left;
+}
+.rab-n-app-tip-wrap > .rab-n-tip {
+  width: min(560px, calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
+  max-height: none;
+  overflow: visible;
+  padding: 12px 14px 10px;
+}
+.rab-n-app-tip-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .rab-n-tip-title { font-weight: 700; color: var(--rab-text); }
 .rab-n-tip .rab-n-pin-hint { margin-top: 2px; }

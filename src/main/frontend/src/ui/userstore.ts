@@ -23,6 +23,8 @@ export interface HistoryEntry {
 export interface Prefs {
   sidebarWidth?: number;
   split?: number;
+  /** Width in pixels of the method outline sidebar in the decompiler dialog. */
+  outlineWidth?: number;
   collapsed?: string[];
   supportedOnly?: boolean;
   /** The skin chosen in the menu (see skins.css). */

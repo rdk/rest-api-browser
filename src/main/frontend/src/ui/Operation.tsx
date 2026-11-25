@@ -10,10 +10,10 @@ import { changedField, NO_HISTORY, record, redo as redoStep, undo as undoStep, t
 import { formatJson } from '../core/jsonlines';
 import type { RequestRunner, RunResult } from './runner';
 import { historyUrl, type HistoryEntry, type UserStore } from './userstore';
-import { CheckMark, CopyButton, MaximizeButton, MethodBadge, PathText, Tabs, WarnGlyph, WRITE_METHODS, formatBytes, tabId } from './bits';
+import { acquireInert, CheckMark, CopyButton, MaximizeButton, MethodBadge, PathText, Tabs, WarnGlyph, WRITE_METHODS, formatBytes, tabId } from './bits';
 import { ResponseView } from './Response';
 import { JavaTab } from './JavaTab';
-import { JavaTypeButton, JavaTypeExpr } from './ClassTip';
+import { AppLozenge, JavaTypeButton, JavaTypeExpr } from './ClassTip';
 import { fallbackJavaType } from '../core/javarefs';
 import type { DecompilerId } from '../core/details';
 import type { OpenTabRequest } from '../core/sourcetabs';
@@ -233,10 +233,7 @@ export function OperationView({
     if (!max) return;
     const app = rootRef.current?.closest('.rab-n');
     const covered = app ? [...app.querySelectorAll<HTMLElement>(':scope > .rab-n-topbar, :scope > .rab-n-body-row > :not(.rab-n-main)')] : [];
-    for (const el of covered) el.setAttribute('inert', '');
-    return () => {
-      for (const el of covered) el.removeAttribute('inert');
-    };
+    return acquireInert(covered);
   }, [max]);
   // an app: by its stability, or installed by an admin (the list's tick says the same, facts.moduleFact)
   const isApp = module?.stability === 'app' || module?.origin === 'user';
@@ -258,7 +255,7 @@ export function OperationView({
           {hasBadges && (
             <span class="rab-n-op-badges">
               {module?.stability === 'supported' && <span class="rab-n-tag rab-n-tag-supported">Supported</span>}
-              {isApp && module && <span class="rab-n-tag rab-n-tag-app">App: {module.plugin.name}</span>}
+              {isApp && module && <AppLozenge baseUrl={summary.baseUrl} module={module} sysadmin={summary.sysadmin} />}
               {op.access && <span class={'rab-n-tag rab-n-tag-access rab-n-tag-access-' + op.access.toLowerCase()} title="Access annotation of the handler">{op.access}</span>}
               {op.deprecated && <span class="rab-n-tag rab-n-tag-deprecated">Deprecated</span>}
             </span>

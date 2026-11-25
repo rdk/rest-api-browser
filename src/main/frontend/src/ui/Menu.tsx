@@ -112,9 +112,9 @@ export function Menu({ label, items }: { label: string; items: MenuItem[] }) {
         data-testid="menu-button"
       >
         <svg class="rab-n-svg" width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-          <circle cx="3" cy="8" r="1.5" />
-          <circle cx="8" cy="8" r="1.5" />
-          <circle cx="13" cy="8" r="1.5" />
+          <circle cx="3" cy="8" r="1.6" />
+          <circle cx="8" cy="8" r="1.6" />
+          <circle cx="13" cy="8" r="1.6" />
         </svg>
       </button>
       {open && (

@@ -26,6 +26,8 @@ interface Props {
   overscan?: number;
   /** Set for a semantic list (the operations); code lines leave it out. */
   ariaLabel?: string;
+  /** Optional callback fired when the first visible row index changes on scroll. */
+  onFirstChange?: (first: number) => void;
 }
 
 /** Browsers cap an element's height (about 17.9 million px in Firefox); stay well below. */
@@ -37,11 +39,13 @@ const MAX_HEIGHT = 8_000_000;
  * proportionally onto the rows, so the end of a 20 MB response stays reachable.
  */
 export function VirtualList({ count, rowHeight, renderRow, activeIndex, revealKey, resetKey, keepIndex, keyOf, innerMinWidth, focusable,
-                             followIndex = true, className, overscan = 8, ariaLabel }: Props) {
+                             followIndex = true, className, overscan = 8, ariaLabel, onFirstChange }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [first, setFirst] = useState(0);
   const [, setTick] = useState(0);
   const [height, setHeight] = useState(400);
+  const onFirstRef = useRef(onFirstChange);
+  onFirstRef.current = onFirstChange;
 
   const total = count * rowHeight;
   const scrollHeight = Math.min(total, MAX_HEIGHT);
@@ -90,8 +94,12 @@ export function VirtualList({ count, rowHeight, renderRow, activeIndex, revealKe
 
   const onScroll = (e: Event) => {
     const f = firstFor((e.currentTarget as HTMLDivElement).scrollTop);
-    if (f !== first) setFirst(f); // only when the window of rows moves, not on every pixel
-    else if (scale !== 1) setTick((t) => t + 1); // scaled: the rows' offset follows every pixel
+    if (f !== first) {
+      setFirst(f); // only when the window of rows moves, not on every pixel
+      onFirstRef.current?.(f);
+    } else if (scale !== 1) {
+      setTick((t) => t + 1); // scaled: the rows' offset follows every pixel
+    }
   };
 
   const visible = Math.ceil(height / rowHeight) + 1;
