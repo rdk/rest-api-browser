@@ -126,7 +126,7 @@
         <dependency>
             <groupId>com.atlassian.plugins</groupId>
             <artifactId>atlassian-plugins-osgi-javaconfig</artifactId>
-            <version>0.6.0</version>
+            <version>0.6.1</version>
             <scope>compile</scope>
         </dependency>
         <dependency>
@@ -213,7 +213,7 @@
         <dependency>
             <groupId>com.atlassian.selenium</groupId>
             <artifactId>atlassian-pageobjects-api</artifactId>
-            <version>4.0.0-m005</version>
+            <version>4.0.1</version>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -356,7 +356,7 @@
             <plugin>
                 <groupId>com.atlassian.maven.plugins</groupId>
                 <artifactId>amps-maven-plugin</artifactId>
-                <version>9.3.2</version>
+                <version>9.14.0</version>
                 <extensions>true</extensions>
                 <configuration>
                     <containerId>tomcat10x</containerId>
