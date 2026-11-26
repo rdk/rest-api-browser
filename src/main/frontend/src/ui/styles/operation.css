@@ -253,25 +253,43 @@
 
 .rab-n-tabpane { flex: 1; overflow: auto; min-height: 0; }
 
-/* Params table */
-.rab-n-params { width: 100%; border-collapse: collapse; }
-.rab-n-params tr { transition: background var(--rab-ease); }
-.rab-n-params tbody tr:hover { background: color-mix(in srgb, var(--rab-sunken) 70%, transparent); }
-.rab-n-params td { padding: 4px 8px; border-bottom: 1px solid var(--rab-border-subtle); vertical-align: top; }
+/* Params form grid */
+.rab-n-params {
+  display: grid;
+  grid-template-columns: auto minmax(220px, min(58%, 680px)) minmax(120px, 1fr);
+  width: 100%;
+}
+.rab-n-param {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: start;
+  border-bottom: 1px solid var(--rab-border-subtle);
+  transition: background var(--rab-ease);
+}
+.rab-n-param:hover { background: color-mix(in srgb, var(--rab-sunken) 70%, transparent); }
+.rab-n-param-name,
+.rab-n-param-value,
+.rab-n-param-meta {
+  min-width: 0;
+  padding: 5px 8px;
+}
 .rab-n-param-name {
+  width: max-content;
+  max-width: 240px;
   font-family: var(--rab-mono);
   font-size: 12.5px;
   font-weight: 600;
   color: var(--rab-text);
-  max-width: 220px;
   overflow-wrap: anywhere;
-  padding-left: 14px !important;
-  padding-top: 7px !important;
-  width: 1%;
+  padding-left: 14px;
+  padding-top: 8px;
 }
-.rab-n-param-value { width: 58%; }
-.rab-n-param-value .rab-n-input { width: 100%; }
-.rab-n-param-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.rab-n-param-value .rab-n-input { width: 100%; min-width: 0; max-width: 100%; }
+.rab-n-param-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; min-width: 0; }
+.rab-n-param-row > .rab-n-input { flex: 1 1 0%; width: 0; min-width: 0; max-width: 100%; }
+.rab-n-param-row > .rab-n-quiet,
+.rab-n-param-row > .rab-n-icon { flex: none; }
 .rab-n-param-row:last-child { margin-bottom: 0; }
 .rab-n-param-desc {
   margin-top: 3px;
@@ -284,10 +302,9 @@
 .rab-n-param-meta {
   color: var(--rab-subtlest);
   font-size: 12px;
-  max-width: 240px;
   overflow-wrap: anywhere;
-  padding-top: 6px !important;
-  padding-right: 14px !important;
+  padding-top: 7px;
+  padding-right: 14px;
 }
 .rab-n-in {
   display: inline-block;
@@ -300,6 +317,7 @@
   font-size: 11px;
   font-weight: 600;
   text-align: center;
+  white-space: nowrap;
 }
 .rab-n-in-path { background: var(--rab-bg-discovery); color: var(--rab-path-color); }
 .rab-n-in-query { background: var(--rab-bg-teal); color: var(--rab-query-color); }

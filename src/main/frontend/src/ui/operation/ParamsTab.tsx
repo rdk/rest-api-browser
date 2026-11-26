@@ -31,59 +31,57 @@ export function ParamsTab({ params, values, onValues, regexes, opKey, onOpenClas
   };
   const get = (p: Param): string[] => valuesOf(p, values);
   return (
-    <table class="rab-n-params" data-testid="params">
-      <tbody>
-        {sorted.map((p) => {
-          const list = get(p);
-          const isFile = p.in === 'form' && p.type === 'File';
-          return (
-            <tr key={p.in + ':' + p.name}>
-              <td class="rab-n-param-name">
-                {p.name}
-                {p.required && <span class="rab-n-required" title="Required" aria-hidden="true">*</span>}
-              </td>
-              <td class="rab-n-param-value">
-                {isFile ? (
-                  <FileParamField
-                    param={p}
-                    files={values.files?.[p.name] ?? []}
-                    textValues={list}
-                    onFiles={(f) => setFiles(p, f)}
-                    onText={(t) => set(p, t)}
-                  />
-                ) : (
-                  <>
-                    {list.map((v, i) => {
-                      const check = checkAt(p, v, i, list, regexOf(p, regexes));
-                      return (
-                        <div class="rab-n-param-row" key={i}>
-                          <ParamInput param={p} value={v} invalid={check?.state === 'warn' && !!v.trim()} onChange={(nv) => set(p, list.map((x, j) => (j === i ? nv : x)))} />
-                          <CheckMark check={check} />
-                          {p.repeating && list.length > 1 && (
-                            <button class="rab-n-icon" aria-label={`Remove ${p.name} value ${i + 1}`}
-                                    {...tipProps({ title: 'Remove value', body: `Remove value #${i + 1} for ${p.name}.` })}
-                                    onClick={() => set(p, list.filter((_, j) => j !== i))}>×</button>
-                          )}
-                        </div>
-                      );
-                    })}
-                    {p.repeating && (p.in === 'query' || p.in === 'form') && (
-                      <button class="rab-n-link" onClick={() => set(p, [...list, ''])}
-                              {...tipProps({ title: 'Add another value', body: `Append another ${p.name} parameter entry to the request.` })}>+ value</button>
-                    )}
-                  </>
-                )}
-                {p.description && <div class="rab-n-param-desc" data-testid="param-desc">{p.description}</div>}
-              </td>
-              <td class="rab-n-param-meta">
-                <span class={'rab-n-in rab-n-in-' + p.in}>{p.in}</span>{' '}
-                <ParamTypeLabel param={p} opKey={opKey} onOpenClass={onOpenClass} />
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+    <div class="rab-n-params" data-testid="params">
+      {sorted.map((p) => {
+        const list = get(p);
+        const isFile = p.in === 'form' && p.type === 'File';
+        return (
+          <div class="rab-n-param" key={p.in + ':' + p.name}>
+            <div class="rab-n-param-name">
+              {p.name}
+              {p.required && <span class="rab-n-required" title="Required" aria-hidden="true">*</span>}
+            </div>
+            <div class="rab-n-param-value">
+              {isFile ? (
+                <FileParamField
+                  param={p}
+                  files={values.files?.[p.name] ?? []}
+                  textValues={list}
+                  onFiles={(f) => setFiles(p, f)}
+                  onText={(t) => set(p, t)}
+                />
+              ) : (
+                <>
+                  {list.map((v, i) => {
+                    const check = checkAt(p, v, i, list, regexOf(p, regexes));
+                    return (
+                      <div class="rab-n-param-row" key={i}>
+                        <ParamInput param={p} value={v} invalid={check?.state === 'warn' && !!v.trim()} onChange={(nv) => set(p, list.map((x, j) => (j === i ? nv : x)))} />
+                        <CheckMark check={check} />
+                        {p.repeating && list.length > 1 && (
+                          <button class="rab-n-icon" aria-label={`Remove ${p.name} value ${i + 1}`}
+                                  {...tipProps({ title: 'Remove value', body: `Remove value #${i + 1} for ${p.name}.` })}
+                                  onClick={() => set(p, list.filter((_, j) => j !== i))}>×</button>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {p.repeating && (p.in === 'query' || p.in === 'form') && (
+                    <button class="rab-n-link" onClick={() => set(p, [...list, ''])}
+                            {...tipProps({ title: 'Add another value', body: `Append another ${p.name} parameter entry to the request.` })}>+ value</button>
+                  )}
+                </>
+              )}
+              {p.description && <div class="rab-n-param-desc" data-testid="param-desc">{p.description}</div>}
+            </div>
+            <div class="rab-n-param-meta">
+              <span class={'rab-n-in rab-n-in-' + p.in}>{p.in}</span>{' '}
+              <ParamTypeLabel param={p} opKey={opKey} onOpenClass={onOpenClass} />
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

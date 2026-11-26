@@ -559,6 +559,20 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
                 curl: await b.evaluate(`document.querySelector('[data-testid=copy-curl]').disabled`) };
             c.check('Copy curl is disabled like Send while a required value is missing', empty.send && empty.curl, empty);
             await b.shot(path.join(SHOTS, `${PRODUCT}-next-5-form.png`));
+            const paramLayout = await b.evaluate(`(() => {
+                const pane = document.querySelector('#rab-n-request-pane');
+                const names = [...document.querySelectorAll('[data-testid=params] .rab-n-param-name')].map(el => {
+                    const r = el.getBoundingClientRect();
+                    return { text: el.textContent.trim(), w: Math.round(r.width), h: Math.round(r.height) };
+                });
+                return {
+                    overflowX: pane ? pane.scrollWidth - pane.clientWidth : 999,
+                    names,
+                    bad: names.filter(n => n.text.length >= 4 && (n.w < 40 || (n.text.length <= 22 && n.h > 42))),
+                };
+            })()`);
+            c.check('parameter labels stay horizontal without letter-by-letter wrapping or horizontal overflow',
+                paramLayout.names.length > 0 && paramLayout.bad.length === 0 && paramLayout.overflowX <= 1, paramLayout);
             await type(`input[name=${q(P.param)}]`, ODD);
             await sleep(100);
             const filled = { mark: await mark(), tab: await b.evaluate(`!!document.querySelector('[data-testid=params-warn]')`) };

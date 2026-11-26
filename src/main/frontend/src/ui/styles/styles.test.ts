@@ -69,4 +69,25 @@ describe('ui/styles', () => {
     const javaCss = stripComments(readStyle('java.css'));
     expect(javaCss).toMatch(/\.rab-n-modal-bar\s+\.rab-n-find\s+input\s*\{[^}]*border-color:\s*var\(--rab-border\)/);
   });
+
+  it('lays out the params form with CSS Grid + subgrid and non-collapsing name column', () => {
+    const opCss = stripComments(readStyle('operation.css'));
+    const params = opCss.match(/\.rab-n-params\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(params).toMatch(/display:\s*grid\b/);
+    expect(params).toMatch(/grid-template-columns:/);
+
+    const paramRow = opCss.match(/\.rab-n-param\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(paramRow).toMatch(/grid-template-columns:\s*subgrid\b/);
+
+    const nameCol = opCss.match(/\.rab-n-param-name\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(nameCol).toMatch(/width:\s*max-content\b/);
+    expect(nameCol).toMatch(/max-width:/);
+    expect(nameCol).not.toMatch(/width:\s*1%/);
+
+    const rowInput = opCss.match(/\.rab-n-param-row\s*>\s*\.rab-n-input\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(rowInput).toMatch(/min-width:\s*0\b/);
+
+    const inBadge = opCss.match(/\.rab-n-in\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(inBadge).toMatch(/white-space:\s*nowrap\b/);
+  });
 });

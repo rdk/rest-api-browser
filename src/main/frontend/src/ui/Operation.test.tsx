@@ -121,4 +121,50 @@ describe('ui/OperationView', () => {
     expect((document.querySelector('[data-testid=body]') as HTMLTextAreaElement).getAttribute('aria-invalid')).toBe('true');
     expect(document.querySelector('[data-testid=json-check]')?.classList.contains('is-warn')).toBe(true);
   });
+
+  it('renders normal, required, hyphenated, long, and enum parameter rows in the params grid', async () => {
+    const mod = module('example:rest', 'example/1.0');
+    const complexOp = op('example:rest', 'GET', 'items/{id}', {
+      params: [
+        { name: 'id', in: 'path', type: 'string', required: true },
+        { name: 'fromDate', in: 'query', type: 'string', required: false },
+        { name: 'X-Custom-Token', in: 'header', type: 'string', required: false },
+        { name: 'deleteOrganizationsWithInactiveUsers', in: 'query', type: 'boolean', required: false },
+        { name: 'mode', in: 'query', type: 'CheckMode', required: true, options: ['FAST', 'THOROUGH', 'VERIFICATION_MODE_WITH_LONG_NAME'] },
+      ],
+    });
+    const sm = summary([mod], { sysadmin: true });
+    const runner = { running: false, abort: vi.fn(), run: vi.fn() } as unknown as RequestRunner;
+    const userStore = new UserStore('test-op-grid', null);
+
+    render(
+      <div class="rab-n">
+        <OperationView
+          summary={sm}
+          op={complexOp}
+          module={mod}
+          onDraft={() => undefined}
+          runner={runner}
+          userStore={userStore}
+          split={0.45}
+          onSplit={() => undefined}
+        />
+      </div>,
+      document.body,
+    );
+    await new Promise((r) => setTimeout(r, 20));
+
+    const grid = document.querySelector('[data-testid=params]') as HTMLElement;
+    expect(grid).not.toBeNull();
+    expect(grid.tagName).toBe('DIV');
+
+    const rows = [...grid.querySelectorAll('.rab-n-param')];
+    expect(rows).toHaveLength(5);
+    const names = rows.map((r) => r.querySelector('.rab-n-param-name')?.textContent?.trim());
+    expect(names).toEqual(['id*', 'mode*', 'fromDate', 'deleteOrganizationsWithInactiveUsers', 'X-Custom-Token']);
+    expect(rows.every((r) => r.querySelector('.rab-n-param-value') && r.querySelector('.rab-n-param-meta'))).toBe(true);
+    expect(rows[0].querySelector('.rab-n-param-name .rab-n-required')?.textContent).toBe('*');
+    expect(rows[1].querySelector('select[name=mode]')?.querySelectorAll('option')).toHaveLength(4);
+    expect(rows[3].querySelector('select[name=deleteOrganizationsWithInactiveUsers]')?.querySelectorAll('option')).toHaveLength(3);
+  });
 });
