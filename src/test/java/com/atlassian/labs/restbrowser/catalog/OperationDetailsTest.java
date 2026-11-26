@@ -3,6 +3,7 @@ package com.atlassian.labs.restbrowser.catalog;
 import com.atlassian.annotations.security.AdminOnly;
 import com.atlassian.labs.restbrowser.catalog.JerseyModelSource.Handler;
 import com.atlassian.labs.restbrowser.catalog.ModuleDiscovery.RestModule;
+import com.atlassian.labs.restbrowser.json.Json;
 import com.atlassian.plugin.ModuleDescriptor;
 import com.atlassian.plugin.Plugin;
 import com.atlassian.plugin.PluginInformation;

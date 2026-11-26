@@ -79,8 +79,13 @@ public class CatalogResourceTest {
 
     private void login(boolean admin, boolean sysadmin) {
         when(userManager.getRemoteUserKey(request)).thenReturn(user);
+        when(userManager.isLicensed(user)).thenReturn(true);
         when(userManager.isAdmin(user)).thenReturn(admin || sysadmin);
         when(userManager.isSystemAdmin(user)).thenReturn(sysadmin);
+    }
+
+    private String env() {
+        return CatalogResource.envTag("Jira", "10.3.0", "1", "/jira");
     }
 
     @Test
@@ -105,11 +110,24 @@ public class CatalogResourceTest {
     }
 
     @Test
+    public void unlicensedLoggedInUserIsForbidden() {
+        when(userManager.getRemoteUserKey(request)).thenReturn(user);
+        when(userManager.isLicensed(user)).thenReturn(false);
+        when(userManager.isAdmin(user)).thenReturn(false);
+        when(userManager.isSystemAdmin(user)).thenReturn(false);
+        assertEquals(403, resource.summary(request).getStatus());
+        assertEquals(403, resource.index(snapshot.hash(), request).getStatus());
+        when(request.getHeader("X-Atlassian-Token")).thenReturn("no-check");
+        assertEquals(403, resource.started("a", request).getStatus());
+        verify(catalog, never()).current(any());
+    }
+
+    @Test
     public void summaryForANonAdminHasUserEtag() {
         login(false, false);
         Response r = resource.summary(request);
         assertEquals(200, r.getStatus());
-        assertEquals("\"" + snapshot.hash() + "-c1.1-u\"", r.getHeaderString("ETag"));
+        assertEquals("\"" + snapshot.hash() + "-c1.1-" + env() + "-u\"", r.getHeaderString("ETag"));
         assertEquals("private, no-cache", r.getHeaderString("Cache-Control"));
         assertTrue(((String) r.getEntity()).contains("\"admin\":false"));
         assertTrue(((String) r.getEntity()).contains("\"baseUrl\":\"/jira\""));
@@ -120,7 +138,7 @@ public class CatalogResourceTest {
         login(true, false);
         Response r = resource.summary(request);
         assertEquals(200, r.getStatus());
-        assertEquals("\"" + snapshot.adminTag() + "-c1.1-a\"", r.getHeaderString("ETag"));
+        assertEquals("\"" + snapshot.adminTag() + "-c1.1-" + env() + "-a\"", r.getHeaderString("ETag"));
         assertTrue(snapshot.adminTag().matches(snapshot.hash() + "-[0-9a-f]{8}"));
         assertTrue(((String) r.getEntity()).contains("\"admin\":true"));
         assertTrue(((String) r.getEntity()).contains("\"sysadmin\":false"));
@@ -130,7 +148,7 @@ public class CatalogResourceTest {
     public void summaryForASystemAdminHasItsOwnEtag() {
         login(true, true);
         Response r = resource.summary(request);
-        assertEquals("\"" + snapshot.adminTag() + "-c1.1-s\"", r.getHeaderString("ETag"));
+        assertEquals("\"" + snapshot.adminTag() + "-c1.1-" + env() + "-s\"", r.getHeaderString("ETag"));
         assertTrue(((String) r.getEntity()).contains("\"sysadmin\":true"));
     }
 
@@ -141,11 +159,23 @@ public class CatalogResourceTest {
         when(userManager.isAdmin(user)).thenReturn(false);
         when(userManager.isSystemAdmin(user)).thenReturn(true);
         Response r = resource.summary(request);
-        assertEquals("\"" + snapshot.adminTag() + "-c1.1-s\"", r.getHeaderString("ETag"));
+        assertEquals("\"" + snapshot.adminTag() + "-c1.1-" + env() + "-s\"", r.getHeaderString("ETag"));
         assertTrue(((String) r.getEntity()).contains("\"admin\":true"));
         assertTrue(((String) r.getEntity()).contains("\"sysadmin\":true"));
-        when(request.getHeader("If-None-Match")).thenReturn("\"" + snapshot.hash() + "-c1.1-u\"");
+        when(request.getHeader("If-None-Match")).thenReturn("\"" + snapshot.hash() + "-c1.1-" + env() + "-u\"");
         assertEquals(200, resource.summary(request).getStatus()); // an ordinary user's copy does not match
+    }
+
+    @Test
+    public void summaryEtagChangesWhenBaseUrlOrSiteTitleChanges() {
+        login(false, false);
+        String first = resource.summary(request).getHeaderString("ETag");
+        when(props.getBaseUrl(UrlMode.RELATIVE)).thenReturn("/jira2");
+        when(request.getHeader("If-None-Match")).thenReturn(first);
+        Response r = resource.summary(request);
+        assertEquals(200, r.getStatus());
+        assertNotEquals(first, r.getHeaderString("ETag"));
+        assertTrue(r.getHeaderString("ETag").endsWith("-u\""));
     }
 
     @Test
@@ -175,10 +205,11 @@ public class CatalogResourceTest {
     @Test
     public void summaryAnswers304WhenTheEtagMatches() {
         login(false, false);
-        when(request.getHeader("If-None-Match")).thenReturn("\"" + snapshot.hash() + "-c1.1-u\"");
+        String expected = "\"" + snapshot.hash() + "-c1.1-" + env() + "-u\"";
+        when(request.getHeader("If-None-Match")).thenReturn(expected);
         Response r = resource.summary(request);
         assertEquals(304, r.getStatus());
-        assertEquals("\"" + snapshot.hash() + "-c1.1-u\"", r.getHeaderString("ETag"));
+        assertEquals(expected, r.getHeaderString("ETag"));
         assertNull(r.getEntity());
     }
 

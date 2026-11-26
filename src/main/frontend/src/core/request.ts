@@ -1,5 +1,4 @@
-import { findTemplates, spansSegments, trimModulePath, trimOpPath } from './template';
-import { pathKinds, type PartKind } from './pathparts';
+import { findTemplates, pathKinds, spansSegments, trimModulePath, trimOpPath, type PartKind } from '../lib/jaxrs-router';
 import type { Operation, ParamIn, Summary } from './types';
 
 export interface RequestValues {
@@ -197,8 +196,11 @@ export function buildRequest(summary: Summary, op: Operation, values: RequestVal
       const fd = new FormData();
       for (const [name, value] of formEntries) fd.append(name, value);
       for (const [name, file] of fileEntries) fd.append(name, file, file.name);
+      // Let fetch/browser emit Content-Type with the generated multipart boundary.
+      for (const key of Object.keys(headers)) {
+        if (key.toLowerCase() === 'content-type') delete headers[key];
+      }
       req.body = fd;
-      // the browser sets Content-Type with the multipart boundary
     } else {
       const sp = new URLSearchParams();
       for (const [name, value] of formEntries) sp.append(name, value);
@@ -224,17 +226,23 @@ const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 export function toCurl(req: BuiltRequest): string {
   const parts = ['curl'];
   if (req.method === 'HEAD') parts.push('-I');
-  else if (req.method !== 'GET') parts.push('-X', req.method);
+  else if (req.method !== 'GET') {
+    parts.push('-X', /^[A-Za-z][A-Za-z0-9-]*$/.test(req.method) ? req.method : quote(req.method));
+  }
   if (!hasHeader(req.headers, 'Authorization')) parts.push('-u', '"$USER:$PASSWORD"');
   for (const [name, value] of Object.entries(req.headers)) parts.push('-H', quote(`${name}: ${value}`));
   if (typeof FormData !== 'undefined' && req.body instanceof FormData) {
     for (const [name, value] of req.body.entries()) {
-      if (typeof value === 'string') parts.push('-F', quote(`${name}=${value}`));
-      else parts.push('-F', quote(`${name}=@${value.name || 'file'}`));
+      if (typeof value === 'string') {
+        parts.push('--form-string', quote(`${name}=${value}`));
+      } else {
+        const safeFile = (value.name || 'file').replace(/[\r\n\0";,\\]/g, '_');
+        parts.push('-F', quote(`${name}=@${safeFile}`));
+      }
     }
   } else if (typeof req.body === 'string') {
     parts.push('--data-raw', quote(req.body));
   }
-  parts.push(quote(req.url));
+  parts.push('--', quote(req.url));
   return parts.join(' ');
 }

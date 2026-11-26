@@ -1,0 +1,222 @@
+/* Base resets, host-chrome hiding, shared utilities, buttons, and inputs */
+.rab-n *, .rab-n *::before, .rab-n *::after { box-sizing: border-box; }
+/* :where keeps base button typography/color at zero specificity so component styles win */
+.rab-n :where(button) { font: inherit; color: inherit; }
+.rab-n :where(button, a, [role="button"], [role="separator"], input, select, textarea, .rab-n-tip-target):focus-visible {
+  outline: 2px solid var(--rab-focus);
+  outline-offset: 2px;
+}
+
+/* Host product chrome hiding on the full-page app route (this bundle loads on /next only) */
+body:has(#rab-next) :is(#header, #main-header, #footer, #sidebar-container),
+body.rab-next-page :is(#header, #main-header, #footer, #sidebar-container) {
+  display: none !important;
+}
+:has(> #rab-next) { padding: 0 !important; }
+
+/* Shared utilities */
+.rab-n-spacer { flex: 1; }
+.rab-n-subtle { color: var(--rab-subtlest); }
+.rab-n-error { color: var(--rab-danger); }
+.rab-n-pad { padding: 10px 14px; }
+.rab-n-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+.rab-n-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.rab-n-nowrap { white-space: pre; }
+.rab-n-svg { flex: none; display: inline-block; vertical-align: middle; }
+.rab-n-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.rab-n-link {
+  background: none;
+  border: 0;
+  padding: 2px 6px;
+  border-radius: var(--rab-radius-sm);
+  color: var(--rab-link);
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background var(--rab-ease), color var(--rab-ease);
+}
+.rab-n-link:where(:hover) {
+  background: color-mix(in srgb, var(--rab-bg-info) 75%, transparent);
+  text-decoration: underline;
+}
+
+/* Buttons */
+.rab-n-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--rab-border);
+  background: var(--rab-raised);
+  color: var(--rab-text);
+  border-radius: var(--rab-radius-sm);
+  padding: 4px 10px;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.3;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 1px 1px color-mix(in srgb, var(--rab-text) 5%, transparent);
+  transition: background var(--rab-ease), border-color var(--rab-ease), box-shadow var(--rab-ease), color var(--rab-ease), transform var(--rab-ease);
+}
+.rab-n-button:where(:hover:not(:disabled)) {
+  background: color-mix(in srgb, var(--rab-raised) 85%, var(--rab-neutral-hover));
+  border-color: color-mix(in srgb, var(--rab-subtle) 35%, var(--rab-border));
+}
+.rab-n-button:active:not(:disabled) { transform: translateY(0.5px); }
+.rab-n-button:disabled { opacity: 0.48; cursor: not-allowed; box-shadow: none; }
+
+/* Primary and write-method gradient Send button */
+.rab-n-send {
+  padding: 0 14px;
+  height: 32px;
+  border-radius: var(--rab-radius-md);
+  background: var(--rab-grad-brand);
+  color: var(--rab-on-brand) !important;
+  border-color: transparent;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  box-shadow: var(--rab-shadow-send);
+}
+.rab-n-send:where(:hover:not(:disabled)) {
+  background: var(--rab-grad-brand-hover);
+  border-color: transparent;
+  box-shadow: var(--rab-shadow-send-hover);
+}
+.rab-n-send.write {
+  background: var(--rab-grad-warn);
+  color: var(--rab-on-warning) !important;
+  box-shadow: var(--rab-shadow-send-warn);
+}
+.rab-n-send.write:where(:hover:not(:disabled)) {
+  background: var(--rab-grad-warn-hover);
+  border-color: transparent;
+  box-shadow: var(--rab-shadow-send-warn-hover);
+}
+.rab-n-send.write.danger {
+  background: var(--rab-grad-danger);
+  color: var(--rab-on-brand) !important;
+  box-shadow: var(--rab-shadow-send-danger);
+}
+.rab-n-send.write.danger:where(:hover:not(:disabled)) {
+  background: var(--rab-grad-danger-hover);
+  border-color: transparent;
+  box-shadow: var(--rab-shadow-send-danger-hover);
+}
+.rab-n-cancel-btn {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--rab-radius-md);
+  color: var(--rab-danger);
+  border-color: color-mix(in srgb, var(--rab-danger) 40%, var(--rab-border));
+  background: var(--rab-bg-danger);
+}
+.rab-n-cancel-btn:where(:hover:not(:disabled)) {
+  background: color-mix(in srgb, var(--rab-bg-danger) 75%, var(--rab-danger-bold));
+  border-color: var(--rab-danger);
+}
+
+.rab-n-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: var(--rab-radius-sm);
+  background: none;
+  cursor: pointer;
+  padding: 0;
+  color: var(--rab-subtlest);
+  transition: background var(--rab-ease), color var(--rab-ease);
+}
+.rab-n-icon:where(:hover) { background: var(--rab-hover); color: var(--rab-danger); }
+
+.rab-n-quiet {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--rab-radius-sm);
+  background: none;
+  color: var(--rab-subtle);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background var(--rab-ease), color var(--rab-ease);
+}
+.rab-n-quiet:where(:hover:not(:disabled)) { background: var(--rab-hover); color: var(--rab-text); }
+.rab-n-quiet:disabled { opacity: 0.48; cursor: not-allowed; }
+
+/* Form controls */
+.rab-n-input {
+  border: 1px solid var(--rab-border);
+  border-radius: var(--rab-radius-sm);
+  padding: 3px 8px;
+  background: var(--rab-input);
+  color: var(--rab-text);
+  font: inherit;
+  font-size: 12.5px;
+  min-width: 0;
+  transition: border-color var(--rab-ease), box-shadow var(--rab-ease), background var(--rab-ease);
+}
+.rab-n-input:hover:not(:focus):not(.is-warn) { border-color: color-mix(in srgb, var(--rab-subtle) 45%, var(--rab-border)); }
+.rab-n-input:focus, .rab-n-textarea:focus {
+  outline: 2px solid var(--rab-focus);
+  outline-offset: -1px;
+  border-color: var(--rab-focus);
+}
+
+.rab-n-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 12px;
+  padding: 6px 12px;
+  border-radius: var(--rab-radius-md);
+  background: linear-gradient(90deg, var(--rab-bg-warning), color-mix(in srgb, var(--rab-bg-warning) 60%, var(--rab-surface)));
+  border: 1px solid color-mix(in srgb, var(--rab-warning) 28%, var(--rab-border));
+  color: var(--rab-text);
+  font-size: 13px;
+}
+.rab-n-spinner {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  border: 2px solid color-mix(in srgb, var(--rab-brand) 22%, var(--rab-border));
+  border-top-color: var(--rab-brand);
+  border-right-color: var(--rab-spinner-accent, var(--rab-discovery-bold));
+  border-radius: 50%;
+  animation: rab-n-spin 0.75s linear infinite;
+  vertical-align: -2px;
+  flex: none;
+}
+@keyframes rab-n-spin { to { transform: rotate(360deg); } }
+
+.rab-n kbd {
+  display: inline-block;
+  font-family: var(--rab-mono);
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--rab-text);
+  background: var(--rab-raised);
+  border: 1px solid var(--rab-border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 0 5px;
+}
+
+/* Custom thin scrollbars inside the app */
+.rab-n-vlist, .rab-n-tabpane, .rab-n-headers, .rab-n-textarea {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--rab-subtlest) 38%, transparent) transparent;
+}

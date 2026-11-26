@@ -1,26 +1,28 @@
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { memo } from 'preact/compat';
 import type { Module, Operation, Summary } from '../core/types';
-import { groupRows, search, type GroupRow, type SearchRow } from '../core/search';
+import type { Matcher, RouteMatch } from '../core/routes';
+import { groupRows, matchUrlQuery, search, type GroupRow, type SearchRow } from '../core/search';
 import { VirtualList } from './VirtualList';
 import { MethodBadge, PathText, plural, usePin } from './bits';
-import { searchWords } from '../core/pathparts';
-import { moduleFact, rowTicks, type Fact } from './facts';
+import { searchWords } from '../lib/jaxrs-router';
+import { moduleFact, rowTicks, type Fact } from '../core/facts';
 import { isWaiting, moduleReason, rowLabel } from '../core/explain';
 import type { StartFailure } from '../core/catalog';
 import { RowCard, type CardTarget } from './RowCard';
 import { tipProps } from '../core/uitips';
+import { ESCAPE_PRIORITY, isInsideInert, onInertChange, useEscape } from '../lib/overlay';
 
 const ROW = 24;
-/** The hover card's id: the row it describes points to it (aria-describedby). */
 const CARD_ID = 'rab-n-row-card';
-/** How long the pointer rests on a row before its card opens; moving on to the next row while one shows is instant. */
 const CARD_DELAY = 450;
 
 export interface SidebarProps {
   summary: Summary | null;
   rows: SearchRow[];
+  matcher?: Matcher;
   selectedKey?: string;
-  onSelect: (op: Operation) => void;
+  onSelect: (op: Operation, urlMatch?: RouteMatch) => void;
   query: string;
   onQuery: (q: string) => void;
   supportedOnly: boolean;
@@ -38,11 +40,10 @@ export interface SidebarProps {
 type Line = { kind: 'module'; module: Module; count: number } | { kind: 'op'; op: Operation; module?: Module };
 
 export function Sidebar(p: SidebarProps) {
-  // the input shows every key at once; the search runs 120 ms after the last one
   const [typed, setTyped] = useState(p.query);
   const typing = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(typing.current), []);
-  // a query set from outside (not typed here) shows in the box too
+
   const sent = useRef(p.query);
   useEffect(() => {
     if (p.query === sent.current) return;
@@ -51,6 +52,7 @@ export function Sidebar(p: SidebarProps) {
     typing.current = undefined;
     setTyped(p.query);
   }, [p.query]);
+
   const query = (v: string) => {
     sent.current = v;
     p.onQuery(v);
@@ -63,7 +65,6 @@ export function Sidebar(p: SidebarProps) {
       query(v);
     }, 120);
   };
-  // Escape in the box clears it (whatever the browser does on its own), and does nothing else
   const onSearchKey = (e: KeyboardEvent) => {
     if (e.key !== 'Escape' || !typed) return;
     e.preventDefault();
@@ -73,7 +74,6 @@ export function Sidebar(p: SidebarProps) {
     setTyped('');
     query('');
   };
-  // a key that acts on the list must not act on the results of the previous query: search now, act on the next key
   const flushQuery = () => {
     if (typing.current === undefined) return false;
     clearTimeout(typing.current);
@@ -81,10 +81,18 @@ export function Sidebar(p: SidebarProps) {
     query(typed);
     return true;
   };
+
   const searching = p.query.trim().length > 0;
   const words = useMemo(() => searchWords(p.query), [p.query]);
   const modulesById = useMemo(() => new Map((p.summary?.modules ?? []).map((m) => [m.id, m])), [p.summary]);
-  const hits = useMemo(() => search(p.rows, p.query, { supportedOnly: p.supportedOnly }), [p.rows, p.query, p.supportedOnly]);
+  const urlMatches = useMemo(
+    () => (searching ? matchUrlQuery(p.rows, p.query, p.matcher, { supportedOnly: p.supportedOnly }) : new Map<string, RouteMatch>()),
+    [p.rows, p.query, p.matcher, p.supportedOnly, searching],
+  );
+  const hits = useMemo(
+    () => search(p.rows, p.query, { supportedOnly: p.supportedOnly }, p.matcher, urlMatches),
+    [p.rows, p.query, p.supportedOnly, p.matcher, urlMatches],
+  );
   const lines: Line[] = useMemo(() => {
     if (searching) return hits.map((h) => ({ kind: 'op', op: h.op, module: h.module }) as Line);
     if (!p.summary) return [];
@@ -92,8 +100,7 @@ export function Sidebar(p: SidebarProps) {
       g.kind === 'module' ? g : ({ kind: 'op', op: g.op } as Line),
     );
   }, [hits, searching, p.summary, p.collapsed, p.supportedOnly]);
-  // one small button folds or unfolds every module: unfold when all the listed ones are folded, else fold them all;
-  // pending and failed modules have nothing to fold
+
   const foldable = (m: Module) => m.state === 'ok';
   const allCollapsed = useMemo(
     () => !searching && lines.some((l) => l.kind === 'module' && foldable(l.module))
@@ -102,15 +109,12 @@ export function Sidebar(p: SidebarProps) {
   );
   const toggleAll = () => p.onCollapsed(allCollapsed ? new Set() : new Set((p.summary?.modules ?? []).filter(foldable).map((m) => m.id)));
   const hiddenBySupported = useMemo(
-    () => (p.supportedOnly && hits.length === 0 ? search(p.rows, p.query).length : 0),
-    [hits, p.rows, p.query, p.supportedOnly],
+    () => (p.supportedOnly && hits.length === 0 ? search(p.rows, p.query, {}, p.matcher).length : 0),
+    [hits, p.rows, p.query, p.supportedOnly, p.matcher],
   );
 
-  // the keyboard's position in the list, by row identity, so a list that changes (a module expanded, a new search)
-  // does not move it; it follows the selection only when the selection changes
   const [activeId, setActiveId] = useState<string | undefined>(p.selectedKey);
   useEffect(() => setActiveId(p.selectedKey), [p.selectedKey]);
-  // a new search or filter starts at the top of its results, not where the previous list was scrolled
   const listKey = p.query + '|' + p.supportedOnly;
   const firstKey = useRef(listKey);
   useEffect(() => {
@@ -118,13 +122,13 @@ export function Sidebar(p: SidebarProps) {
     firstKey.current = listKey;
     setActiveId(undefined);
   }, [listKey]);
+
   const idOf = (l: Line) => (l.kind === 'op' ? l.op.key : 'module:' + l.module.id);
   const active = useMemo(() => (activeId ? lines.findIndex((l) => idOf(l) === activeId) : -1), [lines, activeId]);
   const reveal = useRef({ id: activeId, shown: false, seq: 0 });
   if (reveal.current.id !== activeId || reveal.current.shown !== active >= 0) {
     reveal.current = { id: activeId, shown: active >= 0, seq: reveal.current.seq + 1 };
   }
-  // the list's one tab stop: the keyboard's row, else the first (kept rendered while the list scrolls)
   const tabStop = active >= 0 ? active : lines.length ? 0 : -1;
   const focusFrame = useRef(0);
   useEffect(() => () => cancelAnimationFrame(focusFrame.current), []);
@@ -134,12 +138,12 @@ export function Sidebar(p: SidebarProps) {
   };
 
   const input = useRef<HTMLInputElement>(null);
+  const covered = () => isInsideInert(input.current);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
-      const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
-      // not with a modifier (Ctrl+/ belongs to the browser), nor into a list hidden behind a box on the whole screen
-      if (e.key === '/' && !typing && !e.ctrlKey && !e.metaKey && !e.altKey && !input.current?.closest('[inert]')) {
+      const typingInField = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+      if (e.key === '/' && !typingInField && !e.ctrlKey && !e.metaKey && !e.altKey && !covered()) {
         e.preventDefault();
         input.current?.focus();
         input.current?.select();
@@ -149,11 +153,9 @@ export function Sidebar(p: SidebarProps) {
     return () => document.removeEventListener('keydown', onKey);
   }, []);
 
-  // the hover card of a row, one for the whole list: the rows only carry their index (data-i)
   const [card, setCard] = useState<{ id: string; target: CardTarget; left: number; top: number } | null>(null);
   const cardTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const cardFor = useRef<string | undefined>(undefined);
-  // the row clicked last: no card for it until the pointer moves on to another row
   const suppressed = useRef<string | undefined>(undefined);
   const cardBox = useRef<HTMLDivElement | null>(null);
   const listBox = useRef<HTMLDivElement>(null);
@@ -162,48 +164,66 @@ export function Sidebar(p: SidebarProps) {
     cardFor.current = undefined;
     setCard(null);
   };
-  // Alt+P pins the card: it stays until a click outside it or Escape, whatever the pointer, the list or the focus do
-  const shownRef = useRef(false);
-  shownRef.current = !!card;
-  const [pinned] = usePin(() => shownRef.current, cardBox, forceHide);
+  const [pinned] = usePin(() => !!card, cardBox, forceHide);
   const pinnedRef = useRef(false);
   pinnedRef.current = pinned;
   const hideCard = () => {
     if (!pinnedRef.current) forceHide();
   };
   useEffect(() => () => clearTimeout(cardTimer.current), []);
-  // other rows (a search, a fold, the catalog updated): the card goes, and the row the pointer rests on gets its card
-  // again, as a pending one would have (its timer went with the old rows)
+
+  useEscape(!!card && !pinned, () => {
+    if (covered()) return false;
+    forceHide();
+    return true;
+  }, ESCAPE_PRIORITY.TOOLTIP);
+
   useEffect(() => {
-    if (pinnedRef.current) return;
+    if (!card) return;
+    const dismissIfInert = () => {
+      if (covered()) forceHide();
+    };
+    dismissIfInert();
+    return onInertChange(dismissIfInert);
+  }, [!!card]);
+
+  // Refresh a pinned card when catalog updates (e.g. a waiting module finishes starting), or re-schedule unpinned hover.
+  useEffect(() => {
+    if (pinnedRef.current) {
+      setCard((prev) => {
+        if (!prev) return prev;
+        const fresh = lines.find((l) => idOf(l) === prev.id);
+        if (!fresh) return prev;
+        const target: CardTarget = fresh.kind === 'op'
+          ? { kind: 'op', op: fresh.op, module: fresh.module ?? modulesById.get(fresh.op.module) }
+          : { kind: 'module', module: fresh.module, count: fresh.count };
+        return { ...prev, target };
+      });
+      return;
+    }
     forceHide();
     const row = listBox.current?.querySelector('[data-i]:hover, [data-i]:focus-visible') as HTMLElement | null;
     if (row) scheduleCard(row, CARD_DELAY);
-  }, [lines]);
-  // a box on the whole screen covers the list: its card goes too, and stays away
-  const covered = () => !!input.current?.closest('[inert]');
-  // Escape hides a card that is not pinned (the pinned one has its own Escape), and only that; not a covered one
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && shownRef.current && !pinnedRef.current && !covered()) {
-        e.stopPropagation();
-        forceHide();
-      }
-    };
-    document.addEventListener('keydown', onKey, true);
-    return () => document.removeEventListener('keydown', onKey, true);
-  }, []);
+  }, [lines, modulesById]);
+
   const scheduleCard = (row: HTMLElement, delay: number) => {
     const id = row.dataset.id;
-    if (!id || cardFor.current === id || suppressed.current === id) return;
+    if (!id || cardFor.current === id || suppressed.current === id || covered()) return;
     suppressed.current = undefined;
     cardFor.current = id;
     clearTimeout(cardTimer.current);
     cardTimer.current = setTimeout(() => {
+      if (covered()) {
+        if (cardFor.current === id) cardFor.current = undefined;
+        return;
+      }
       const l = lines[Number(row.dataset.i)];
       const root = row.closest('.rab-n') as HTMLElement | null;
       const side = row.closest('.rab-n-sidebar') as HTMLElement | null;
-      if (!l || !root || !side || !row.isConnected || idOf(l) !== id) return;
+      if (!l || !root || !side || !row.isConnected || idOf(l) !== id) {
+        if (cardFor.current === id) cardFor.current = undefined;
+        return;
+      }
       const rr = root.getBoundingClientRect();
       const target: CardTarget = l.kind === 'op'
         ? { kind: 'op', op: l.op, module: l.module ?? modulesById.get(l.op.module) }
@@ -215,9 +235,8 @@ export function Sidebar(p: SidebarProps) {
     if (pinnedRef.current) return;
     const row = (e.target as Element).closest?.('[data-i]') as HTMLElement | null;
     if (row) scheduleCard(row, card ? 0 : CARD_DELAY);
-    else hideCard(); // the empty space below a short list
+    else hideCard();
   };
-  // a click closes the card, and it stays closed until the pointer moves on to another row
   const onListDown = (e: MouseEvent) => {
     hideCard();
     suppressed.current = ((e.target as Element).closest?.('[data-i]') as HTMLElement | null)?.dataset.id;
@@ -229,11 +248,10 @@ export function Sidebar(p: SidebarProps) {
   const onListFocus = (e: FocusEvent) => {
     const row = e.target as HTMLElement;
     if (row.dataset?.i === undefined) return;
-    // the keyboard's position follows the focus, so the arrows go on from the row that has it
     const i = Number(row.dataset.i);
     if (i !== active) setActive(i);
     if (!pinnedRef.current && row.matches(':focus-visible')) {
-      suppressed.current = undefined; // the keyboard asks for its card, whatever a click did before
+      suppressed.current = undefined;
       scheduleCard(row, CARD_DELAY);
     }
   };
@@ -244,27 +262,31 @@ export function Sidebar(p: SidebarProps) {
     else next.add(id);
     p.onCollapsed(next);
   };
-  // what Enter or a click does on a row: opens an operation, folds a module, starts one that has not started
   const activate = (l: Line) => {
-    if (l.kind === 'op') p.onSelect(l.op);
+    if (l.kind === 'op') p.onSelect(l.op, urlMatches.get(l.op.key));
     else if (foldable(l.module)) toggle(l.module.id);
     else if (isWaiting(l.module) && !p.starting?.has(l.module.id)) p.onStart?.(l.module);
   };
 
-  // keys for the list, from the search box or the list itself; the filter buttons keep their own Enter
+  const latestRef = useRef({ lines, activate, setActive });
+  latestRef.current = { lines, activate, setActive };
+  const handleRowActivate = useCallback((index: number) => {
+    latestRef.current.setActive(index);
+    const line = latestRef.current.lines[index];
+    if (line) latestRef.current.activate(line);
+  }, []);
+
   const onListKey = (e: KeyboardEvent) => {
     const target = e.target as HTMLElement;
     const inSearch = target === input.current;
     const inList = !!target.closest?.('.rab-n-vlist');
     if (!inSearch && !inList) return;
-    // Ctrl+Enter sends the open request (Operation); the list leaves modified keys alone
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (inSearch && (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter') && flushQuery()) {
       e.preventDefault();
       return;
     }
     if (!lines.length) return;
-    // Home, End, PageUp and PageDown move in the list itself (in the search box they move the caret)
     const page = Math.max(1, Math.floor((target.closest('.rab-n-vlist')?.clientHeight ?? 0) / ROW) - 1);
     const moves: Record<string, number> = { ArrowDown: 1, ArrowUp: -1, ...(inList ? { PageDown: page, PageUp: -page, Home: -lines.length, End: lines.length } : {}) };
     if (e.key in moves) {
@@ -273,12 +295,9 @@ export function Sidebar(p: SidebarProps) {
       const from = active < 0 ? (step > 0 ? -1 : lines.length) : active;
       setActive(Math.min(lines.length - 1, Math.max(0, from + step)));
       if (inList) {
-        // keep the keyboard focus on the highlighted row; a row out of the rendered window appears only after the
-        // list has scrolled to it, a frame or two later
         const list = target.closest('.rab-n-vlist');
         cancelAnimationFrame(focusFrame.current);
         const focus = (tries: number) => {
-          // only while the focus is still in the list: a click or Tab elsewhere in between wins
           if (!list?.contains(document.activeElement)) return;
           const row = list.querySelector('.rab-n-op.active, .rab-n-module.active') as HTMLElement | null;
           if (row) row.focus();
@@ -425,37 +444,24 @@ export function Sidebar(p: SidebarProps) {
                   described={card?.id === idOf(l)}
                   starting={!!p.starting?.has(l.module.id)}
                   failure={p.startFailures?.get(l.module.id)}
-                  onClick={() => {
-                    setActive(i);
-                    activate(l);
-                  }}
+                  onActivate={handleRowActivate}
                 />
               );
             }
             const m = l.module ?? modulesById.get(l.op.module);
-            const full = (m ? m.path + '/' : '') + l.op.path;
             return (
-              <button
-                class={'rab-n-op' + (l.op.key === p.selectedKey ? ' selected' : '') + (i === active ? ' active' : '') + (searching ? '' : ' indented')}
-                tabIndex={i === tabStop ? 0 : -1}
-                aria-current={l.op.key === p.selectedKey ? 'true' : undefined}
-                aria-describedby={card?.id === l.op.key ? CARD_ID : undefined}
-                onClick={() => {
-                  setActive(i);
-                  activate(l);
-                }}
-                data-testid="op"
-                data-method={l.op.method}
-                data-path={full}
-                data-i={i}
-                data-id={l.op.key}
-              >
-                <MethodBadge method={l.op.method} />
-                <span class="rab-n-op-path">
-                  {searching ? <PathText path={full} prefix={m?.path.length} words={words} /> : <PathText path={'/' + l.op.path} />}
-                </span>
-                <Ticks facts={rowTicks(l.op, m, searching)} />
-              </button>
+              <OpRow
+                index={i}
+                op={l.op}
+                module={m}
+                searching={searching}
+                words={words}
+                selected={l.op.key === p.selectedKey}
+                active={i === active}
+                tabStop={i === tabStop}
+                described={card?.id === l.op.key}
+                onActivate={handleRowActivate}
+              />
             );
           }}
         />
@@ -468,14 +474,44 @@ export function Sidebar(p: SidebarProps) {
   );
 }
 
-function ModuleRow({ index, module, count, collapsed, active, tabStop, described, starting, failure, onClick }: {
+const OpRow = memo(function OpRow({
+  index, op, module, searching, words, selected, active, tabStop, described, onActivate,
+}: {
+  index: number; op: Operation; module?: Module; searching: boolean; words: string[];
+  selected: boolean; active: boolean; tabStop: boolean; described: boolean; onActivate: (index: number) => void;
+}) {
+  const full = (module ? module.path + '/' : '') + op.path;
+  const facts = useMemo(() => rowTicks(op, module, searching), [op, module, searching]);
+  return (
+    <button
+      class={'rab-n-op' + (selected ? ' selected' : '') + (active ? ' active' : '') + (searching ? '' : ' indented')}
+      tabIndex={tabStop ? 0 : -1}
+      aria-current={selected ? 'true' : undefined}
+      aria-describedby={described ? CARD_ID : undefined}
+      onClick={() => onActivate(index)}
+      data-testid="op"
+      data-method={op.method}
+      data-path={full}
+      data-i={index}
+      data-id={op.key}
+    >
+      <MethodBadge method={op.method} />
+      <span class="rab-n-op-path">
+        {searching ? <PathText path={full} prefix={module?.path.length} words={words} /> : <PathText path={'/' + op.path} />}
+      </span>
+      <Ticks facts={facts} />
+    </button>
+  );
+});
+
+const ModuleRow = memo(function ModuleRow({
+  index, module, count, collapsed, active, tabStop, described, starting, failure, onActivate,
+}: {
   index: number; module: Module; count: number; collapsed: boolean; active: boolean; tabStop: boolean; described: boolean;
-  starting: boolean; failure?: StartFailure; onClick: () => void;
+  starting: boolean; failure?: StartFailure; onActivate: (index: number) => void;
 }) {
   const kind = moduleFact(module);
-  // a pending or failed module has no operations to fold: no chevron, no expanded state
   const foldable = module.state === 'ok';
-  // why a module could not be read, as its class: waiting (Enter or a click starts it), skipped on purpose, failed
   const reason = moduleReason(module);
   return (
     <button
@@ -486,7 +522,7 @@ function ModuleRow({ index, module, count, collapsed, active, tabStop, described
         (reason ? ' ' + reason.kind : module.state === 'pending' ? ' pending' : '') +
         (starting ? ' starting' : '')
       }
-      onClick={onClick}
+      onClick={() => onActivate(index)}
       tabIndex={tabStop ? 0 : -1}
       aria-busy={starting || undefined}
       aria-expanded={foldable ? !collapsed : undefined}
@@ -502,7 +538,6 @@ function ModuleRow({ index, module, count, collapsed, active, tabStop, described
           </svg>
         )}
       </span>
-      {/* the module's kind (supported, app, bundled; none for the product's internal APIs) as the icon's colour */}
       <span class={'rab-n-module-icon' + (kind ? ' rab-n-tone-' + kind.tone : '')} aria-hidden="true">
         <svg class="rab-n-svg" width="14" height="14" viewBox="0 0 16 16" fill="none">
           <path d="M8 2.2l5.8 2.9L8 8 2.2 5.1 8 2.2z" fill="currentColor" fillOpacity="0.2" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
@@ -524,9 +559,8 @@ function ModuleRow({ index, module, count, collapsed, active, tabStop, described
       </span>
     </button>
   );
-}
+});
 
-/** Small color ticks for what the row is (supported, app, deprecated, access); the hover card spells them out. */
 function Ticks({ facts }: { facts: Fact[] }) {
   if (!facts.length) return null;
   return (

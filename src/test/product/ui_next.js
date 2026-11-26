@@ -259,10 +259,18 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         const bodyFile = await saved('response.json');
         let formatted = false;
         try { formatted = !!bodyFile && /\n  "/.test(bodyFile) && !!JSON.parse(bodyFile); } catch (e) { /* not JSON */ }
-        const places = await b.evaluate(`({ download: !!document.querySelector('[data-testid=response] .rab-n-tabbar [data-testid=download]'),
-            maximize: !!document.querySelector('[data-testid=response] .rab-n-statusline [data-testid=max-bottom]') })`);
+        const places = await b.evaluate(`(() => {
+            const reqTabs = document.querySelector('.rab-n-request .rab-n-tabbar > .rab-n-tabs');
+            const resTabs = document.querySelector('[data-testid=response] .rab-n-tabbar > .rab-n-tabs');
+            const cleanTabs = (el) => !!el && el.scrollHeight <= el.clientHeight && getComputedStyle(el).overflowY === 'hidden';
+            return {
+                download: !!document.querySelector('[data-testid=response] .rab-n-tabbar [data-testid=download]'),
+                maximize: !!document.querySelector('[data-testid=response] .rab-n-statusline [data-testid=max-bottom]'),
+                noTabScrollbars: cleanTabs(reqTabs) && cleanTabs(resTabs),
+            };
+        })()`);
         c.check('Download, in the tab bar, saves what the open tab shows: the formatted body, the response\'s or the request\'s headers',
-            places.download && places.maximize && formatted && /^HTTP \d{3}/.test(headersFile || '') && /^GET \//.test(requestFile || '')
+            places.download && places.maximize && places.noTabScrollbars && formatted && /^HTTP \d{3}/.test(headersFile || '') && /^GET \//.test(requestFile || '')
             && /accept: /i.test(requestFile || ''),
             { places, formatted, headers: (headersFile || '').slice(0, 60), request: (requestFile || '').slice(0, 60) });
         fs.rmSync(downloads, { recursive: true, force: true });
@@ -432,9 +440,18 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
             const items = document.querySelectorAll('[data-testid=outline-item]');
             const status = (document.querySelector('[data-testid=source-dialog-status]') || {}).textContent || '';
             const zipBtn = document.querySelector('[data-testid=source-dialog-download-zip]');
-            const hdrBg = getComputedStyle(document.querySelector('[data-testid=source-dialog-header]')).backgroundImage || getComputedStyle(document.querySelector('[data-testid=source-dialog-header]')).backgroundColor;
+            const hdr = document.querySelector('[data-testid=source-dialog-header]');
+            const strip = hdr && hdr.querySelector('.rab-n-modal-tabstrip');
+            const hdrBg = hdr && (getComputedStyle(hdr).backgroundImage || getComputedStyle(hdr).backgroundColor);
+            const stripSt = strip && getComputedStyle(strip);
+            const noTitleScrollbars = !!hdr && !!strip
+                && hdr.scrollHeight <= hdr.clientHeight
+                && hdr.scrollWidth <= hdr.clientWidth
+                && strip.scrollHeight <= strip.clientHeight
+                && stripSt.overflowY === 'hidden'
+                && stripSt.scrollbarWidth === 'none';
             if (items.length > 0) items[0].click();
-            return { outlineCount: items.length, status, hasZip: !!zipBtn && !zipBtn.disabled, hdrBg };
+            return { outlineCount: items.length, status, hasZip: !!zipBtn && !zipBtn.disabled, hdrBg, noTitleScrollbars };
         })()`);
         await click('[data-testid=source-dialog-outline-toggle]');
         const outlineCollapsed = await b.waitFor(`!document.querySelector('[data-testid=source-dialog-outline]')`, 2000);
@@ -471,9 +488,9 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         const restoredAll = await b.waitFor(`document.querySelectorAll('[data-testid=source-dialog-tab]').length === 2`, 2000);
         await press('Escape');
         const dlgClosed = await b.waitFor(`!document.querySelector('[data-testid=source-dialog]')`, 3000);
-        c.check(`tabbed decompiler dialog drills (${ref1} -> ${ref2}), remembers outline width, has themed header/outline/status/ZIP/Pretty, maximizes, minimizes keeping tabs, reopens from top panel, and supports close/close-all/undo`,
-            dlgOpen && !!dlgClass1 && dlgCfr && cfrOutlineOrig > 0 && cfrOutlinePretty > 0 && prettyOn && prettyOff && !!decompilerLink && /^https:\/\/github\.com\/leibnitz27\/cfr$/.test(decompilerLink.href) && decompilerLink.leftOfToggle
-            && twoTabs && outlineAndStatus.outlineCount > 0 && outlineCollapsed && outlineReopened && outlineAndStatus.hasZip
+        c.check(`tabbed decompiler dialog drills (${ref1} -> ${ref2}), remembers outline width, has clean title bar and themed header/outline/status/ZIP/Pretty, maximizes, minimizes keeping tabs, reopens from top panel, and supports close/close-all/undo`,
+            dlgOpen && !!dlgClass1 && dlgCfr && cfrOutlineOrig > 0 && cfrOutlinePretty > 0 && prettyOn && prettyOff && !!decompilerLink && /^https:\/\/github\.com\/leibnitz27\/cfr$/.test(decompilerLink.href) && decompilerLink.target === '_blank' && decompilerLink.leftOfToggle
+            && twoTabs && outlineAndStatus.outlineCount > 0 && !!outlineAndStatus.hdrBg && outlineAndStatus.hdrBg !== 'none' && outlineAndStatus.noTitleScrollbars && outlineCollapsed && outlineReopened && outlineAndStatus.hasZip
             && outlineWidthRemembered === outlineWidthAfter
             && /Line \d+ \/ \d+/.test(outlineAndStatus.status) && classesBtnStyle && classesBtnStyle.border === '0px'
             && dlgMax && dlgRestored && dlgMinimized && dlgReopened
@@ -529,6 +546,10 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         let templatedKey = null;
         if (await openOp(P.templated.split('/').slice(-2).join(' ').replace(/[{}]/g, ''), P.templated)) {
             templatedKey = await b.evaluate(`new URLSearchParams(location.search).get('op')`);
+            const stickyJava = await b.evaluate(`((document.querySelector('.rab-n-request [role=tab][aria-selected=true]') || {}).textContent || '').trim() === 'Java'`);
+            c.check('switching operations keeps the active request tab sticky (Java stays selected)', stickyJava);
+            await b.evaluate(`([...document.querySelectorAll('.rab-n-request [role=tab]')].find(t => /^Params\\b/.test(t.textContent.trim())) || {}).click?.(), true`);
+            await b.waitFor(`!!document.querySelector('input[name=' + ${q(q(P.param))} + ']')`, 5000);
             const mark = () => b.evaluate(`(() => { const i = document.querySelector('input[name=${P.param}]');
                 const m = i && i.parentElement.querySelector('[data-testid=check]'); return m ? m.dataset.state : 'none'; })()`);
             const colorOf = sel => b.evaluate(`(() => { const e = document.querySelector(${q(sel)}); return e ? getComputedStyle(e).color : null; })()`);
@@ -564,36 +585,41 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
                     (await text('[data-testid=response-status]')).trim() || (await text('.rab-n-response')).slice(0, 200));
                 // the status code's rich tooltip: after a rest of the pointer, what the code means (outside the status
                 // line's live region); Escape hides it
-                const chip = await b.evaluate(`(() => { const r = document.querySelector('[data-testid=response-status]').getBoundingClientRect();
+                const chip = await b.evaluate(`(() => { const el = document.querySelector('[data-testid=response-status]');
+                    if (!el) return null; const r = el.getBoundingClientRect();
                     return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
-                // from elsewhere, so the pointer enters it (that also brings back a tooltip hidden with Escape before)
-                await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 });
-                await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: chip.x, y: chip.y });
-                await b.waitFor(`getComputedStyle(document.querySelector('[data-testid=status-tip]')).visibility === 'visible'`, 3000);
-                const tipOf = () => b.evaluate(`(() => { const t = document.querySelector('[data-testid=status-tip]');
-                    return t ? { shown: getComputedStyle(t).visibility === 'visible', live: !!t.closest('[role=status], [aria-live]'),
-                        wrap: t.parentElement.className, text: t.textContent.slice(0, 120) } : null; })()`);
-                const tip = await tipOf();
-                await press('Escape');
-                await sleep(200);
-                const tipAfter = await tipOf();
-                await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 });
-                const code = (await text('[data-testid=response-status]')).trim().split(' ')[0];
-                c.check('the status code has a rich tooltip that explains it, outside the live region, and Escape hides it',
-                    !!tip && tip.shown && !tip.live && tip.text.startsWith(code) && tip.text.length > code.length + 20 && !tipAfter.shown,
-                    { tip, tipAfter });
-                // clicking a non-link rich tooltip target pins it; clicking elsewhere unpins it
-                await clickAt(chip.x, chip.y);
-                await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 });
-                await sleep(200);
-                const tipClickPinned = await tipOf();
-                await clickAt(5, 5);
-                await sleep(200);
-                const tipClickUnpinned = await tipOf();
-                c.check('clicking a non-link rich tooltip target pins it, and clicking elsewhere unpins it',
-                    !!tipClickPinned && tipClickPinned.shown && /pinned/.test(tipClickPinned.wrap)
-                    && !!tipClickUnpinned && !tipClickUnpinned.shown,
-                    { tipClickPinned, tipClickUnpinned });
+                if (chip) {
+                    // from elsewhere, so the pointer enters it (that also brings back a tooltip hidden with Escape before)
+                    await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 });
+                    await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: chip.x, y: chip.y });
+                    await b.waitFor(`getComputedStyle(document.querySelector('[data-testid=status-tip]')).visibility === 'visible'`, 3000);
+                    const tipOf = () => b.evaluate(`(() => { const t = document.querySelector('[data-testid=status-tip]');
+                        return t ? { shown: getComputedStyle(t).visibility === 'visible', live: !!t.closest('[role=status], [aria-live]'),
+                            wrap: t.parentElement.className, text: t.textContent.slice(0, 120) } : null; })()`);
+                    const tip = await tipOf();
+                    await press('Escape');
+                    await sleep(200);
+                    const tipAfter = await tipOf();
+                    await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 });
+                    const code = (await text('[data-testid=response-status]')).trim().split(' ')[0];
+                    c.check('the status code has a rich tooltip that explains it, outside the live region, and Escape hides it',
+                        !!tip && tip.shown && !tip.live && tip.text.startsWith(code) && tip.text.length > code.length + 20 && !tipAfter.shown,
+                        { tip, tipAfter });
+                    // clicking a non-link rich tooltip target pins it; clicking elsewhere unpins it
+                    await clickAt(chip.x, chip.y);
+                    await b.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 });
+                    await sleep(200);
+                    const tipClickPinned = await tipOf();
+                    await clickAt(5, 5);
+                    await sleep(200);
+                    const tipClickUnpinned = await tipOf();
+                    c.check('clicking a non-link rich tooltip target pins it, and clicking elsewhere unpins it',
+                        !!tipClickPinned && tipClickPinned.shown && /pinned/.test(tipClickPinned.wrap)
+                        && !!tipClickUnpinned && !tipClickUnpinned.shown,
+                        { tipClickPinned, tipClickUnpinned });
+                } else {
+                    c.check('the status code badge is rendered for rich tooltip checks', false);
+                }
             }
             // delegated rich tooltips on buttons/links (e.g. Send button)
             const sendBtn = await b.evaluate(`(() => { const e = document.querySelector('[data-testid=send]');
@@ -894,7 +920,7 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         // a deep link fills the form and sends nothing (the operation with the path parameter, opened above)
         const key = templatedKey || await b.evaluate(`new URLSearchParams(location.search).get('op')`);
         await b.navigate(PAGE + '?op=' + encodeURIComponent(key) + '&path.' + encodeURIComponent(P.param) + '=DEEP-1');
-        const prefilled = await b.waitFor(`(document.querySelector('input[name=${P.param}]') || {}).value === 'DEEP-1'`, 60000);
+        const prefilled = await b.waitFor(`(document.querySelector('input[name=' + ${q(q(P.param))} + ']') || {}).value === 'DEEP-1'`, 60000);
         const keptSkin = await b.waitFor(`document.querySelector('.rab-n').dataset.skin === 'navy'`, 5000);
         c.check('the chosen skin is kept after a reload', keptSkin, await skinOf());
         await pickSkin('balanced');
@@ -910,9 +936,10 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         const formOp = await b.evaluate(`(async () => {
             const cat = await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/catalog', { credentials: 'same-origin' })).json();
             const idx = await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/catalog/index/' + cat.hash, { credentials: 'same-origin' })).json();
-            const o = idx.operations.find(x => ['POST','PUT','PATCH','DELETE'].includes(x.method) && x.params.some(p => p.in === 'form' && p.type !== 'File' && p.type !== 'boolean'));
+            const isTextFormParam = p => p.in === 'form' && p.type !== 'File' && p.type !== 'boolean' && !(p.options && p.options.length);
+            const o = idx.operations.find(x => ['POST','PUT','PATCH','DELETE'].includes(x.method) && x.params.some(isTextFormParam));
             if (!o) return null;
-            const fp = o.params.find(p => p.in === 'form' && p.type !== 'File' && p.type !== 'boolean');
+            const fp = o.params.find(isTextFormParam);
             return { key: o.key, param: fp.name };
         })()`);
         if (formOp) {

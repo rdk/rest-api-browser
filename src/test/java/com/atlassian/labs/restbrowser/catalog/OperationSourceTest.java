@@ -80,6 +80,67 @@ public class OperationSourceTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    public void scopeClassMethodLineDiffersAcrossSiblingMethodsAndTextBlocksExtract() throws Exception {
+        OperationSource source = new OperationSource(mock(ModuleDiscovery.class), () -> null, () -> true);
+        Result r1 = source.decompile(null, SampleResource.class.getName(), -1, "class", "vineflower", "greet", null, null, false);
+        Result r2 = source.decompile(null, SampleResource.class.getName(), -1, "class", "vineflower", "count", null, null, false);
+        assertEquals(200, r1.status());
+        assertEquals(200, r2.status());
+        int line1 = ((Number) ((Map<String, Object>) parseJson(r1.json())).get("methodLine")).intValue();
+        int line2 = ((Number) ((Map<String, Object>) parseJson(r2.json())).get("methodLine")).intValue();
+        assertTrue("methodLine must reflect each queried method independently: " + line1 + " vs " + line2,
+                line1 > 0 && line2 > line1);
+
+        // Multiline annotation + text block containing braces/semicolons
+        String withBlock = """
+                package com.example;
+                public class TB {
+                    @Operation(
+                        summary = "x",
+                        description = "y"
+                    )
+                    public String textBlockMethod() {
+                        String q = \"\"\"
+                            { not a method end; }
+                        \"\"\";
+                        return q;
+                    }
+                    public int after() { return 1; }
+                }
+                """;
+        String extracted = OperationSource.extractMethod(withBlock, "textBlockMethod");
+        assertTrue(extracted.contains("@Operation("));
+        assertTrue(extracted.contains("return q;"));
+        assertFalse(extracted.contains("after()"));
+
+        // LineSlicer int overflow guard
+        var sliced = com.atlassian.labs.restbrowser.decompile.LineSlicer.slice("a\nb\nc", 3, 2, Integer.MAX_VALUE);
+        assertEquals(3, sliced.endLine());
+        assertEquals("b\nc", sliced.text());
+    }
+
+    /** Carries a fake descriptor-like String constant and a parameterized generic signature. */
+    public static class PoolSample {
+        public static final String FAKE_STRING = "Lcom/fake/NotReferencedClass;";
+        public List<Greeting> greetings() {
+            return List.of();
+        }
+    }
+
+    @Test
+    public void constantPoolIgnoresStringLiteralsAndExtractsGenericSignatures() throws Exception {
+        byte[] bytes;
+        try (var in = PoolSample.class.getClassLoader()
+                .getResourceAsStream(PoolSample.class.getName().replace('.', '/') + ".class")) {
+            bytes = in.readAllBytes();
+        }
+        var refs = OperationSource.constantPoolClasses(bytes);
+        assertFalse("Must ignore CONSTANT_String literals: " + refs, refs.contains("com.fake.NotReferencedClass"));
+        assertTrue("Must extract generic Signature classes: " + refs, refs.contains(Greeting.class.getName()));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     public void decompilesReferencedClassByNameAndRejectsUnsafeNames() {
         OperationSource source = new OperationSource(mock(ModuleDiscovery.class), () -> null, () -> true);
         Result ok = source.decompile(null, Greeting.class.getName(), -1, "class", "vineflower");
@@ -113,6 +174,7 @@ public class OperationSourceTest {
         Result r = source.decompile("p:m:GET:greet");
         assertEquals(403, r.status());
         assertTrue(r.json().contains("decompile-disabled"));
+        assertEquals(403, source.inspectPlugin("com.example").status());
     }
 
     @Test
@@ -193,6 +255,20 @@ public class OperationSourceTest {
         assertEquals(200, batch.status());
         Map<String, Object> bBody = (Map<String, Object>) parseJson(batch.json());
         assertEquals(2L, bBody.get("count"));
+
+        // graph with includeSources + narrow packagePrefix must NOT poison global decompile/inspect refs
+        Result narrowGraph = source.traverseGraph(null, SampleResource.class.getName(), -1, 1, 10, false,
+                "com.nonexistent.prefix", true, "vineflower");
+        assertEquals(200, narrowGraph.status());
+        Result fullAfter = source.decompile(null, SampleResource.class.getName(), -1, "class", "vineflower");
+        assertEquals(200, fullAfter.status());
+        List<String> postRefs = (List<String>) ((Map<String, Object>) parseJson(fullAfter.json())).get("refs");
+        assertTrue("Full refs must remain intact after filtered graph: " + postRefs,
+                postRefs.contains(Greeting.class.getName()));
+
+        // opKey hint that throws/is missing must NOT break explicit class decompilation
+        Result hinted = source.decompile("no.such:module:GET:missing", Greeting.class.getName(), -1, "class", "cfr");
+        assertEquals(200, hinted.status());
 
         // search exact class fallback
         Result search = source.searchClasses(Greeting.class.getName(), 10, null);

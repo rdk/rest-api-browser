@@ -381,11 +381,44 @@ describe('UserStore round two', () => {
     const s = new UserStore('u', st);
     const file = new File(['hello'], 'secret.bin');
     const e = await s.addHistory(entry('a', {
-      values: { ...values(), form: { name: ['alice'], password: ['hunter2'] }, files: { file: [file] } },
+      values: { ...values(), form: { name: ['alice'], password: ['hunter2'], secretKey: ['sec_val_1'], passwordConfirm: ['pwd_val_2'] }, files: { file: [file] } },
     }));
     expect(e.values.form).toEqual({ name: ['alice'] });
     expect(e.values.files).toBeUndefined();
     expect(e.redacted).toBe(true);
-    expect([...st.data.values()].join('')).not.toContain('hunter2');
+    expect([...st.data.values()].join('')).not.toMatch(/hunter2|sec_val_1|pwd_val_2/);
+  });
+
+  it('stays in sync with EchoResource, redacts secret arrays, and tolerates null history items', async () => {
+    const hidden = ['X-Forwarded-Cookie', 'X-Cookie', 'Set-Cookie2', 'Ocp-Apim-Subscription-Key', 'X-Private-Key',
+      'X-Bearer', 'X-Authz', 'x-tokenvalue', 'x-secretkey', 'x-authheader', 'x-webauth-user',
+      'x-amzn-mtls-clientcert', 'x-samlresponse', 'x-oidcdata', 'x-jwtpayload'];
+    for (const n of hidden) expect(isCredentialHeader(n), n).toBe(true);
+    for (const n of ['X-Concert-Id', 'X-Cookies-Enabled', 'X-Key-Id', 'X-Atlassian-Token']) {
+      expect(isCredentialHeader(n), n).toBe(false);
+    }
+
+    const st = new FakeStorage();
+    st.data.set('rab-next:u:history', JSON.stringify([null, { opKey: 123 }, { id: 'ok', opKey: 'a', at: 1, method: 'GET', url: '/rest/ok', values: values() }]));
+    const s = new UserStore('u', st);
+    expect(await s.history('a')).toHaveLength(1);
+
+    const e = await s.addHistory(entry('a', {
+      values: {
+        ...values({ 'X-MyCookies': 'secret-cookie' }),
+        body: '{"passwords":["s3cr3t"],"apiKeys":["k1"],"authKey":"ak","myJwt":"j","bearer":"b","tokenCount":5}',
+      },
+    }));
+    expect(e.values.header['X-MyCookies']).toBeUndefined();
+    expect(e.values.body).toBe('{"passwords":"(hidden)","apiKeys":"(hidden)","authKey":"(hidden)","myJwt":"(hidden)","bearer":"(hidden)","tokenCount":5}');
+    expect(e.redacted).toBe(true);
+
+    const quoted = await s.addHistory(entry('a', { values: { ...values(), body: '"os_password=secret"' } }));
+    expect(quoted.values.body).toBeUndefined();
+    expect(quoted.redacted).toBe(true);
+
+    const proxyAuth = await s.addHistory(entry('a', { values: { ...values(), body: '{"proxyAuthorization":"Basic abc"}' } }));
+    expect(proxyAuth.values.body).toBe('{"proxyAuthorization":"(hidden)"}');
+    expect(proxyAuth.redacted).toBe(true);
   });
 });

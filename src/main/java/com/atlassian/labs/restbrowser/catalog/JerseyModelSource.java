@@ -5,6 +5,11 @@ import com.atlassian.labs.restbrowser.catalog.Model.Operation;
 import com.atlassian.labs.restbrowser.catalog.Model.OperationSpec;
 import com.atlassian.labs.restbrowser.catalog.Model.Param;
 import com.atlassian.labs.restbrowser.catalog.ModuleDiscovery.RestModule;
+import com.atlassian.labs.restbrowser.inspect.TypeProxyUnwrapper;
+import com.atlassian.labs.restbrowser.jaxrs.OpenApiAnnotationExtractor;
+import com.atlassian.labs.restbrowser.jaxrs.OpenApiAnnotationExtractor.OpDoc;
+import com.atlassian.labs.restbrowser.jaxrs.ReflectiveBridge;
+import com.atlassian.labs.restbrowser.jaxrs.TypeFormatter;
 import com.atlassian.plugin.servlet.ServletModuleManager;
 import com.atlassian.plugin.servlet.filter.FilterLocation;
 import jakarta.servlet.DispatcherType;
@@ -14,48 +19,49 @@ import org.slf4j.Logger;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.AnnotatedElement;
-import java.lang.reflect.Field;
-import java.lang.reflect.GenericArrayType;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
-import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
-import java.lang.reflect.TypeVariable;
-import java.lang.reflect.WildcardType;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Supplier;
 
+import static com.atlassian.labs.restbrowser.jaxrs.ReflectiveBridge.annString;
+import static com.atlassian.labs.restbrowser.jaxrs.ReflectiveBridge.call;
+import static com.atlassian.labs.restbrowser.jaxrs.ReflectiveBridge.field;
+import static com.atlassian.labs.restbrowser.jaxrs.ReflectiveBridge.findMethod;
+import static com.atlassian.labs.restbrowser.jaxrs.ReflectiveBridge.invoke;
+import static com.atlassian.labs.restbrowser.jaxrs.ReflectiveBridge.safeAnnotations;
+import static com.atlassian.labs.restbrowser.jaxrs.ReflectiveBridge.safeHasAnnotation;
 import static org.slf4j.LoggerFactory.getLogger;
 
 /**
- * Reads a REST v2 module's Jersey runtime resource model: the model Jersey routes requests with and generates the
- * WADL from, so it describes exactly what is served, and needs no JAXB.
- * <p>
- * The path to it is not public API: the REST v2 descriptor's filter (RestDelegatingServletFilter) holds the Jersey
- * servlet container in a private field; the container's ApplicationHandler gives the injection manager, which gives
- * ExtendedResourceContext and its ResourceModel. Everything is reached by reflection, so this class compiles
- * against no Jersey or REST plugin classes, and every value is copied into plain records at once.
- * <p>
- * The product initializes a REST module's filter on its first request. For a module that has not had one yet, the
- * source asks the ServletModuleManager for the filters of the module's path, which initializes them exactly as a
- * request would.
+ * Reads a REST v2 module's Jersey runtime resource model via reflection, isolating individual method/resource errors,
+ * guarding recursive {@code @BeanParam} graphs, and delegating type/OpenAPI introspection to {@code jaxrs/}.
  */
 public class JerseyModelSource implements SpecSource {
 
     private static final Logger LOGGER = getLogger(JerseyModelSource.class);
     private static final int MAX_LOCATOR_DEPTH = 4;
-    static final int MAX_SUMMARY = 300;
-    static final int MAX_DESCRIPTION = 2000;
-    static final int MAX_PARAM_DESCRIPTION = 500;
+    private static final int MAX_BEAN_DEPTH = 6;
+    static final int MAX_SUMMARY = OpenApiAnnotationExtractor.MAX_SUMMARY;
+    static final int MAX_DESCRIPTION = OpenApiAnnotationExtractor.MAX_DESCRIPTION;
+    static final int MAX_PARAM_DESCRIPTION = OpenApiAnnotationExtractor.MAX_PARAM_DESCRIPTION;
+
+    private static final String ATLASSIAN_MULTIPART_PARAM = "com.atlassian.plugins.rest.api.multipart.MultipartFormParam";
+    private static final String JERSEY_FORM_DATA_PARAM = "org.glassfish.jersey.media.multipart.FormDataParam";
+
+    public static final Set<String> ACCESS_ANNOTATIONS = Set.of(
+            "SystemAdminOnly", "AdminOnly", "LicensedOnly",
+            "UnlicensedSiteAccess", "AnonymousSiteAccess", "UnrestrictedAccess", "AnonymousAllowed");
 
     private final Supplier<ServletModuleManager> servletModuleManager;
     private final Supplier<ServletContext> servletContext;
@@ -66,10 +72,6 @@ public class JerseyModelSource implements SpecSource {
         this.servletContext = servletContext;
     }
 
-    /**
-     * The reason of a module whose Jersey application has not started yet: Confluence starts one on the first request
-     * to the module, on each node. The catalog's clients can start it with such a request (CatalogResource.started).
-     */
     public static final String NOT_STARTED = "not-started";
 
     @Override
@@ -77,10 +79,6 @@ public class JerseyModelSource implements SpecSource {
         return "jersey";
     }
 
-    /**
-     * Whether the module's Jersey application runs on this node now (a request has started it); false when it does not
-     * or cannot be told. Cheap: a field and a getter, nothing is initialized.
-     */
     public boolean started(RestModule module) {
         if (!module.restV2()) {
             return false;
@@ -95,26 +93,16 @@ public class JerseyModelSource implements SpecSource {
     @Override
     public Optional<ModuleSpec> describe(RestModule module) throws SpecException {
         if (!module.restV2()) {
-            return Optional.empty(); // REST v1 runs Jersey 1, a different model
+            return Optional.empty();
         }
         List<OperationSpec> operations = new ArrayList<>();
         walk(module, operations, null);
         return Optional.of(new ModuleSpec(id(), operations));
     }
 
-    /**
-     * The Java behind one operation: what handles it and the sub-resource locators on the way. For the details of
-     * one operation, on demand; the caller turns it into strings at once and keeps nothing of it.
-     *
-     * @param definition the method the JAX-RS annotations are on (an interface's, sometimes)
-     * @param handling   the method that runs
-     * @param handlerClass the class Jersey instantiates, when it says so
-     * @param locators   the sub-resource locator methods from the root resource down, empty for most operations
-     */
     public record Handler(Method definition, Method handling, Class<?> handlerClass, List<Method> locators) {
     }
 
-    /** The handler of the operation with this catalog key in this module; empty when the module has no such operation. */
     public Optional<Handler> handler(RestModule module, String key) throws SpecException {
         if (!module.restV2()) {
             return Optional.empty();
@@ -122,7 +110,6 @@ public class JerseyModelSource implements SpecSource {
         List<OperationSpec> operations = new ArrayList<>();
         Map<OperationSpec, Handler> handlers = new IdentityHashMap<>();
         walk(module, operations, handlers);
-        // the same keys as the catalog's: OperationKeys keeps the spec instances, so identity finds the handler
         for (Operation op : OperationKeys.assign(module.id(), operations)) {
             if (op.key().equals(key)) {
                 return Optional.ofNullable(handlers.get(op.spec()));
@@ -131,7 +118,6 @@ public class JerseyModelSource implements SpecSource {
         return Optional.empty();
     }
 
-    /** Visits the module's whole resource model; with {@code handlers}, records the handler of every operation too. */
     private void walk(RestModule module, List<OperationSpec> operations, Map<OperationSpec, Handler> handlers)
             throws SpecException {
         Object handler = applicationHandler(module);
@@ -147,8 +133,10 @@ public class JerseyModelSource implements SpecSource {
             throw new SpecException("model-unavailable", "Couldn't read the resource model: " + e, e);
         }
         Map<Class<?>, Boolean> locatorClasses = new IdentityHashMap<>();
-        for (Object root : roots) {
-            visit(root, "", 0, operations, handlers, locatorClasses, Inherited.NONE);
+        if (roots != null) {
+            for (Object root : roots) {
+                visit(root, "", 0, operations, handlers, locatorClasses, Inherited.NONE);
+            }
         }
     }
 
@@ -163,7 +151,7 @@ public class JerseyModelSource implements SpecSource {
         Object handler = applicationHandlerOrNull(container);
         String tried = "";
         if (handler == null) {
-            tried = initialize(module);
+            tried = initialize(module, container);
             handler = applicationHandlerOrNull(container);
         }
         if (handler == null) {
@@ -174,42 +162,26 @@ public class JerseyModelSource implements SpecSource {
 
     private static Object applicationHandlerOrNull(Object container) {
         try {
-            return call(container, "getApplicationHandler");
+            return container == null ? null : call(container, "getApplicationHandler");
         } catch (ReflectiveOperationException | RuntimeException e) {
-            return null; // Jersey's ServletContainer throws before init
+            return null;
         }
     }
 
-    /** Lets the ServletModuleManager initialize the filters of the module's path, as the first request would. */
-    /** @return what was tried, for the module's error details (admins see them) */
-    private String initialize(RestModule module) {
+    private String initialize(RestModule module, Object container) {
         ServletModuleManager manager = servletModuleManager.get();
         ServletContext context = servletContext.get();
         if (manager == null || context == null) {
             return "no ServletModuleManager or ServletContext to initialize it with";
         }
         FilterConfig config = new FilterConfig() {
-            @Override
-            public String getFilterName() {
-                return "rest-api-browser";
-            }
-
-            @Override
-            public ServletContext getServletContext() {
-                return context;
-            }
-
-            @Override
-            public String getInitParameter(String name) {
-                return null;
-            }
-
-            @Override
-            public Enumeration<String> getInitParameterNames() {
-                return Collections.emptyEnumeration();
-            }
+            @Override public String getFilterName() { return "rest-api-browser"; }
+            @Override public ServletContext getServletContext() { return context; }
+            @Override public String getInitParameter(String name) { return null; }
+            @Override public Enumeration<String> getInitParameterNames() { return Collections.emptyEnumeration(); }
         };
-        String path = "/rest/" + module.path() + "/";
+        String modPath = module.path() == null ? "" : module.path().replaceAll("^/+|/+$", "");
+        String path = modPath.isEmpty() ? "/rest/" : "/rest/" + modPath + "/";
         StringBuilder tried = new StringBuilder("filters for ").append(path).append(':');
         for (FilterLocation location : FilterLocation.values()) {
             try {
@@ -217,6 +189,10 @@ public class JerseyModelSource implements SpecSource {
                 manager.getFilters(location, path, config, DispatcherType.REQUEST).forEach(f -> count[0]++);
                 if (count[0] > 0) {
                     tried.append(' ').append(location).append('=').append(count[0]);
+                }
+                // Stop touching unrelated FilterLocations once this module's servlet container has started
+                if (applicationHandlerOrNull(container) != null) {
+                    break;
                 }
             } catch (RuntimeException | LinkageError e) {
                 LOGGER.debug("Couldn't initialize the filters of {}", path, e);
@@ -226,7 +202,6 @@ public class JerseyModelSource implements SpecSource {
         return tried.toString();
     }
 
-    /** What a sub-resource locator passes down to the operations below it; the locators only for the details. */
     private record Inherited(List<Param> params, String access, boolean deprecated, List<Method> locators) {
         static final Inherited NONE = new Inherited(List.of(), null, false, List.of());
     }
@@ -234,40 +209,63 @@ public class JerseyModelSource implements SpecSource {
     private void visit(Object resource, String prefix, int depth, List<OperationSpec> out,
                        Map<OperationSpec, Handler> handlers, Map<Class<?>, Boolean> locatorClasses,
                        Inherited inherited) {
+        if (resource == null) {
+            return;
+        }
+        String path;
         try {
             if (Boolean.TRUE.equals(call(resource, "isExtended"))) {
-                return; // Jersey's own additions, such as application.wadl
+                return;
             }
-            String path = join(prefix, (String) call(resource, "getPath"));
-            for (Object method : (List<?>) call(resource, "getResourceMethods")) {
-                if (!Boolean.TRUE.equals(call(method, "isExtended"))) {
-                    out.add(operation(method, path, inherited, handlers));
+            path = join(prefix, (String) call(resource, "getPath"));
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            LOGGER.debug("Skipped uninspectable resource under {}", prefix, e);
+            return;
+        }
+        try {
+            Object rawMethods = call(resource, "getResourceMethods");
+            if (rawMethods instanceof List<?> methods) {
+                for (Object method : methods) {
+                    try {
+                        if (!Boolean.TRUE.equals(call(method, "isExtended"))) {
+                            out.add(operation(method, path, inherited, handlers));
+                        }
+                    } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+                        // Isolate single broken method so siblings and child resources remain intact
+                        LOGGER.debug("Skipped broken resource method on {}", path, e);
+                    }
                 }
             }
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            LOGGER.debug("Skipped methods of {}", path, e);
+        }
+        try {
             Object locator = call(resource, "getResourceLocator");
             if (locator != null && depth < MAX_LOCATOR_DEPTH) {
                 visitLocator(resource, locator, path, depth, out, handlers, locatorClasses, inherited);
             }
-            for (Object child : (List<?>) call(resource, "getChildResources")) {
-                visit(child, path, depth, out, handlers, locatorClasses, inherited);
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            LOGGER.debug("Skipped sub-resource locator on {}", path, e);
+        }
+        try {
+            Object rawChildren = call(resource, "getChildResources");
+            if (rawChildren instanceof List<?> children) {
+                for (Object child : children) {
+                    visit(child, path, depth, out, handlers, locatorClasses, inherited);
+                }
             }
         } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
-            LOGGER.debug("Skipped part of the resource model below {}", prefix, e);
+            LOGGER.debug("Skipped child resources of {}", path, e);
         }
     }
 
-    /**
-     * Follows a sub-resource locator into the resource class it returns. The locator's own parameters (its path
-     * parameters, typically), access and deprecation apply to everything below it. A class already on the way down
-     * is not entered again (recursive locators).
-     */
     private void visitLocator(Object resource, Object locator, String path, int depth, List<OperationSpec> out,
                               Map<OperationSpec, Handler> handlers, Map<Class<?>, Boolean> locatorClasses,
                               Inherited inherited)
             throws ReflectiveOperationException {
         Object invocable = call(locator, "getInvocable");
         Class<?> type = (Class<?>) call(invocable, "getRawResponseType");
-        if (type == null || type == Object.class || type.isInterface() || locatorClasses.put(type, true) != null) {
+        if (type == null || type == Object.class || type.isPrimitive() || locatorClasses.put(type, true) != null) {
             return;
         }
         try {
@@ -275,22 +273,26 @@ public class JerseyModelSource implements SpecSource {
             if (sub == null) {
                 return;
             }
-            List<Param> params = new ArrayList<>(inherited.params());
+            List<Param> ownParams = new ArrayList<>();
             String[] ignoredBody = new String[2];
+            Set<Class<?>> visitedBeans = Collections.newSetFromMap(new IdentityHashMap<>());
             for (Object p : (List<?>) call(invocable, "getParameters")) {
-                param(p, params, ignoredBody);
+                param(p, ownParams, ignoredBody, visitedBeans, 0);
             }
+            List<Param> params = mergeParams(inherited.params(), ownParams);
             Method handling = (Method) call(invocable, "getHandlingMethod");
+            Method def = definitionMethod(invocable, handling);
+            Class<?> locatorCls = handlerClass(invocable);
             String access = inherited.access();
             boolean deprecated = inherited.deprecated();
             List<Method> locators = inherited.locators();
-            if (handling != null) {
-                access = firstNonNull(access(handling), access);
-                deprecated |= handling.isAnnotationPresent(Deprecated.class)
-                        || handling.getDeclaringClass().isAnnotationPresent(Deprecated.class);
-                if (handlers != null) {
+            if (handling != null || def != null) {
+                access = firstNonNull(access(def, handling, locatorCls), access);
+                deprecated |= isDeprecated(def, handling, locatorCls);
+                Method recorded = handling != null ? handling : def;
+                if (handlers != null && recorded != null) {
                     List<Method> chain = new ArrayList<>(locators);
-                    chain.add(handling);
+                    chain.add(recorded);
                     locators = List.copyOf(chain);
                 }
             }
@@ -309,25 +311,28 @@ public class JerseyModelSource implements SpecSource {
         Object invocable = call(method, "getInvocable");
         Method handling = (Method) call(invocable, "getHandlingMethod");
         Method def = definitionMethod(invocable, handling);
-        List<Param> params = new ArrayList<>(inherited.params());
+        Class<?> handlerCls = handlerClass(invocable);
+
+        List<Param> ownParams = new ArrayList<>();
         String[] bodyType = new String[2];
+        Set<Class<?>> visitedBeans = Collections.newSetFromMap(new IdentityHashMap<>());
         for (Object p : (List<?>) call(invocable, "getParameters")) {
-            param(p, params, bodyType);
+            param(p, ownParams, bodyType, visitedBeans, 0);
         }
-        String access = inherited.access();
-        boolean deprecated = inherited.deprecated();
+        List<Param> params = mergeParams(inherited.params(), ownParams);
+
+        String access = firstNonNull(access(def, handling, handlerCls), inherited.access());
+        boolean deprecated = inherited.deprecated() || isDeprecated(def, handling, handlerCls);
+
         String returnType = null;
         String returnJavaType = null;
         if (handling != null) {
-            access = firstNonNull(access(handling), access);
-            deprecated |= handling.isAnnotationPresent(Deprecated.class)
-                    || handling.getDeclaringClass().isAnnotationPresent(Deprecated.class);
             Class<?> rawRet = handling.getReturnType();
             if (rawRet != void.class && rawRet != Void.class) {
-                Type genericRet = handling.getGenericReturnType();
+                Type genericRet = safeGenericReturnType(handling, rawRet);
                 String annotatedRet = isGenericResponseWrapper(rawRet) ? annotatedReturnJavaType(def, handling) : null;
-                returnJavaType = annotatedRet != null ? annotatedRet : stableTypeName(genericRet, rawRet);
-                returnType = shortTypeName(returnJavaType);
+                returnJavaType = annotatedRet != null ? annotatedRet : TypeFormatter.stableTypeName(genericRet, rawRet);
+                returnType = TypeFormatter.shortTypeName(returnJavaType);
             }
         }
         OpDoc doc = opDoc(def, handling);
@@ -337,10 +342,35 @@ public class JerseyModelSource implements SpecSource {
                 access, deprecated, bodyType[0], doc.summary(), doc.description(), bodyType[1],
                 returnType, returnJavaType);
         if (handlers != null) {
-            handlers.put(spec, new Handler(def, handling, handlerClass(invocable),
-                    inherited.locators()));
+            handlers.put(spec, new Handler(def, handling, handlerCls, inherited.locators()));
         }
         return spec;
+    }
+
+    private static Type safeGenericReturnType(Method handling, Class<?> rawRet) {
+        try {
+            return handling.getGenericReturnType();
+        } catch (RuntimeException | LinkageError e) {
+            return rawRet;
+        }
+    }
+
+    /** Child method / locator parameters replace inherited parameters with the same (in, name). */
+    private static List<Param> mergeParams(List<Param> inherited, List<Param> own) {
+        if (inherited.isEmpty()) {
+            return own;
+        }
+        if (own.isEmpty()) {
+            return inherited;
+        }
+        Map<String, Param> merged = new LinkedHashMap<>();
+        for (Param p : inherited) {
+            merged.put(p.in() + ":" + p.name(), p);
+        }
+        for (Param p : own) {
+            merged.put(p.in() + ":" + p.name(), p);
+        }
+        return new ArrayList<>(merged.values());
     }
 
     private static Method definitionMethod(Object invocable, Method handling) {
@@ -361,21 +391,23 @@ public class JerseyModelSource implements SpecSource {
         }
     }
 
-    private static void param(Object p, List<Param> out, String[] bodyType) throws ReflectiveOperationException {
+    private static void param(Object p, List<Param> out, String[] bodyType,
+                              Set<Class<?>> visitedBeans, int beanDepth) throws ReflectiveOperationException {
         String source = String.valueOf(call(p, "getSource"));
         Class<?> raw = (Class<?>) call(p, "getRawType");
         Type type = (Type) call(p, "getType");
-        String javaType = stableTypeName(type, raw);
+        String javaType = TypeFormatter.stableTypeName(type, raw);
         switch (source) {
             case "PATH", "QUERY", "HEADER", "MATRIX", "FORM" -> {
                 String name = (String) call(p, "getSourceName");
                 if (name == null || name.isEmpty()) {
                     return;
                 }
-                boolean repeating = raw != null && Collection.class.isAssignableFrom(raw);
-                Class<?> element = repeating ? elementClass(type) : raw;
-                String desc = paramDoc(parameterAnnotations(p));
-                out.add(new Param(name, source.toLowerCase(), typeName(element), "PATH".equals(source),
+                boolean repeating = (raw != null && (Collection.class.isAssignableFrom(raw) || raw.isArray()))
+                        || (type instanceof java.lang.reflect.GenericArrayType);
+                Class<?> element = repeating ? TypeFormatter.elementClass(type, raw) : raw;
+                String desc = OpenApiAnnotationExtractor.paramDoc(parameterAnnotations(p));
+                out.add(new Param(name, source.toLowerCase(Locale.ROOT), typeName(element), "PATH".equals(source),
                         (String) call(p, "getDefaultValue"), options(element), repeating, desc, javaType));
             }
             case "ENTITY" -> {
@@ -383,147 +415,61 @@ public class JerseyModelSource implements SpecSource {
                 bodyType[1] = javaType;
             }
             case "BEAN_PARAM" -> {
-                // Jersey's BeanParameter lists the parameters of the bean's fields
-                Method m = findMethod(p.getClass(), "getParameters", new Class<?>[0]);
-                if (m != null) {
-                    for (Object inner : (Collection<?>) invoke(m, p)) {
-                        param(inner, out, bodyType);
+                if (beanDepth >= MAX_BEAN_DEPTH) {
+                    return;
+                }
+                Class<?> beanCls = raw != null ? TypeProxyUnwrapper.targetClass(raw) : null;
+                if (beanCls != null && !visitedBeans.add(beanCls)) {
+                    return; // break cyclic @BeanParam self-references safely
+                }
+                try {
+                    Method m = findMethod(p.getClass(), "getParameters", new Class<?>[0]);
+                    if (m != null) {
+                        Object innerList = invoke(m, p);
+                        if (innerList instanceof Collection<?> items) {
+                            for (Object inner : items) {
+                                param(inner, out, bodyType, visitedBeans, beanDepth + 1);
+                            }
+                        }
+                    }
+                } finally {
+                    if (beanCls != null) {
+                        visitedBeans.remove(beanCls);
                     }
                 }
             }
             default -> {
-                // Atlassian's @MultipartFormParam and Jersey's @FormDataParam show up as UNKNOWN in Jersey's core model
                 Annotation[] anns = parameterAnnotations(p);
                 String mpName = multipartParamName(anns);
                 if (mpName != null) {
-                    boolean repeating = raw != null && Collection.class.isAssignableFrom(raw);
-                    Class<?> element = repeating ? elementClass(type) : raw;
+                    boolean repeating = (raw != null && (Collection.class.isAssignableFrom(raw) || raw.isArray()))
+                            || (type instanceof java.lang.reflect.GenericArrayType);
+                    Class<?> element = repeating ? TypeFormatter.elementClass(type, raw) : raw;
                     String tName = isFileType(element) ? "File" : typeName(element);
                     out.add(new Param(mpName, "form", tName, false,
-                            (String) call(p, "getDefaultValue"), options(element), repeating, paramDoc(anns), javaType));
+                            (String) call(p, "getDefaultValue"), options(element), repeating,
+                            OpenApiAnnotationExtractor.paramDoc(anns), javaType));
                 }
-            } // context, cookie, suspended: not something a user fills in
+            }
         }
     }
 
-    /**
-     * Deterministic Java type name across cluster nodes: formats {@link ParameterizedType}, {@link GenericArrayType},
-     * {@link WildcardType} and {@link TypeVariable} structurally instead of calling {@link Type#getTypeName()} (which
-     * falls back to {@code Object.toString()} with an identity hash code on Jersey's anonymous {@code ParameterizedType}
-     * implementations such as {@code ReflectionHelper$16}), and unwraps CGLIB / JDK dynamic proxies.
-     */
+    // ---- delegating helpers (preserving existing package-private test hooks)
+
     static String stableTypeName(Type type, Class<?> raw) {
-        String formatted = formatType(type, 0);
-        if (formatted != null) {
-            return formatted;
-        }
-        return raw == null ? null : formatType(raw, 0);
+        return TypeFormatter.stableTypeName(type, raw);
     }
 
-    private static String formatType(Type type, int depth) {
-        if (type == null || depth > 8) {
-            return null;
-        }
-        if (type instanceof Class<?> c) {
-            if (c.isArray()) {
-                String comp = formatType(c.getComponentType(), depth + 1);
-                return comp == null ? null : comp + "[]";
-            }
-            return unwrapProxy(c).getName();
-        }
-        if (type instanceof ParameterizedType pt) {
-            String raw = formatType(pt.getRawType(), depth + 1);
-            if (raw == null) {
-                return null;
-            }
-            Type[] args = pt.getActualTypeArguments();
-            if (args == null || args.length == 0) {
-                return raw;
-            }
-            StringBuilder sb = new StringBuilder(raw).append('<');
-            for (int i = 0; i < args.length; i++) {
-                if (i > 0) {
-                    sb.append(", ");
-                }
-                String arg = formatType(args[i], depth + 1);
-                sb.append(arg == null ? "?" : arg);
-            }
-            return sb.append('>').toString();
-        }
-        if (type instanceof GenericArrayType ga) {
-            String comp = formatType(ga.getGenericComponentType(), depth + 1);
-            return comp == null ? null : comp + "[]";
-        }
-        if (type instanceof WildcardType wt) {
-            Type[] lower = wt.getLowerBounds();
-            if (lower != null && lower.length > 0) {
-                String b = formatType(lower[0], depth + 1);
-                return b == null ? "?" : "? super " + b;
-            }
-            Type[] upper = wt.getUpperBounds();
-            if (upper != null && upper.length > 0 && upper[0] != Object.class) {
-                String b = formatType(upper[0], depth + 1);
-                return b == null ? "?" : "? extends " + b;
-            }
-            return "?";
-        }
-        if (type instanceof TypeVariable<?> tv) {
-            return tv.getName();
-        }
-        return null;
-    }
-
-    private static Class<?> unwrapProxy(Class<?> cls) {
-        Class<?> c = OperationSource.targetClass(cls);
-        if (java.lang.reflect.Proxy.isProxyClass(c) || c.getName().contains("$Proxy")) {
-            Class<?>[] ifaces = c.getInterfaces();
-            if (ifaces.length > 0) {
-                return ifaces[0];
-            }
-        }
-        return c;
-    }
-
-    /** Short display name of a Java type: "java.util.List<com.example.Foo$Bar>" -> "List<Foo.Bar>". */
     static String shortTypeName(Type type) {
-        return type == null ? null : shortTypeName(stableTypeName(type, null));
+        return TypeFormatter.shortTypeName(type);
     }
 
     static String shortTypeName(String full) {
-        if (full == null) {
-            return null;
-        }
-        return full.replaceAll("\\b(?:[a-z_][\\w]*\\.)+(?=[A-Z_$])", "").replaceAll("(\\w)\\$(?=[A-Z])", "$1.");
-    }
-
-    private static Class<?> elementClass(Type type) {
-        if (type instanceof ParameterizedType pt && pt.getActualTypeArguments().length == 1
-                && pt.getActualTypeArguments()[0] instanceof Class<?> c) {
-            return c;
-        }
-        return String.class;
+        return TypeFormatter.shortTypeName(full);
     }
 
     static String typeName(Class<?> c) {
-        if (c == null) {
-            return "string";
-        }
-        if (c == String.class || c.isEnum() || c == Character.class || c == char.class) {
-            return "string";
-        }
-        if (c == Integer.class || c == int.class || c == Short.class || c == short.class) {
-            return "int";
-        }
-        if (c == Long.class || c == long.class) {
-            return "long";
-        }
-        if (c == Boolean.class || c == boolean.class) {
-            return "boolean";
-        }
-        if (c == Double.class || c == double.class || c == Float.class || c == float.class) {
-            return "number";
-        }
-        return c.getSimpleName();
+        return TypeFormatter.typeName(c);
     }
 
     private static List<String> options(Class<?> c) {
@@ -531,33 +477,124 @@ public class JerseyModelSource implements SpecSource {
             return List.of();
         }
         List<String> names = new ArrayList<>();
-        for (Object constant : c.getEnumConstants()) {
-            names.add(((Enum<?>) constant).name());
+        try {
+            Object[] constants = c.getEnumConstants();
+            if (constants != null) {
+                for (Object constant : constants) {
+                    names.add(((Enum<?>) constant).name());
+                }
+            }
+        } catch (LinkageError | RuntimeException ignored) {
+            return List.of();
         }
         return List.copyOf(names);
     }
 
-    /** Access levels, by annotation simple name (com.atlassian.annotations.security, REST v2 and REST v1). */
-    static final Set<String> ACCESS_ANNOTATIONS = Set.of("SystemAdminOnly", "AdminOnly", "LicensedOnly",
-            "UnlicensedSiteAccess", "AnonymousSiteAccess", "UnrestrictedAccess", "AnonymousAllowed");
-
-    /** The handler's access level: from the method, else its class, else the package of the class. */
     static String access(Method handling) {
-        String a = accessOf(handling);
-        if (a == null) {
-            a = accessOf(handling.getDeclaringClass());
+        return access(handling, handling, null);
+    }
+
+    static String access(Method def, Method handling, Class<?> handlerClass) {
+        String a = accessOf(def);
+        if (a == null && handling != null && !handling.equals(def)) {
+            a = accessOf(handling);
         }
-        if (a == null && handling.getDeclaringClass().getPackage() != null) {
+        if (a == null && handlerClass != null) {
+            a = classHierarchyAccessOf(handlerClass);
+        }
+        if (a == null && handling != null) {
+            a = classHierarchyAccessOf(handling.getDeclaringClass());
+        }
+        if (a == null && def != null && (handling == null || def.getDeclaringClass() != handling.getDeclaringClass())) {
+            a = classHierarchyAccessOf(def.getDeclaringClass());
+        }
+        if (a == null && handlerClass != null) {
+            a = accessOf(TypeProxyUnwrapper.targetClass(handlerClass).getPackage());
+        }
+        if (a == null && handling != null) {
             a = accessOf(handling.getDeclaringClass().getPackage());
+        }
+        if (a == null && def != null && (handling == null || def.getDeclaringClass() != handling.getDeclaringClass())) {
+            a = accessOf(def.getDeclaringClass().getPackage());
         }
         return a;
     }
 
+    static boolean isDeprecated(Method def, Method handling, Class<?> handlerClass) {
+        return safeHasAnnotation(def, Deprecated.class)
+                || safeHasAnnotation(handling, Deprecated.class)
+                || isClassHierarchyDeprecated(handlerClass)
+                || isClassHierarchyDeprecated(handling == null ? null : handling.getDeclaringClass())
+                || isClassHierarchyDeprecated(def == null ? null : def.getDeclaringClass());
+    }
+
+    private static String classHierarchyAccessOf(Class<?> start) {
+        if (start == null) {
+            return null;
+        }
+        for (Class<?> c = TypeProxyUnwrapper.targetClass(start); c != null && c != Object.class; c = c.getSuperclass()) {
+            String a = accessOf(c);
+            if (a != null) {
+                return a;
+            }
+            String iface = interfaceAccessOf(c.getInterfaces());
+            if (iface != null) {
+                return iface;
+            }
+        }
+        return null;
+    }
+
+    private static String interfaceAccessOf(Class<?>[] interfaces) {
+        if (interfaces == null) {
+            return null;
+        }
+        for (Class<?> iface : interfaces) {
+            String a = accessOf(iface);
+            if (a != null) {
+                return a;
+            }
+            String parent = interfaceAccessOf(iface.getInterfaces());
+            if (parent != null) {
+                return parent;
+            }
+        }
+        return null;
+    }
+
+    private static boolean isClassHierarchyDeprecated(Class<?> start) {
+        if (start == null) {
+            return false;
+        }
+        for (Class<?> c = TypeProxyUnwrapper.targetClass(start); c != null && c != Object.class; c = c.getSuperclass()) {
+            if (safeHasAnnotation(c, Deprecated.class) || isInterfaceDeprecated(c.getInterfaces())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isInterfaceDeprecated(Class<?>[] interfaces) {
+        if (interfaces == null) {
+            return false;
+        }
+        for (Class<?> iface : interfaces) {
+            if (safeHasAnnotation(iface, Deprecated.class) || isInterfaceDeprecated(iface.getInterfaces())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static String accessOf(AnnotatedElement element) {
-        for (Annotation a : element.getAnnotations()) {
-            Class<? extends Annotation> type = a.annotationType();
-            if (type.getName().startsWith("com.atlassian.") && ACCESS_ANNOTATIONS.contains(type.getSimpleName())) {
-                return type.getSimpleName();
+        for (Annotation a : safeAnnotations(element)) {
+            try {
+                Class<? extends Annotation> type = a.annotationType();
+                if (type.getName().startsWith("com.atlassian.") && ACCESS_ANNOTATIONS.contains(type.getSimpleName())) {
+                    return type.getSimpleName();
+                }
+            } catch (RuntimeException | LinkageError ignored) {
+                // skip unreadable annotation
             }
         }
         return null;
@@ -567,219 +604,17 @@ public class JerseyModelSource implements SpecSource {
         return a != null ? a : b;
     }
 
-    /** Operation documentation read from OpenAPI v3 (@Operation) or Swagger v2 (@ApiOperation). */
     record OpDoc(String summary, String description, boolean deprecated) {
         static final OpDoc EMPTY = new OpDoc(null, null, false);
     }
 
-    private static final String OAS_OPERATION = "io.swagger.v3.oas.annotations.Operation";
-    private static final String OAS_PARAMETER = "io.swagger.v3.oas.annotations.Parameter";
-    private static final String OAS_PARAMETERS = "io.swagger.v3.oas.annotations.Parameters";
-    private static final String OAS_API_RESPONSE = "io.swagger.v3.oas.annotations.responses.ApiResponse";
-    private static final String OAS_API_RESPONSES = "io.swagger.v3.oas.annotations.responses.ApiResponses";
-    private static final String SWAGGER_OPERATION = "io.swagger.annotations.ApiOperation";
-    private static final String SWAGGER_API_RESPONSE = "io.swagger.annotations.ApiResponse";
-    private static final String SWAGGER_API_RESPONSES = "io.swagger.annotations.ApiResponses";
-    private static final String SWAGGER_PARAM = "io.swagger.annotations.ApiParam";
-    private static final String SWAGGER_IMPLICIT_PARAM = "io.swagger.annotations.ApiImplicitParam";
-    private static final String SWAGGER_IMPLICIT_PARAMS = "io.swagger.annotations.ApiImplicitParams";
-    private static final String ATLASSIAN_PATH_PARAM_DOC = "com.atlassian.dc.swagger.annotations.PathParamDoc";
-    private static final String ATLASSIAN_MULTIPART_PARAM = "com.atlassian.plugins.rest.api.multipart.MultipartFormParam";
-    private static final String JERSEY_FORM_DATA_PARAM = "org.glassfish.jersey.media.multipart.FormDataParam";
-
-    private static boolean isGenericResponseWrapper(Class<?> c) {
-        if (c == null || c == Object.class) {
-            return true;
-        }
-        String n = c.getName();
-        return "jakarta.ws.rs.core.Response".equals(n) || "javax.ws.rs.core.Response".equals(n);
+    static OpDoc opDoc(Method definition, Method handling) {
+        OpenApiAnnotationExtractor.OpDoc doc = OpenApiAnnotationExtractor.opDoc(definition, handling);
+        return doc.isEmpty() ? OpDoc.EMPTY : new OpDoc(doc.summary(), doc.description(), doc.deprecated());
     }
 
-    /**
-     * Resolves the documented response Java type when a JAX-RS method returns {@code Response} or {@code Object}.
-     * Checks OpenAPI v3 ({@code @ApiResponses}/{@code @ApiResponse}/{@code @Operation(responses=...)}),
-     * Atlassian {@code @ResponseType}, and Swagger v2 ({@code @ApiOperation}/{@code @ApiResponses}).
-     */
     static String annotatedReturnJavaType(Method definition, Method handling) {
-        String type = annotatedReturnJavaTypeOf(definition);
-        if (type == null && handling != null && !handling.equals(definition)) {
-            type = annotatedReturnJavaTypeOf(handling);
-        }
-        return type;
-    }
-
-    private static String annotatedReturnJavaTypeOf(Method method) {
-        if (method == null) {
-            return null;
-        }
-        Annotation[] all = safeAnnotations(method);
-        // 1. OpenAPI v3: @ApiResponses, @ApiResponse, @Operation(responses = ...)
-        List<Annotation> oasResponses = new ArrayList<>();
-        for (Annotation a : all) {
-            String name = a.annotationType().getName();
-            if (OAS_API_RESPONSE.equals(name)) {
-                oasResponses.add(a);
-            } else if (OAS_API_RESPONSES.equals(name)) {
-                addAnnotations(annMember(a, "value"), oasResponses);
-            } else if (OAS_OPERATION.equals(name)) {
-                addAnnotations(annMember(a, "responses"), oasResponses);
-            }
-        }
-        String fromOas = extractOasResponseType(oasResponses);
-        if (fromOas != null) {
-            return fromOas;
-        }
-        // 2. Atlassian @ResponseType(value = Foo.class, genericTypes = { ... })
-        for (Annotation a : all) {
-            if ("ResponseType".equals(a.annotationType().getSimpleName())) {
-                Object val = annMember(a, "value");
-                if (val instanceof Class<?> cls && isConcreteResponseClass(cls)) {
-                    String base = stableTypeName(cls, cls);
-                    Object generics = annMember(a, "genericTypes");
-                    if (generics instanceof Class<?>[] gArr && gArr.length > 0) {
-                        List<String> args = new ArrayList<>();
-                        for (Class<?> g : gArr) {
-                            if (g != null) {
-                                args.add(stableTypeName(g, g));
-                            }
-                        }
-                        if (!args.isEmpty()) {
-                            return base + "<" + String.join(", ", args) + ">";
-                        }
-                    }
-                    return base;
-                }
-            }
-        }
-        // 3. Swagger v2: @ApiOperation(response = ..., responseContainer = ...) and @ApiResponses/@ApiResponse
-        for (Annotation a : all) {
-            if (SWAGGER_OPERATION.equals(a.annotationType().getName())) {
-                String t = formatSwaggerResponse(annMember(a, "response"), annString(a, "responseContainer"));
-                if (t != null) {
-                    return t;
-                }
-            }
-        }
-        List<Annotation> swResponses = new ArrayList<>();
-        for (Annotation a : all) {
-            String name = a.annotationType().getName();
-            if (SWAGGER_API_RESPONSE.equals(name)) {
-                swResponses.add(a);
-            } else if (SWAGGER_API_RESPONSES.equals(name)) {
-                addAnnotations(annMember(a, "value"), swResponses);
-            }
-        }
-        for (Annotation r : swResponses) {
-            Object codeObj = annMember(r, "code");
-            if (codeObj instanceof Integer code && code >= 200 && code < 300) {
-                String t = formatSwaggerResponse(annMember(r, "response"), annString(r, "responseContainer"));
-                if (t != null) {
-                    return t;
-                }
-            }
-        }
-        return null;
-    }
-
-    private static void addAnnotations(Object value, List<Annotation> out) {
-        if (value instanceof Annotation[] array) {
-            Collections.addAll(out, array);
-        }
-    }
-
-    private static String extractOasResponseType(List<Annotation> responses) {
-        if (responses.isEmpty()) {
-            return null;
-        }
-        String fallback = null;
-        for (Annotation resp : responses) {
-            String code = annString(resp, "responseCode");
-            boolean is2xx = code != null && code.trim().startsWith("2");
-            boolean isDefault = code == null || code.isBlank() || "default".equalsIgnoreCase(code.trim());
-            if (!is2xx && !isDefault) {
-                continue;
-            }
-            String found = extractOasContentType(annMember(resp, "content"));
-            if (found != null) {
-                if (is2xx) {
-                    return found;
-                }
-                if (fallback == null) {
-                    fallback = found;
-                }
-            }
-        }
-        return fallback;
-    }
-
-    private static String extractOasContentType(Object contentObj) {
-        if (!(contentObj instanceof Annotation[] contents)) {
-            return null;
-        }
-        for (Annotation content : contents) {
-            // Check array = @ArraySchema(schema = @Schema(implementation = ...)) first
-            Object arrayAnn = annMember(content, "array");
-            if (arrayAnn instanceof Annotation arr) {
-                String item = extractOasSchemaType(annMember(arr, "schema"));
-                if (item != null) {
-                    return item + "[]";
-                }
-                String arrSchema = extractOasSchemaType(annMember(arr, "arraySchema"));
-                if (arrSchema != null) {
-                    return arrSchema;
-                }
-            }
-            // Check direct schema = @Schema(implementation = ...)
-            String direct = extractOasSchemaType(annMember(content, "schema"));
-            if (direct != null) {
-                return direct;
-            }
-        }
-        return null;
-    }
-
-    private static String extractOasSchemaType(Object schemaObj) {
-        if (!(schemaObj instanceof Annotation schema)) {
-            return null;
-        }
-        Object impl = annMember(schema, "implementation");
-        if (impl instanceof Class<?> cls && isConcreteResponseClass(cls)) {
-            return stableTypeName(cls, cls);
-        }
-        for (String member : new String[]{"oneOf", "anyOf", "allOf"}) {
-            Object arr = annMember(schema, member);
-            if (arr instanceof Class<?>[] classes) {
-                for (Class<?> cls : classes) {
-                    if (isConcreteResponseClass(cls)) {
-                        return stableTypeName(cls, cls);
-                    }
-                }
-            }
-        }
-        return null;
-    }
-
-    private static String formatSwaggerResponse(Object responseObj, String container) {
-        if (!(responseObj instanceof Class<?> cls) || !isConcreteResponseClass(cls)) {
-            return null;
-        }
-        String base = stableTypeName(cls, cls);
-        if (base == null) {
-            return null;
-        }
-        if (container == null || container.isBlank()) {
-            return base;
-        }
-        return switch (container.trim().toLowerCase()) {
-            case "list" -> "java.util.List<" + base + ">";
-            case "set" -> "java.util.Set<" + base + ">";
-            case "map" -> "java.util.Map<java.lang.String, " + base + ">";
-            default -> base;
-        };
-    }
-
-    private static boolean isConcreteResponseClass(Class<?> cls) {
-        return cls != null && cls != Void.class && cls != void.class && cls != Object.class;
+        return OpenApiAnnotationExtractor.annotatedReturnJavaType(definition, handling);
     }
 
     static String multipartParamName(Annotation[] annotations) {
@@ -787,12 +622,16 @@ public class JerseyModelSource implements SpecSource {
             return null;
         }
         for (Annotation a : annotations) {
-            String name = a.annotationType().getName();
-            if (ATLASSIAN_MULTIPART_PARAM.equals(name) || JERSEY_FORM_DATA_PARAM.equals(name)) {
-                String v = annString(a, "value");
-                if (v != null && !v.isBlank()) {
-                    return v.trim();
+            try {
+                String name = a.annotationType().getName();
+                if (ATLASSIAN_MULTIPART_PARAM.equals(name) || JERSEY_FORM_DATA_PARAM.equals(name)) {
+                    String v = annString(a, "value");
+                    if (v != null && !v.isBlank()) {
+                        return v.trim();
+                    }
                 }
+            } catch (RuntimeException | LinkageError ignored) {
+                // ignore unreadable annotation
             }
         }
         return null;
@@ -809,172 +648,12 @@ public class JerseyModelSource implements SpecSource {
         return n.endsWith(".FilePart") || n.endsWith(".FormDataBodyPart");
     }
 
-    static OpDoc opDoc(Method definition, Method handling) {
-        OpDoc doc = opDocOf(definition);
-        if (doc == OpDoc.EMPTY && handling != null && !handling.equals(definition)) {
-            doc = opDocOf(handling);
-        }
-        return doc;
-    }
-
-    private static OpDoc opDocOf(Method method) {
-        if (method == null) {
-            return OpDoc.EMPTY;
-        }
-        Annotation[] all = safeAnnotations(method);
-        for (Annotation a : all) {
-            String name = a.annotationType().getName();
-            if (OAS_OPERATION.equals(name)) {
-                String summary = cleanDoc(annString(a, "summary"), MAX_SUMMARY);
-                String description = cleanDoc(annString(a, "description"), MAX_DESCRIPTION);
-                boolean deprecated = Boolean.TRUE.equals(annMember(a, "deprecated"));
-                if (summary != null && summary.equals(description)) {
-                    description = null;
-                }
-                return new OpDoc(summary, description, deprecated);
-            }
-        }
-        for (Annotation a : all) {
-            String name = a.annotationType().getName();
-            if (SWAGGER_OPERATION.equals(name)) {
-                String summary = cleanDoc(annString(a, "value"), MAX_SUMMARY);
-                String description = cleanDoc(annString(a, "notes"), MAX_DESCRIPTION);
-                if (summary != null && summary.equals(description)) {
-                    description = null;
-                }
-                return new OpDoc(summary, description, false);
-            }
-        }
-        return OpDoc.EMPTY;
-    }
-
-    /** Parameter descriptions declared on the method (and declaring class), keyed by "in:name" and ":name". */
     static Map<String, String> paramDocs(Method definition, Method handling) {
-        Map<String, String> out = new java.util.HashMap<>();
-        if (definition != null) {
-            collectMethodParamDocs(definition, out);
-            collectClassParamDocs(definition.getDeclaringClass(), out);
-        }
-        if (handling != null && !handling.equals(definition)) {
-            collectMethodParamDocs(handling, out);
-            collectClassParamDocs(handling.getDeclaringClass(), out);
-        }
-        return out;
+        return OpenApiAnnotationExtractor.paramDocs(definition, handling);
     }
 
-    private static void collectMethodParamDocs(Method method, Map<String, String> out) {
-        for (Annotation a : safeAnnotations(method)) {
-            String name = a.annotationType().getName();
-            if (OAS_PARAMETER.equals(name)) {
-                recordOasParam(a, out);
-            } else if (OAS_PARAMETERS.equals(name)) {
-                recordAnnotationArray(annMember(a, "value"), out, true);
-            } else if (OAS_OPERATION.equals(name)) {
-                recordAnnotationArray(annMember(a, "parameters"), out, true);
-            } else if (SWAGGER_IMPLICIT_PARAM.equals(name)) {
-                recordSwaggerImplicitParam(a, out);
-            } else if (SWAGGER_IMPLICIT_PARAMS.equals(name)) {
-                recordAnnotationArray(annMember(a, "value"), out, false);
-            }
-        }
-    }
-
-    private static void collectClassParamDocs(Class<?> cls, Map<String, String> out) {
-        if (cls == null) {
-            return;
-        }
-        for (Annotation a : safeAnnotations(cls)) {
-            if (ATLASSIAN_PATH_PARAM_DOC.equals(a.annotationType().getName())) {
-                String name = annString(a, "name");
-                String desc = firstNonNull(annString(a, "documentation"), annString(a, "description"));
-                putParamDoc(out, "path", name, desc);
-            }
-        }
-    }
-
-    private static void recordAnnotationArray(Object value, Map<String, String> out, boolean oas) {
-        if (value instanceof Annotation[] array) {
-            for (Annotation a : array) {
-                if (oas) {
-                    recordOasParam(a, out);
-                } else {
-                    recordSwaggerImplicitParam(a, out);
-                }
-            }
-        }
-    }
-
-    private static void recordOasParam(Annotation a, Map<String, String> out) {
-        String name = annString(a, "name");
-        String desc = annString(a, "description");
-        Object inObj = annMember(a, "in");
-        String in = null;
-        if (inObj instanceof Enum<?> e) {
-            String n = e.name().toLowerCase();
-            if (!"default".equals(n)) {
-                in = n;
-            }
-        }
-        putParamDoc(out, in, name, desc);
-    }
-
-    private static void recordSwaggerImplicitParam(Annotation a, Map<String, String> out) {
-        String name = annString(a, "name");
-        String desc = annString(a, "value");
-        String in = annString(a, "paramType");
-        if (in != null) {
-            in = in.trim().toLowerCase();
-            if (in.isEmpty()) {
-                in = null;
-            }
-        }
-        putParamDoc(out, in, name, desc);
-    }
-
-    private static void putParamDoc(Map<String, String> out, String in, String name, String rawDesc) {
-        if (name == null || name.isBlank()) {
-            return;
-        }
-        String desc = cleanDoc(rawDesc, MAX_PARAM_DESCRIPTION);
-        if (desc == null) {
-            return;
-        }
-        String key = name.trim();
-        if (in != null && !in.isEmpty()) {
-            out.putIfAbsent(in + ":" + key, desc);
-        }
-        out.putIfAbsent(":" + key, desc);
-    }
-
-    /** Description from a @Parameter or @ApiParam placed directly on a Java parameter. */
     static String paramDoc(Annotation[] annotations) {
-        if (annotations == null) {
-            return null;
-        }
-        for (Annotation a : annotations) {
-            String name = a.annotationType().getName();
-            if (OAS_PARAMETER.equals(name)) {
-                String d = cleanDoc(annString(a, "description"), MAX_PARAM_DESCRIPTION);
-                if (d != null) {
-                    return d;
-                }
-            } else if (SWAGGER_PARAM.equals(name)) {
-                String d = cleanDoc(annString(a, "value"), MAX_PARAM_DESCRIPTION);
-                if (d != null) {
-                    return d;
-                }
-            }
-        }
-        return null;
-    }
-
-    private static Annotation[] parameterAnnotations(Object p) {
-        try {
-            Object a = call(p, "getAnnotations");
-            return a instanceof Annotation[] array ? array : null;
-        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
-            return null;
-        }
+        return OpenApiAnnotationExtractor.paramDoc(annotations);
     }
 
     static List<Param> applyParamDocs(List<Param> params, Map<String, String> docs) {
@@ -996,50 +675,29 @@ public class JerseyModelSource implements SpecSource {
         return List.copyOf(out);
     }
 
-    private static Annotation[] safeAnnotations(AnnotatedElement element) {
-        try {
-            return element.getDeclaredAnnotations();
-        } catch (RuntimeException | LinkageError e) {
-            return new Annotation[0];
-        }
+    static String cleanDoc(String s, int max) {
+        return OpenApiAnnotationExtractor.cleanDoc(s, max);
     }
 
-    private static Object annMember(Annotation a, String name) {
+    private static Annotation[] parameterAnnotations(Object p) {
         try {
-            Method m = a.annotationType().getMethod(name);
-            return invoke(m, a);
+            Object a = call(p, "getAnnotations");
+            return a instanceof Annotation[] array ? array : null;
         } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
             return null;
         }
     }
 
-    private static String annString(Annotation a, String name) {
-        Object v = annMember(a, name);
-        return v instanceof String s ? s : null;
+    private static boolean isGenericResponseWrapper(Class<?> c) {
+        if (c == null || c == Object.class) {
+            return true;
+        }
+        String n = c.getName();
+        return "jakarta.ws.rs.core.Response".equals(n) || "javax.ws.rs.core.Response".equals(n);
     }
 
-    static String cleanDoc(String s, int max) {
-        if (s == null) {
-            return null;
-        }
-        String t = s.replace("\r\n", "\n").replace('\r', '\n').trim();
-        if (t.isEmpty()) {
-            return null;
-        }
-        if (t.length() <= max) {
-            return t;
-        }
-        int end = Character.isHighSurrogate(t.charAt(max - 1)) ? max - 1 : max;
-        return t.substring(0, end) + "…";
-    }
-
-    /**
-     * Drops duplicate parameters (a locator one and the method one) and adds a required string path parameter for
-     * every path template that no parameter declares, such as one injected into a field: the request form needs an
-     * input for each of them.
-     */
     static List<Param> completePathParams(String path, List<Param> params) {
-        Map<String, Param> unique = new java.util.LinkedHashMap<>();
+        Map<String, Param> unique = new LinkedHashMap<>();
         for (Param p : params) {
             unique.putIfAbsent(p.in() + ":" + p.name(), p);
         }
@@ -1049,7 +707,6 @@ public class JerseyModelSource implements SpecSource {
         return List.copyOf(unique.values());
     }
 
-    /** The names of the templates of a path: "{issueIdOrKey}" and "{id: [0-9]+}" give issueIdOrKey and id. */
     static List<String> templateNames(String path) {
         List<String> names = new ArrayList<>();
         int depth = 0;
@@ -1083,8 +740,10 @@ public class JerseyModelSource implements SpecSource {
 
     private static List<String> mediaTypes(Object list) {
         List<String> out = new ArrayList<>();
-        for (Object m : (List<?>) list) {
-            out.add(String.valueOf(m));
+        if (list instanceof List<?> items) {
+            for (Object m : items) {
+                out.add(String.valueOf(m));
+            }
         }
         return List.copyOf(out);
     }
@@ -1110,69 +769,5 @@ public class JerseyModelSource implements SpecSource {
             }
         }
         return sb.toString();
-    }
-
-    // ---- reflection helpers: the classes belong to other bundles and may be non-public implementations
-
-    private static Object field(Object target, String name) throws ReflectiveOperationException {
-        for (Class<?> c = target.getClass(); c != null; c = c.getSuperclass()) {
-            try {
-                Field f = c.getDeclaredField(name);
-                f.setAccessible(true);
-                return f.get(target);
-            } catch (NoSuchFieldException e) {
-                // try the superclass
-            }
-        }
-        throw new NoSuchFieldException(target.getClass().getName() + "." + name);
-    }
-
-    private static Object call(Object target, String method) throws ReflectiveOperationException {
-        return call(target, method, new Class<?>[0]);
-    }
-
-    private static Object call(Object target, String method, Class<?>[] types, Object... args)
-            throws ReflectiveOperationException {
-        return call(target.getClass(), target, method, types, args);
-    }
-
-    /** Calls a public method, static when target is null. */
-    private static Object call(Class<?> type, Object target, String method, Class<?>[] types, Object... args)
-            throws ReflectiveOperationException {
-        Method m = findMethod(type, method, types);
-        if (m == null) {
-            throw new NoSuchMethodException(type.getName() + "." + method);
-        }
-        return target == null ? invokeStatic(m, args) : invoke(m, target, args);
-    }
-
-    private static Method findMethod(Class<?> type, String name, Class<?>[] types) {
-        try {
-            return type.getMethod(name, types);
-        } catch (NoSuchMethodException e) {
-            return null;
-        }
-    }
-
-    private static Object invoke(Method m, Object target, Object... args) throws ReflectiveOperationException {
-        try {
-            return m.invoke(target, args);
-        } catch (IllegalAccessException e) {
-            // a public method declared by a non-public class
-            m.setAccessible(true);
-            return m.invoke(target, args);
-        } catch (InvocationTargetException e) {
-            if (e.getCause() instanceof RuntimeException re) {
-                throw re;
-            }
-            throw e;
-        }
-    }
-
-    private static Object invokeStatic(Method m, Object... args) throws ReflectiveOperationException {
-        if (!Modifier.isStatic(m.getModifiers())) {
-            throw new NoSuchMethodException(m + " is not static");
-        }
-        return invoke(m, null, args);
     }
 }

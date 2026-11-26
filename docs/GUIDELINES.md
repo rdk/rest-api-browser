@@ -5,9 +5,9 @@ helper or a CSS token behind it; use those rather than solving the same problem 
 
 ## Code layout
 
-- Logic that can be pure goes into `src/main/frontend/src/core/` with a unit test (vitest); `ui/` renders it. A fix
+- Logic that can be pure goes into `src/main/frontend/src/core/` or `src/main/frontend/src/lib/` with a unit test (vitest); `ui/` renders it. A fix
   gets a test that fails without it: a unit test, or a check in `src/test/product/ui_next.js` for behaviour in the page.
-- What a tab shows, copies and downloads comes from one function (`textOf` in `Response.tsx`), so the three never
+- What a tab shows, copies and downloads comes from one function (`textOf` in `core/responsetext.ts`), so the three never
   differ.
 
 ## State, effects, listeners
@@ -60,7 +60,7 @@ helper or a CSS token behind it; use those rather than solving the same problem 
 ## Secrets
 
 - Header names: one rule of whole words plus run-together endings (HTTP/2 lowercases `X-AccessToken` to one word),
-  the same in `EchoResource.secret` and `userstore.isCredentialHeader`. Change both together, with their tests.
+  the same in `EchoResource.secret` and `lib/http-redact/redact.ts` (`isCredentialHeader`). Change both together, with their tests.
 - Parameter names: a narrow list, so that `pageToken` or `author` are still stored. Request bodies are stored with
   secret values removed (any JSON value, a form field), or not at all when they cannot be read and look secret.
   History is kept per user.

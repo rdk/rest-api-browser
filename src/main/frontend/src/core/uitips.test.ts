@@ -32,8 +32,10 @@ describe('uitips', () => {
     expect(readTipAttrs({ getAttribute: () => null })).toBeNull();
   });
 
-  it('splits keyboard shortcuts into key cap labels', () => {
+  it('splits keyboard shortcuts into key cap labels including +', () => {
     expect(splitShortcutKeys('Ctrl+Shift+T')).toEqual(['Ctrl', 'Shift', 'T']);
+    expect(splitShortcutKeys('Ctrl++')).toEqual(['Ctrl', '+']);
+    expect(splitShortcutKeys('+')).toEqual(['+']);
     expect(splitShortcutKeys('Esc')).toEqual(['Esc']);
   });
 

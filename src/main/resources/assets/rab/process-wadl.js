@@ -36,7 +36,7 @@ function processWADL(resource) {
     }).fail(function() {
             // Reject the promise if there's an ajax error
             dfd.reject({
-                error: "Something shitty happened. Sorry."
+                error: "Failed to load WADL."
             });
         }).done(function(x) {
             // Ajax call was successful
@@ -98,15 +98,16 @@ function processWADL(resource) {
             // function is called recursively.
             function getResource(resource, path, resourceWideParams, obj) {
                 var childResource, methodArry, path, params, methods,
-                    outMethods = [], addlPath = resource.attr('path');
+                    outMethods = [], addlPath = resource.attr('path') || '',
+                    localParams = (resourceWideParams || []).slice();
 
                 obj = obj || {};
 
                 // Replace brackets with colon
                 // addlPath = addlPath.replace(/\{/g,":").replace(/\}/g,"");
 
-                // Check for forward slashes before concatinating
-                if (/\/jQuery/g.test(path) || /^\//g.test(addlPath)) {
+                // Check for forward slashes before concatenating
+                if (/\/$/.test(path) || /^\//.test(addlPath)) {
                     path += addlPath;
                 } else {
                     path += '/' + addlPath;
@@ -115,7 +116,8 @@ function processWADL(resource) {
 
                 // RAB-31: Some WADL versions append the relativeResource to the path. Check for this and remove it
                 // if it is present.
-                var re = new RegExp('^(?:\/)?' + rootResource.relativeResource ,"i");
+                var escapedRel = rootResource.relativeResource.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                var re = new RegExp('^(?:\\/)?' + escapedRel + '(?=\\/|$)', "i");
                 if(re.test(path)) {
                     path = path.replace(re,'');
                 }
@@ -128,19 +130,20 @@ function processWADL(resource) {
                 // Extract resource-wide params that live inside the path
                 params = resource.find('>'+addNamespace('param'));
                 if (params.length > 0) {
-                    // Reset resource-wide params if no template params in uri
-                    if (/\{/g.test(path)) {
-                        resourceWideParams = [];
+                    // Reset inherited params only when this resource path carries no template params
+                    if (!/\{/.test(path)) {
+                        localParams = [];
                     }
                     // Cycle through all resource-wide params
                     jQuery.each(params, function() {
                         var param = {},
-                            self = jQuery(this);
+                            self = jQuery(this),
+                            rawType = self.attr('type') || '';
                         param.name = self.attr('name');
                         param.description = getDoc(self);
-                        param.type = self.attr('type').split(':')[1];
+                        param.type = rawType.indexOf(':') >= 0 ? rawType.split(':')[1] : (rawType || 'string');
                         param.style = self.attr('style');
-                        resourceWideParams.push(param);
+                        localParams.push(param);
                     });
                 }
 
@@ -162,15 +165,16 @@ function processWADL(resource) {
                         // extract them
                         request = self.find('>'+addNamespace('request'));
                         if (request.length > 0) {
-                            // Merge resource-wide params with method params
-                            jQuery.merge(methodObj.params, resourceWideParams);
+                            // Merge cloned resource-wide params with method params so siblings do not share mutable values
+                            jQuery.merge(methodObj.params, jQuery.map(localParams, function(p) { return jQuery.extend({}, p); }));
                             params = request.find('>'+addNamespace('param'));
                             jQuery.each(params, function() {
                                 var param = {},
-                                    self = jQuery(this);
+                                    self = jQuery(this),
+                                    rawType = self.attr('type') || '';
                                 param.name = self.attr('name');
                                 param.description = getDoc(self);
-                                param.type = self.attr('type').split(':')[1];
+                                param.type = rawType.indexOf(':') >= 0 ? rawType.split(':')[1] : (rawType || 'string');
                                 param.style = self.attr('style');
                                 methodObj.params.push(param);
                             });
@@ -183,7 +187,7 @@ function processWADL(resource) {
                                 return param;
                             });
                         } else {
-                            methodObj.params = resourceWideParams;
+                            methodObj.params = jQuery.map(localParams, function(p) { return jQuery.extend({}, p); });
                         }
 
                         response = self.find('>'+addNamespace('response'));
@@ -206,7 +210,7 @@ function processWADL(resource) {
                     childResource = resource.find('>'+addNamespace('resource'));
                     jQuery.each(childResource, function() {
                         var self = jQuery(this);
-                        getResource(self, path, resourceWideParams);
+                        getResource(self, path, localParams.slice());
                     });
 
                     // Attach methods inside of resource object
@@ -217,8 +221,8 @@ function processWADL(resource) {
 
                     if (debug) {
                         // Debug messages
-                        methodsArry = jQuery.map(methods, function(i, e) {
-                            return jQuery(i).attr('name')
+                        var methodsArry = jQuery.map(methods, function(i, e) {
+                            return jQuery(i).attr('name');
                         });
                         methodsArry.length === 0 || console.log(path, methodsArry, obj, resource[0]);
                     }
@@ -229,7 +233,7 @@ function processWADL(resource) {
                     childResource = resource.find('>'+addNamespace('resource'));
                     jQuery.each(childResource, function() {
                         var self = jQuery(this);
-                        getResource(self, path, resourceWideParams);
+                        getResource(self, path, localParams.slice());
                     });
                 }
 
@@ -244,7 +248,7 @@ function processWADL(resource) {
             // Resolve the promise with the resources found
             dfd.resolve({
                 ns: resource,
-                resources: outResources.sort(function(x,y){return (x.name < y.name)? -1: 1})
+                resources: outResources.sort(function(x,y){return (x.name < y.name)? -1: (x.name > y.name)? 1: 0})
             });
 
         });

@@ -10,7 +10,8 @@
 //
 // Needs Node 22+ (fetch, WebSocket) and Edge or Chrome; no npm packages (it speaks the DevTools protocol itself).
 // Exit code: 0 all checks passed, 1 a check failed, 2 not run. The last line is "N checks, N passed, N failed".
-const { spawn } = require('child_process'), fs = require('fs'), os = require('os'), path = require('path');
+const fs = require('fs'), path = require('path');
+const { launch, checker, sleep } = require('./cdp');
 
 // per product: its URL, a public resource of its core REST API to search for, select and send, and its answer; a
 // resource with a path parameter, which is sent with a value that needs URL encoding (a read of nothing that exists)
@@ -28,27 +29,10 @@ if (!P) { console.log(`ui.js: RAB_PRODUCT is ${Object.keys(PRODUCTS).join(' or '
 const BASE = (process.env.RAB_URL || P.url).replace(/\/$/, '');
 const USER = process.env.RAB_USER || 'admin', PASS = process.env.RAB_PASSWORD || 'admin';
 const OUT = path.join(__dirname, 'shots');
-const BROWSERS = [
-    process.env.RAB_BROWSER,
-    'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
-    'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
-    'C:/Program Files/Google/Chrome/Application/chrome.exe',
-    '/usr/bin/microsoft-edge', '/usr/bin/google-chrome', '/usr/bin/chromium',
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-].filter(Boolean);
-const BROWSER_ARGS = (process.env.RAB_BROWSER_ARGS || '').split(/\s+/).filter(Boolean);
-
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-const results = [];
-function check(name, ok, detail) {
-    results.push([name, !!ok]);
-    console.log((ok ? 'PASS ' : 'FAIL ') + name + (ok || detail === undefined ? '' : '  -> ' + String(JSON.stringify(detail)).slice(0, 400)));
-    return !!ok;
-}
+const c = checker();
+const check = (name, ok, detail) => c.check(name, ok, detail);
 
 (async () => {
-    const exe = BROWSERS.find(p => fs.existsSync(p));
-    if (!exe) { console.log('ui.js: no Edge or Chrome found (set RAB_BROWSER)'); process.exit(2); }
     try {
         const r = await fetch(BASE + '/status');
         if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -58,68 +42,19 @@ function check(name, ok, detail) {
     }
     fs.mkdirSync(OUT, { recursive: true });
 
-    const port = 9400 + Math.floor(Math.random() * 500);
-    const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'rab-ui-'));
-    const browser = spawn(exe, ['--headless=new', '--disable-gpu', '--no-first-run', '--user-data-dir=' + profile,
-        '--remote-debugging-port=' + port, '--window-size=1500,1000', ...BROWSER_ARGS, 'about:blank'], { stdio: 'ignore' });
-    let ws;
+    let b;
     try {
-        let target;
-        for (let i = 0; i < 80 && !target; i++) {
-            try { target = (await (await fetch(`http://127.0.0.1:${port}/json`)).json()).find(t => t.type === 'page'); } catch (e) { /* starting */ }
-            if (!target) await sleep(250);
-        }
-        if (!target) throw new Error('the browser did not open its DevTools port');
-        ws = new WebSocket(target.webSocketDebuggerUrl);
-        await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
-
-        let id = 0;
-        const pending = {}, exceptions = [], failedRequests = [], requests = {};
-        let wadlRequests = 0;
-        const authHeader = 'Basic ' + Buffer.from(USER + ':' + PASS).toString('base64');
-        ws.onmessage = m => {
-            const d = JSON.parse(m.data);
-            if (d.id && pending[d.id]) { pending[d.id](d); delete pending[d.id]; return; }
-            if (d.method === 'Runtime.exceptionThrown') {
-                const ex = d.params.exceptionDetails;
-                exceptions.push(((ex.exception && ex.exception.description) || ex.text || '').split('\n')[0] + ' @ ' + (ex.url || ''));
-            } else if (d.method === 'Fetch.requestPaused') {
-                // Basic credentials only on the page and its XHRs (the WADLs): static web resources are public, and
-                // Basic auth on every resource request makes Jira's decorator drop the session mid-response
-                const p = d.params;
-                const headers = Object.entries(p.request.headers).map(([name, value]) => ({ name, value }));
-                if (['Document', 'XHR', 'Fetch'].includes(p.resourceType)) headers.push({ name: 'Authorization', value: authHeader });
-                ws.send(JSON.stringify({ id: ++id, method: 'Fetch.continueRequest', params: { requestId: p.requestId, headers } }));
-            } else if (d.method === 'Network.requestWillBeSent') {
-                requests[d.params.requestId] = d.params.request.url;
-                if (/application\.wadl/.test(d.params.request.url)) wadlRequests++;
-            } else if (d.method === 'Network.responseReceived') {
-                const r = d.params.response;
-                if (r.status >= 400) failedRequests.push(r.status + ' ' + r.url);
-            } else if (d.method === 'Network.loadingFailed' && !d.params.canceled) {
-                failedRequests.push(d.params.errorText + ' ' + (requests[d.params.requestId] || ''));
-            }
-        };
-        const send = (method, params = {}) => new Promise(res => { const i = ++id; pending[i] = res; ws.send(JSON.stringify({ id: i, method, params })); });
-        const evaluate = async expr => {
-            const r = await send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true });
-            return r.result && r.result.result ? r.result.result.value : undefined;
-        };
-        const waitFor = async (expr, ms = 30000) => {
-            const end = Date.now() + ms;
-            while (Date.now() < end) { if (await evaluate(expr)) return true; await sleep(250); }
-            return false;
-        };
-        const shot = async name => {
-            const r = await send('Page.captureScreenshot', { format: 'png' });
-            fs.writeFileSync(path.join(OUT, name + '.png'), Buffer.from(r.result.data, 'base64'));
-        };
+        b = await launch({ user: USER, password: PASS });
+    } catch (e) {
+        console.log(`ui.js: ${e.message}`);
+        process.exit(2);
+    }
+    try {
+        const { send, evaluate, waitFor, exceptions, failedRequests } = b;
+        const shot = name => b.shot(path.join(OUT, name + '.png'));
         const click = sel => evaluate(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); if (!e) return false; e.click(); return true; })()`);
         const sidebarCount = 'document.querySelectorAll("#searchTextResults li").length';
         const loaded = '(() => { const i = [...document.querySelectorAll("#rab i")].find(e => /all the APIs/.test(e.textContent)); return !!i && i.offsetParent !== null; })()';
-
-        await send('Runtime.enable'); await send('Page.enable'); await send('Network.enable');
-        await send('Fetch.enable', { patterns: [{ urlPattern: '*' }] });
 
         // ---- the page
         await send('Page.navigate', { url: BASE + '/plugins/servlet/restbrowser' });
@@ -240,6 +175,7 @@ function check(name, ok, detail) {
         check('no failed request for the plugin\'s own resources', ownFailures.length === 0, ownFailures.slice(0, 10));
         // a WADL is the product's (or an app's) to serve: some refuse in some setups, e.g. OAuth 2.0 needs HTTPS outside
         // dev mode. Like smoke.py, at least 95% have to load.
+        const wadlRequests = Object.values(b.requests).filter(u => /application\.wadl/.test(u)).length;
         const wadlFailures = failedRequests.filter(u => /application\.wadl/.test(u) && !ownFailures.includes(u));
         check(`at least 95% of the WADLs load (${wadlRequests - wadlFailures.length} of ${wadlRequests})`,
             wadlRequests > 0 && wadlFailures.length <= 0.05 * wadlRequests, wadlFailures.slice(0, 10));
@@ -248,12 +184,7 @@ function check(name, ok, detail) {
     } catch (e) {
         check('the browser run completed', false, String(e && e.stack || e));
     } finally {
-        try { ws && ws.close(); } catch (e) { /* closed */ }
-        browser.kill();
-        await sleep(500);
-        try { fs.rmSync(profile, { recursive: true, force: true }); } catch (e) { /* the browser may still hold it */ }
+        await b.close();
     }
-    const failed = results.filter(r => !r[1]).length;
-    console.log(`${results.length} checks, ${results.length - failed} passed, ${failed} failed`);
-    process.exit(failed ? 1 : 0);
+    process.exit(c.finish());
 })();

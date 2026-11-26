@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildLines, find, formatJson, maskJson, visibleLines } from './jsonlines';
+import { buildLines, find, formatJson, maskJson, visibleLines } from '../lib/json-lines';
 
 const texts = (t: string) => buildLines(t)!.lines.map((l) => '  '.repeat(l.depth) + l.text);
 
@@ -158,5 +158,12 @@ describe('formatJson', () => {
 describe('maskJson second review', () => {
   it('leaves a secret that is only spaces alone', () => {
     expect(maskJson('{"a":" ","b":"\\t","c":"x"}', () => true, '"*"')).toEqual({ text: '{"a":" ","b":"\\t","c":"*"}', masked: 1 });
+  });
+
+  it('masks empty containers with inner whitespace without corrupting JSON', () => {
+    expect(maskJson('{"secret": {   }, "arr": [  ], "ok": 1}', (k) => k === 'secret' || k === 'arr', '"*"')).toEqual({
+      text: '{"secret": "*", "arr": "*", "ok": 1}',
+      masked: 2,
+    });
   });
 });

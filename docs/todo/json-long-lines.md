@@ -14,14 +14,14 @@ one DOM text node of megabytes would freeze the tab, and the virtual list needs 
 
 ## Done (2026-11-23)
 
-- Pretty scrolls sideways; a line is cut only after 10,000 characters (`PRETTY_LINE` in `Response.tsx`).
+- Pretty scrolls sideways (`JsonView.tsx` sets `innerMinWidth` from the longest line); a line is cut only after 10,000 characters (`PRETTY_LINE` in `JsonView.tsx`).
 - Raw wraps every line at the pane's width (`core/textrows.ts`), so all of a minified body can be read; the find box
   searches the whole text, also across the rows' ends.
 
 ## Approach (what is left: steps 2 and 3)
 
-1. Keep the virtual list's fixed rows; make the code area scroll horizontally (`white-space: pre` and a min-width
-   from the longest visible line, measured in characters), up to a cap of, for example, 20,000 characters.
+1. ~~Keep the virtual list's fixed rows; make the code area scroll horizontally (`white-space: pre` and a min-width
+   from the longest visible line, measured in characters), up to a cap of, for example, 20,000 characters.~~ *(Done in `JsonView.tsx`)*
 2. Past the cap, keep the cut, with a button that opens the whole value in a dialog (a `<textarea readonly>`,
    which handles megabytes).
 3. A "Wrap" toggle in the find bar for those who prefer wrapping (the line's height then varies: render wrapped

@@ -3,68 +3,44 @@ package com.atlassian.labs.restbrowser.catalog;
 import com.atlassian.labs.restbrowser.catalog.JerseyModelSource.Handler;
 import com.atlassian.labs.restbrowser.catalog.ModuleDiscovery.RestModule;
 import com.atlassian.labs.restbrowser.catalog.SpecSource.SpecException;
+import com.atlassian.labs.restbrowser.inspect.TypeProxyUnwrapper;
+import com.atlassian.labs.restbrowser.inspect.osgi.OsgiBundleInspector;
+import com.atlassian.labs.restbrowser.jaxrs.AnnotationFormatter;
+import com.atlassian.labs.restbrowser.jaxrs.ReflectiveBridge;
+import com.atlassian.labs.restbrowser.json.Json;
 import com.atlassian.plugin.ModuleDescriptor;
 import com.atlassian.plugin.Plugin;
-import com.atlassian.plugin.PluginDependencies;
-import com.atlassian.plugin.PluginInformation;
-import org.osgi.framework.Bundle;
-import org.osgi.framework.FrameworkUtil;
-import org.osgi.framework.wiring.BundleCapability;
-import org.osgi.framework.wiring.BundleRevision;
-import org.osgi.framework.wiring.BundleWire;
-import org.osgi.framework.wiring.BundleWiring;
 
-import java.lang.annotation.Annotation;
 import java.lang.reflect.AnnotatedElement;
-import java.lang.reflect.GenericArrayType;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Parameter;
-import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
-import java.lang.reflect.TypeVariable;
-import java.lang.reflect.WildcardType;
 import java.security.CodeSource;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.Date;
-import java.util.Dictionary;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.TreeSet;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import static java.util.Objects.requireNonNull;
 
 /**
- * The details of one operation, for system administrators: the Java method that handles it and its class
- * (reflection), the OSGi bundle the class comes from, the plugin and the REST module. Built on demand from the live
- * objects and written as JSON at once; nothing is kept (see {@link Model}). A section that cannot be read says why
- * instead of failing the others.
+ * Reflection, OSGi bundle, plugin, and REST module details for one operation (system administrators only).
+ * Delegates annotation formatting and OSGi inspection to {@link AnnotationFormatter} and {@link OsgiBundleInspector}.
  */
 public class OperationDetails {
 
-    /** The response: an HTTP status and its JSON body. */
     public record Result(int status, String json) {
     }
 
-    static final int MAX_MODULES = 300;
-    static final int MAX_PACKAGES = 500;
-    static final int MAX_TEXT = 500;
-    /** An annotation may carry the operation's documentation (OpenAPI's @Operation / @ApiResponses): longer than other text. */
-    static final int MAX_ANNOTATION = 8000;
-    /** The bundle headers worth showing; the others (Import-Package, …) are shown as wiring or not at all. */
-    static final List<String> HEADERS = List.of("Bundle-Name", "Bundle-Vendor", "Bundle-Description", "Bundle-DocURL",
-            "Bundle-License", "Atlassian-Plugin-Key", "Atlassian-Build-Date", "Spring-Context", "Bundle-ClassPath",
-            "DynamicImport-Package", "Require-Capability", "Created-By", "Build-Jdk-Spec");
+    static final int MAX_MODULES = AtlassianPluginInspector.MAX_MODULES;
+    static final int MAX_PACKAGES = OsgiBundleInspector.MAX_PACKAGES;
+    static final int MAX_TEXT = OsgiBundleInspector.MAX_TEXT;
+    static final int MAX_ANNOTATION = AnnotationFormatter.MAX_ANNOTATION;
+    static final List<String> HEADERS = OsgiBundleInspector.HEADERS;
 
     private final ModuleDiscovery discovery;
     private final Supplier<JerseyModelSource> jersey;
@@ -100,7 +76,14 @@ public class OperationDetails {
         return new Result(200, json(key, module, handler.get()));
     }
 
-    /** The module an operation key belongs to: the longest module id the key starts with, followed by ":". */
+    /** Overload allowing {@link OperationSource#operationBundle} to reuse an already resolved module + handler. */
+    Result describeHandler(String key, RestModule module, Handler handler) {
+        if (handler == null || handler.handling() == null) {
+            return error(404, "unknown-operation");
+        }
+        return new Result(200, json(key, module, handler));
+    }
+
     static RestModule moduleOf(List<RestModule> modules, String key) {
         RestModule best = null;
         for (RestModule m : modules) {
@@ -113,7 +96,8 @@ public class OperationDetails {
 
     String json(String key, RestModule module, Handler h) {
         Method m = h.handling();
-        Class<?> type = h.handlerClass() != null ? h.handlerClass() : m.getDeclaringClass();
+        Class<?> rawType = h.handlerClass() != null ? h.handlerClass() : m.getDeclaringClass();
+        Class<?> type = TypeProxyUnwrapper.targetClass(rawType);
         Json j = new Json().beginObject().field("format", 1).field("key", key);
         section(j, "method", s -> method(s, m));
         if (h.definition() != null && !h.definition().equals(m)) {
@@ -127,55 +111,93 @@ public class OperationDetails {
             s.endArray();
         });
         section(j, "resourceClass", s -> type(s, type));
-        if (m.getDeclaringClass() != type) {
-            section(j, "declaringClass", s -> type(s, m.getDeclaringClass()));
+        Class<?> declaring = TypeProxyUnwrapper.targetClass(m.getDeclaringClass());
+        if (declaring != type) {
+            section(j, "declaringClass", s -> type(s, declaring));
         }
         section(j, "types", s -> {
+            LinkedHashSet<Class<?>> allTypes = new LinkedHashSet<>(signatureTypes(m));
+            if (h.definition() != null && !h.definition().equals(m)) {
+                allTypes.addAll(signatureTypes(h.definition()));
+            }
             s.beginArray();
-            for (Class<?> c : signatureTypes(m)) {
+            for (Class<?> c : allTypes) {
                 s.beginObject().field("name", c.getName()).field("from", origin(c)).endObject();
             }
             s.endArray();
         });
         section(j, "bundle", s -> bundle(s, type));
         section(j, "plugin", s -> plugin(s, module.plugin()));
-        section(j, "module", s -> restModule(s, module));
+        section(j, "module", s -> AtlassianPluginInspector.writeRestModule(s, module));
         return j.endObject().toString();
     }
 
-    // ---- reflection
+    // ---- reflection (guarded against missing optional generic types / proxies)
 
     static void method(Json j, Method m) {
-        j.beginObject()
-                .field("class", m.getDeclaringClass().getName())
-                .field("name", m.getName())
-                .field("signature", m.toGenericString())
-                .field("modifiers", Modifier.toString(m.getModifiers() & Modifier.methodModifiers()))
-                .field("returns", m.getGenericReturnType().getTypeName());
-        List<String> thrown = new ArrayList<>();
-        for (Type t : m.getGenericExceptionTypes()) {
-            thrown.add(t.getTypeName());
+        String sig;
+        try {
+            sig = m.toGenericString();
+        } catch (RuntimeException | LinkageError e) {
+            sig = m.toString();
         }
-        j.strings("throws", thrown).strings("annotations", annotations(m)).name("parameters").beginArray();
+        String returns;
+        try {
+            returns = m.getGenericReturnType().getTypeName();
+        } catch (RuntimeException | LinkageError e) {
+            returns = m.getReturnType().getTypeName();
+        }
+        List<String> thrown = new ArrayList<>();
+        try {
+            for (Type t : m.getGenericExceptionTypes()) {
+                thrown.add(t.getTypeName());
+            }
+        } catch (RuntimeException | LinkageError e) {
+            for (Class<?> c : m.getExceptionTypes()) {
+                thrown.add(c.getTypeName());
+            }
+        }
+        j.beginObject()
+                .field("class", TypeProxyUnwrapper.targetClass(m.getDeclaringClass()).getName())
+                .field("name", m.getName())
+                .field("signature", sig)
+                .field("modifiers", Modifier.toString(m.getModifiers() & Modifier.methodModifiers()))
+                .field("returns", returns)
+                .strings("throws", thrown)
+                .strings("annotations", annotations(m))
+                .name("parameters").beginArray();
         for (Parameter p : m.getParameters()) {
+            String pType;
+            try {
+                pType = p.getParameterizedType().getTypeName();
+            } catch (RuntimeException | LinkageError e) {
+                pType = p.getType().getTypeName();
+            }
             j.beginObject()
                     .field("name", p.isNamePresent() ? p.getName() : null)
-                    .field("type", p.getParameterizedType().getTypeName())
+                    .field("type", pType)
                     .strings("annotations", annotations(p))
                     .endObject();
         }
-        j.endArray().field("deprecated", m.isAnnotationPresent(Deprecated.class)).endObject();
+        j.endArray().field("deprecated", ReflectiveBridge.safeHasAnnotation(m, Deprecated.class)).endObject();
     }
 
-    static void type(Json j, Class<?> c) {
+    static void type(Json j, Class<?> rawClass) {
+        Class<?> c = TypeProxyUnwrapper.targetClass(rawClass);
         List<String> supers = new ArrayList<>();
         Set<String> interfaces = new LinkedHashSet<>();
         for (Class<?> k = c; k != null && k != Object.class; k = k.getSuperclass()) {
             if (k != c) {
                 supers.add(k.getName());
             }
-            for (Type t : k.getGenericInterfaces()) {
-                interfaces.add(t.getTypeName());
+            try {
+                for (Type t : k.getGenericInterfaces()) {
+                    interfaces.add(t.getTypeName());
+                }
+            } catch (RuntimeException | LinkageError e) {
+                for (Class<?> iface : k.getInterfaces()) {
+                    interfaces.add(iface.getName());
+                }
             }
         }
         int modifiers = c.getModifiers() & (c.isInterface() ? Modifier.interfaceModifiers() : Modifier.classModifiers());
@@ -194,240 +216,20 @@ public class OperationDetails {
                 .endObject();
     }
 
-    /**
-     * The annotations as source code would write them; one that cannot be read is reported as such and the others
-     * stay. When the element's annotations cannot be read at all (a class they name is missing), that is all it says.
-     */
     static List<String> annotations(AnnotatedElement e) {
-        List<String> out = new ArrayList<>();
-        Annotation[] all;
-        try {
-            all = e.getDeclaredAnnotations();
-        } catch (RuntimeException | LinkageError x) {
-            out.add("(unreadable: " + x + ")");
-            return out;
-        }
-        for (Annotation a : all) {
-            try {
-                String s = annotation(a);
-                out.add(s.length() <= MAX_ANNOTATION ? s : cut(s, MAX_ANNOTATION));
-            } catch (RuntimeException | LinkageError x) {
-                out.add("(unreadable: " + x + ")");
-            }
-        }
-        return out;
+        return AnnotationFormatter.annotations(e);
     }
 
-    /**
-     * An annotation with only the members that differ from their defaults, as written in source: Java's own
-     * toString lists every member, and OpenAPI's annotations have dozens of empty ones.
-     */
-    static String annotation(Annotation a) {
-        Class<? extends Annotation> type = a.annotationType();
-        Method[] members = type.getDeclaredMethods();
-        java.util.Arrays.sort(members, Comparator.comparing(Method::getName));
-        List<String> set = new ArrayList<>();
-        boolean onlyValue = true;
-        for (Method m : members) {
-            if (m.getParameterCount() != 0 || m.isSynthetic()) {
-                continue;
-            }
-            Object v;
-            Object def;
-            try {
-                v = member(m, a);
-                def = m.getDefaultValue(); // a default whose class is missing throws TypeNotPresentException
-            } catch (ReflectiveOperationException | RuntimeException | LinkageError x) {
-                set.add(m.getName() + "=?");
-                onlyValue = false;
-                continue;
-            }
-            if (def != null && java.util.Objects.deepEquals(v, def)) {
-                continue;
-            }
-            set.add(m.getName() + "=" + annotationValue(v));
-            onlyValue &= "value".equals(m.getName());
-        }
-        String name = "@" + type.getName();
-        if (set.isEmpty()) {
-            return name;
-        }
-        if (onlyValue && set.size() == 1) {
-            return name + "(" + set.get(0).substring("value=".length()) + ")";
-        }
-        return name + "(" + String.join(", ", set) + ")";
+    static String annotation(java.lang.annotation.Annotation a) {
+        return AnnotationFormatter.annotation(a);
     }
 
-    /** A member's value; only an annotation type this code may not see needs setAccessible. */
-    private static Object member(Method m, Annotation a) throws ReflectiveOperationException {
-        try {
-            return m.invoke(a);
-        } catch (IllegalAccessException e) {
-            m.setAccessible(true);
-            return m.invoke(a);
-        }
-    }
-
-    private static String annotationValue(Object v) {
-        if (v instanceof String s) {
-            return '"' + escape(s, '"') + '"';
-        }
-        if (v instanceof Character c) {
-            return "'" + escape(String.valueOf(c), '\'') + "'";
-        }
-        if (v instanceof Class<?> c) {
-            return c.getTypeName() + ".class"; // String[].class, not [Ljava.lang.String;.class
-        }
-        if (v instanceof Enum<?> e) {
-            return e.getDeclaringClass().getName() + "." + e.name();
-        }
-        if (v instanceof Annotation a) {
-            return annotation(a);
-        }
-        if (v != null && v.getClass().isArray()) {
-            int n = java.lang.reflect.Array.getLength(v);
-            List<String> items = new ArrayList<>();
-            for (int i = 0; i < n; i++) {
-                items.add(annotationValue(java.lang.reflect.Array.get(v, i)));
-            }
-            return n == 1 ? items.get(0) : "{" + String.join(", ", items) + "}";
-        }
-        if (v instanceof Long l) {
-            return l + "L";
-        }
-        if (v instanceof Float f) {
-            return f + "f";
-        }
-        return String.valueOf(v);
-    }
-
-    /** A string or char literal's content as source code writes it; quote is the literal's own quote. */
-    private static String escape(String s, char quote) {
-        StringBuilder b = new StringBuilder(s.length());
-        for (char c : s.toCharArray()) {
-            switch (c) {
-                case '\\' -> b.append("\\\\");
-                case '\n' -> b.append("\\n");
-                case '\r' -> b.append("\\r");
-                case '\t' -> b.append("\\t");
-                default -> b.append(c == quote ? "\\" + c : String.valueOf(c));
-            }
-        }
-        return b.toString();
-    }
-
-    /** The classes a method's signature and annotations name (return, parameters, type arguments, exceptions, schema classes), JDK ones included. */
     static List<Class<?>> signatureTypes(Method m) {
-        Set<Class<?>> out = new LinkedHashSet<>();
-        Set<TypeVariable<?>> seen = new HashSet<>();
-        collect(m.getGenericReturnType(), out, seen);
-        for (Type t : m.getGenericParameterTypes()) {
-            collect(t, out, seen);
-        }
-        for (Type t : m.getGenericExceptionTypes()) {
-            collect(t, out, seen);
-        }
-        try {
-            for (Annotation a : m.getDeclaredAnnotations()) {
-                collectAnnotationClasses(a, out, 0);
-            }
-        } catch (RuntimeException | LinkageError ignored) {
-            // unreadable annotation
-        }
-        return new ArrayList<>(out);
+        return AnnotationFormatter.signatureTypes(m);
     }
 
-    /** Collects non-void Class<?> values referenced inside nested annotations (e.g. @Schema(implementation = Foo.class)). */
-    private static void collectAnnotationClasses(Annotation a, Set<Class<?>> out, int depth) {
-        if (a == null || depth > 6) {
-            return;
-        }
-        for (Method member : a.annotationType().getDeclaredMethods()) {
-            if (member.getParameterCount() != 0 || member.isSynthetic()) {
-                continue;
-            }
-            Object v;
-            Object def;
-            try {
-                v = member(member, a);
-                def = member.getDefaultValue();
-            } catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {
-                continue;
-            }
-            if (def != null && java.util.Objects.deepEquals(v, def)) {
-                continue;
-            }
-            collectAnnotationValueClasses(v, out, depth + 1);
-        }
-    }
-
-    private static void collectAnnotationValueClasses(Object v, Set<Class<?>> out, int depth) {
-        if (v == null || depth > 7) {
-            return;
-        }
-        if (v instanceof Class<?> c) {
-            Class<?> k = c;
-            while (k.isArray()) {
-                k = k.getComponentType();
-            }
-            if (!k.isPrimitive() && k != Void.class) {
-                out.add(k);
-            }
-        } else if (v instanceof Annotation nested) {
-            collectAnnotationClasses(nested, out, depth);
-        } else if (v.getClass().isArray()) {
-            int n = java.lang.reflect.Array.getLength(v);
-            for (int i = 0; i < n; i++) {
-                collectAnnotationValueClasses(java.lang.reflect.Array.get(v, i), out, depth);
-            }
-        }
-    }
-
-    /** A type variable stands for its bounds; seen stops {@code <T extends Comparable<T>>} from going round. */
-    private static void collect(Type t, Set<Class<?>> out, Set<TypeVariable<?>> seen) {
-        if (t instanceof Class<?> c) {
-            Class<?> k = c;
-            while (k.isArray()) {
-                k = k.getComponentType();
-            }
-            if (!k.isPrimitive()) {
-                out.add(k);
-            }
-        } else if (t instanceof ParameterizedType p) {
-            collect(p.getRawType(), out, seen);
-            for (Type a : p.getActualTypeArguments()) {
-                collect(a, out, seen);
-            }
-        } else if (t instanceof GenericArrayType g) {
-            collect(g.getGenericComponentType(), out, seen);
-        } else if (t instanceof WildcardType w) {
-            for (Type b : w.getUpperBounds()) {
-                collect(b, out, seen);
-            }
-            for (Type b : w.getLowerBounds()) {
-                collect(b, out, seen);
-            }
-        } else if (t instanceof TypeVariable<?> v && seen.add(v)) {
-            for (Type b : v.getBounds()) {
-                collect(b, out, seen);
-            }
-        }
-    }
-
-    /**
-     * Where a class comes from: its bundle, the JDK, or the product's own class loader. A javax class is not
-     * always the JDK's: javax.servlet, javax.inject and javax.mail come with the product.
-     */
     static String origin(Class<?> c) {
-        Bundle b = bundleOf(c);
-        if (b != null) {
-            return b.getSymbolicName() + " " + b.getVersion();
-        }
-        ClassLoader loader = c.getClassLoader();
-        if (loader == null || loader == ClassLoader.getPlatformClassLoader() || c.getName().startsWith("java.")) {
-            return "JDK";
-        }
-        return "the product (" + loader.getClass().getSimpleName() + ")";
+        return OsgiBundleInspector.origin(c);
     }
 
     private static String codeSource(Class<?> c) {
@@ -439,170 +241,21 @@ public class OperationDetails {
         }
     }
 
-    // ---- OSGi
-
-    private static Bundle bundleOf(Class<?> c) {
-        try {
-            return FrameworkUtil.getBundle(c);
-        } catch (RuntimeException | LinkageError e) {
-            return null; // not in an OSGi framework (tests), or the framework is going away
-        }
-    }
-
     static void bundle(Json j, Class<?> c) {
-        Bundle b = bundleOf(c);
-        if (b == null) {
-            j.beginObject().field("none", origin(c)).endObject();
-            return;
-        }
-        Map<String, String> headers = new LinkedHashMap<>();
-        Dictionary<String, String> all = b.getHeaders();
-        for (String name : HEADERS) {
-            String v = all.get(name);
-            if (v != null) {
-                headers.put(name, clip(v));
-            }
-        }
-        j.beginObject()
-                .field("id", b.getBundleId())
-                .field("symbolicName", b.getSymbolicName())
-                .field("version", String.valueOf(b.getVersion()))
-                .field("state", state(b.getState()))
-                .field("location", clip(b.getLocation()))
-                .field("lastModified", b.getLastModified())
-                .stringMap("headers", headers);
-        BundleWiring wiring = b.adapt(BundleWiring.class);
-        if (wiring == null || !wiring.isInUse()) {
-            // not resolved, or replaced by a refresh while this was read: the bundle's facts stay
-            j.field("wiring", false).endObject();
-            return;
-        }
-        // imports: the package, the version the provider offers, and the provider
-        List<String[]> imports = new ArrayList<>();
-        for (BundleWire w : orEmpty(wiring.getRequiredWires(BundleRevision.PACKAGE_NAMESPACE))) {
-            Map<String, Object> attrs = w.getCapability().getAttributes();
-            Bundle provider = w.getProviderWiring() == null ? null : w.getProviderWiring().getBundle();
-            imports.add(new String[]{String.valueOf(attrs.get(BundleRevision.PACKAGE_NAMESPACE)), version(attrs),
-                    provider == null ? "?" : provider.getSymbolicName() + " " + provider.getVersion(),
-                    provider == null ? "" : String.valueOf(provider.getBundleId())});
-        }
-        imports.sort(Comparator.comparing((String[] a) -> a[0]));
-        j.field("importCount", imports.size()).name("imports").beginArray();
-        for (String[] i : imports.subList(0, Math.min(imports.size(), MAX_PACKAGES))) {
-            j.beginObject().field("package", i[0]).field("version", i[1]).field("from", i[2]).field("fromId", i[3]).endObject();
-        }
-        j.endArray();
-        // exports: the package, its version, and how many bundles are wired to it
-        Map<BundleCapability, Integer> users = new HashMap<>();
-        for (BundleWire w : orEmpty(wiring.getProvidedWires(BundleRevision.PACKAGE_NAMESPACE))) {
-            users.merge(w.getCapability(), 1, Integer::sum);
-        }
-        List<BundleCapability> exports = new ArrayList<>(orEmpty(wiring.getCapabilities(BundleRevision.PACKAGE_NAMESPACE)));
-        exports.sort(Comparator.comparing(cap -> String.valueOf(cap.getAttributes().get(BundleRevision.PACKAGE_NAMESPACE))));
-        j.field("exportCount", exports.size()).name("exports").beginArray();
-        for (BundleCapability cap : exports.subList(0, Math.min(exports.size(), MAX_PACKAGES))) {
-            j.beginObject()
-                    .field("package", String.valueOf(cap.getAttributes().get(BundleRevision.PACKAGE_NAMESPACE)))
-                    .field("version", version(cap.getAttributes()))
-                    .field("users", users.getOrDefault(cap, 0))
-                    .endObject();
-        }
-        j.endArray().endObject();
-    }
-
-    /** A wiring's list; null once the wiring is no longer in use (a refresh between the check and the call). */
-    private static <T> List<T> orEmpty(List<T> list) {
-        return list == null ? List.of() : list;
-    }
-
-    /** A package capability's version; empty when it has none (the UI then shows nothing). */
-    static String version(Map<String, Object> attributes) {
-        Object v = attributes.get("version");
-        return v == null ? "" : String.valueOf(v);
+        OsgiBundleInspector.writeFullBundle(j, c);
     }
 
     static String state(int state) {
-        return switch (state) {
-            case Bundle.UNINSTALLED -> "UNINSTALLED";
-            case Bundle.INSTALLED -> "INSTALLED";
-            case Bundle.RESOLVED -> "RESOLVED";
-            case Bundle.STARTING -> "STARTING";
-            case Bundle.STOPPING -> "STOPPING";
-            case Bundle.ACTIVE -> "ACTIVE";
-            default -> String.valueOf(state);
-        };
+        return OsgiBundleInspector.state(state);
     }
-
-    // ---- the plugin and its REST module
 
     void plugin(Json j, Plugin p) {
-        if (p == null) {
-            j.value((String) null);
-            return;
-        }
-        PluginInformation info = p.getPluginInformation();
-        j.beginObject()
-                .field("key", p.getKey())
-                .field("name", p.getName())
-                .optional("version", info == null ? null : info.getVersion())
-                .optional("vendor", info == null ? null : info.getVendorName())
-                .optional("vendorUrl", info == null ? null : info.getVendorUrl())
-                .optional("description", info == null ? null : clip(info.getDescription()))
-                .field("origin", product.origin(p))
-                .field("state", String.valueOf(p.getPluginState()))
-                .field("pluginsVersion", p.getPluginsVersion())
-                .optional("artifact", p.getPluginArtifact() == null ? null : p.getPluginArtifact().getName())
-                .optional("installed", iso(p.getDateInstalled()))
-                .optional("loaded", iso(p.getDateLoaded()))
-                .optional("enabled", iso(p.getDateEnabled()));
-        Set<String> mandatory = new TreeSet<>();
-        Set<String> optional = new TreeSet<>();
-        try {
-            PluginDependencies deps = p.getDependencies();
-            if (deps != null) {
-                mandatory.addAll(deps.getMandatory());
-                optional.addAll(deps.getOptional());
-                optional.addAll(deps.getDynamic());
-            }
-        } catch (RuntimeException | LinkageError e) {
-            // older plugin types do not know their dependencies
-        }
-        optional.removeAll(mandatory); // a plugin can list one twice; it is a mandatory one then
-        j.strings("dependsOn", mandatory).strings("optionallyDependsOn", optional);
-        List<ModuleDescriptor<?>> modules = new ArrayList<>(p.getModuleDescriptors());
-        modules.sort(Comparator.comparing(ModuleDescriptor::getKey, Comparator.nullsFirst(Comparator.naturalOrder())));
-        j.field("moduleCount", modules.size()).name("modules").beginArray();
-        for (ModuleDescriptor<?> md : modules.subList(0, Math.min(modules.size(), MAX_MODULES))) {
-            j.beginObject()
-                    .field("key", md.getKey())
-                    .field("type", moduleType(md))
-                    .optional("name", md.getName())
-                    .field("enabled", md.isEnabled())
-                    .endObject();
-        }
-        j.endArray().endObject();
+        AtlassianPluginInspector.writePluginFull(j, p, product);
     }
 
-    /** "RestServletFilterModuleDescriptor" gives "RestServletFilter"; the descriptor's class says what it is. */
     static String moduleType(ModuleDescriptor<?> md) {
-        String name = md.getClass().getSimpleName();
-        return name.endsWith("ModuleDescriptor") && name.length() > "ModuleDescriptor".length()
-                ? name.substring(0, name.length() - "ModuleDescriptor".length()) : name;
+        return AtlassianPluginInspector.moduleType(md);
     }
-
-    static void restModule(Json j, RestModule m) {
-        j.beginObject()
-                .field("key", m.id())
-                .field("path", m.path())
-                .field("basePath", m.basePath())
-                .field("version", m.version())
-                .field("rest", m.restV2() ? "REST v2 (Jersey 2)" : "REST v1 (Jersey 1)")
-                .optional("description", clip(m.description()))
-                .optional("descriptor", m.descriptor() == null ? null : m.descriptor().getClass().getName())
-                .endObject();
-    }
-
-    // ---- helpers
 
     private static void section(Json j, String name, Consumer<Json> body) {
         String part;
@@ -620,17 +273,11 @@ public class OperationDetails {
         return new Result(status, new Json().beginObject().field("error", reason).endObject().toString());
     }
 
-    private static String iso(Date d) {
-        return d == null ? null : DateTimeFormatter.ISO_INSTANT.format(d.toInstant());
-    }
-
     static String clip(String s) {
-        return s == null || s.length() <= MAX_TEXT ? s : cut(s, MAX_TEXT);
+        return OsgiBundleInspector.clip(s);
     }
 
-    /** The first max characters of a longer text and "…"; one fewer when the last would split a surrogate pair. */
     static String cut(String s, int max) {
-        int end = Character.isHighSurrogate(s.charAt(max - 1)) ? max - 1 : max;
-        return s.substring(0, end) + "…";
+        return OsgiBundleInspector.cut(s, max);
     }
 }

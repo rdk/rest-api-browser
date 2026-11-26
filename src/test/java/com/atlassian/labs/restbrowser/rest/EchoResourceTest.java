@@ -54,24 +54,38 @@ public class EchoResourceTest {
                 "X-SessionId", "X-Api-Key", "X-API_KEY", "x_api_key", "X-Api-Keys", "X-ApiKey", "apikey",
                 "X-Auth-Token", "X-Csrf-Token", "X-Amz-Security-Token", "X-Credentials", "X-JWT-Assertion",
                 "Cf-Access-Jwt-Assertion", "X-Jwt", "X-Saml-Assertion", "X-Signature", "X-Hub-Signature-256",
-                "X-Auth", "X-Authn", "X-Forwarded-Authorization", "X-Forwarded-Client-Cert", "X-SSL-Client-Cert",
-                "SSL_CLIENT_CERT", "X-Client-Certificate", "X-Amzn-Oidc-Data", "X-Amzn-Oidc-Accesstoken",
-                "X-SSO-User", "X-Saml-Response", "X-Ms-Client-Principal", "X-MS-CLIENT-PRINCIPAL-NAME",
-                "X-JSESSIONID", "X-OAuth-Scopes", "X-CSRF", "X-XSRF", "X-Xsrf-Header",
-                // run together (HTTP/2 lowercases the names)
-                "X-AccessToken", "x-accesstoken", "X-AuthToken", "X-ApiToken", "XApiKey", "X-ClientSecret", "X-UserPassword")) {
+                "X-Auth", "X-Authn", "X-Authz", "X-Bearer", "X-Forwarded-Authorization", "X-Forwarded-Client-Cert",
+                "X-SSL-Client-Cert", "SSL_CLIENT_CERT", "X-Client-Certificate", "X-Amzn-Oidc-Data",
+                "X-Amzn-Oidc-Accesstoken", "X-SSO-User", "X-Saml-Response", "X-Ms-Client-Principal",
+                "X-MS-CLIENT-PRINCIPAL-NAME", "X-JSESSIONID", "X-OAuth-Scopes", "X-CSRF", "X-XSRF", "X-Xsrf-Header",
+                "X-Forwarded-Cookie", "X-Cookie", "Ocp-Apim-Subscription-Key", "X-Functions-Key", "X-Private-Key",
+                "X-Signing-Key", "X-Passphrase", "X-HMAC",
+                // run together (HTTP/2 lowercases the names: both suffix and prefix compounds)
+                "X-AccessToken", "x-accesstoken", "X-AuthToken", "X-ApiToken", "XApiKey", "X-ClientSecret",
+                "X-UserPassword", "x-tokenvalue", "x-secretkey", "x-authheader", "x-webauth-user",
+                "x-amzn-mtls-clientcert", "x-samlresponse", "x-oidcdata", "x-jwtpayload",
+                "X-MyCookies", "x-usercookies")) {
             assertTrue(name, EchoResource.secret(name));
             assertEquals(name, "… (hidden)", EchoResource.safe(name, "v"));
         }
+        assertTrue(EchoResource.safe("Set-Cookie2", "sid=secret").contains("sid=…"));
+    }
+
+    @Test
+    public void nullHeaderEnumerationIsHandledSafely() {
+        HttpServletRequest req = mock(HttpServletRequest.class);
+        when(req.getMethod()).thenReturn("GET");
+        when(req.getHeaderNames()).thenReturn(null);
+        assertEquals("{\"method\":\"GET\",\"headers\":[]}", EchoResource.json(req));
     }
 
     @Test
     public void ordinaryNamesAndTheXsrfHeaderStayVisible() {
         // whole words only: "sso" in Processor, "auth" in Author and "cert" in Concert are not secrets
         for (String name : List.of("X-Atlassian-Token", "x_atlassian_token", "X-Processor", "X-Author-Id",
-                "X-Concert-Id", "X-Api-Version", "X-Key-Id", "Accept", "Accept-Language", "Content-Type",
-                "User-Agent", "X-Forwarded-For", "X-Forwarded-Proto", "Origin", "Referer", "Sec-Fetch-Mode",
-                "X-Requested-With", "Cache-Control", "Host")) {
+                "X-Concert-Id", "X-Cookies-Enabled", "X-Api-Version", "X-Key-Id", "Accept", "Accept-Language",
+                "Content-Type", "User-Agent", "X-Forwarded-For", "X-Forwarded-Proto", "Origin", "Referer",
+                "Sec-Fetch-Mode", "X-Requested-With", "Cache-Control", "Host")) {
             assertFalse(name, EchoResource.secret(name));
         }
         assertEquals("XMLHttpRequest", EchoResource.safe("X-Requested-With", "XMLHttpRequest"));
@@ -101,14 +115,23 @@ public class EchoResourceTest {
     }
 
     @Test
-    public void onlyForUsersWhoAreLoggedIn() {
+    public void onlyForLicensedUsers() {
         UserManager users = mock(UserManager.class);
         HttpServletRequest request = mock(HttpServletRequest.class);
         when(request.getMethod()).thenReturn("GET");
         when(request.getHeaderNames()).thenReturn(Collections.emptyEnumeration());
         EchoResource resource = new EchoResource(users);
         assertEquals(401, resource.get(request).getStatus());
-        when(users.getRemoteUserKey(request)).thenReturn(new UserKey("u"));
+        assertEquals(401, resource.post(request).getStatus());
+        assertEquals(401, resource.put(request).getStatus());
+        assertEquals(401, resource.patch(request).getStatus());
+        assertEquals(401, resource.delete(request).getStatus());
+        UserKey u = new UserKey("u");
+        when(users.getRemoteUserKey(request)).thenReturn(u);
+        when(users.isLicensed(u)).thenReturn(false);
+        assertEquals(403, resource.get(request).getStatus());
+        assertEquals(403, resource.post(request).getStatus());
+        when(users.isLicensed(u)).thenReturn(true);
         assertEquals(200, resource.get(request).getStatus());
         assertTrue(((String) resource.get(request).getEntity()).startsWith("{\"method\":\"GET\""));
         assertEquals("no-store", resource.get(request).getHeaderString("Cache-Control"));

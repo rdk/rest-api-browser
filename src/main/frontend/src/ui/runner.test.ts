@@ -222,4 +222,19 @@ describe('RequestRunner second review', () => {
     expect(seraph.sessionExpired).toBe(true);
     expect((await new RequestRunner(fakeFetch(() => new Response('', { status: 401 }))).run(req)).sessionExpired).toBe(true);
   });
+
+  it('classifies YAML/form content-types as text and releases stream lock on error', async () => {
+    expect(kindOf('application/yaml', 10)).toBe('text');
+    expect(kindOf('application/x-www-form-urlencoded', 10)).toBe('text');
+
+    const failing = new ReadableStream<Uint8Array>({
+      pull() {
+        return Promise.reject(new Error('stream boom'));
+      },
+    });
+    const res = new Response(failing, { headers: { 'content-type': 'text/plain' } });
+    const r = await new RequestRunner(fakeFetch(() => res)).run(req);
+    expect(r.error).toBe('stream boom');
+    expect(failing.locked).toBe(false);
+  });
 });

@@ -4,7 +4,8 @@ import com.atlassian.annotations.security.SystemAdminOnly;
 import com.atlassian.labs.restbrowser.catalog.CatalogService;
 import com.atlassian.labs.restbrowser.catalog.OperationDetails;
 import com.atlassian.labs.restbrowser.catalog.OperationSource;
-import com.atlassian.sal.api.user.UserKey;
+import com.atlassian.labs.restbrowser.json.JsonParser;
+import com.atlassian.labs.restbrowser.json.JsonParser.JsonParseException;
 import com.atlassian.sal.api.user.UserManager;
 import jakarta.inject.Inject;
 import jakarta.servlet.http.HttpServletRequest;
@@ -19,23 +20,26 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.Locale;
+import java.util.Map;
 
 /**
- * Agent-friendly and UI REST API for Java class inspection, OSGi/plugin provenance, on-demand decompilation
- * (CFR 0.152 &amp; Vineflower 1.11.1), and deep decompiled code traversal across OSGi bundle wires.
- * <p>
- * Mounted at {@code /rest/restbrowser/1/code/*}. System administrators only.
+ * Agent-friendly and UI REST API for Java class inspection, OSGi/plugin provenance, on-demand decompilation,
+ * and reference graph traversal. System administrators only.
  */
 @Path("/code")
 @SystemAdminOnly
 public class CodeResource {
 
-    static final String JSON = MediaType.APPLICATION_JSON + ";charset=UTF-8";
+    static final String JSON = RestAuth.JSON_MEDIA_TYPE;
     static final String TEXT = MediaType.TEXT_PLAIN + ";charset=UTF-8";
+    static final int MAX_BATCH_BODY_BYTES = 16_384;
 
     private final CatalogService catalog;
     private final UserManager userManager;
@@ -51,7 +55,6 @@ public class CodeResource {
         this.source = source;
     }
 
-    /** Rich class metadata: reflection, bytecode version/size, OSGi bundle headers/wiring, plugin ownership, timestamps, refs. */
     @GET
     @Path("/class")
     @Produces(MediaType.APPLICATION_JSON)
@@ -63,12 +66,13 @@ public class CodeResource {
         if (denied != null) {
             return denied;
         }
-        catalog.current(request.getServletContext());
+        if (op != null && !op.isBlank()) {
+            catalog.current(request.getServletContext());
+        }
         long bundleId = fromBundle == null ? -1L : fromBundle;
         return jsonResponse(source.inspectClass(op, className, bundleId));
     }
 
-    /** Rich plugin & OSGi bundle metadata for an app lozenge tooltip or agent query. */
     @GET
     @Path("/plugin")
     @Produces(MediaType.APPLICATION_JSON)
@@ -81,11 +85,6 @@ public class CodeResource {
         return jsonResponse(source.inspectPlugin(pluginKey));
     }
 
-    /**
-     * Decompiled source of a class or method with optional line slicing ({@code startLine}, {@code maxLines}),
-     * {@code methodLine} anchoring, optional {@code includeMeta=true}, and raw plain-text mode ({@code format=text}
-     * or {@code Accept: text/plain}).
-     */
     @GET
     @Path("/source")
     @Produces({MediaType.APPLICATION_JSON, MediaType.TEXT_PLAIN})
@@ -104,9 +103,12 @@ public class CodeResource {
         if (denied != null) {
             return denied;
         }
-        catalog.current(request.getServletContext());
+        if (op != null && !op.isBlank()) {
+            catalog.current(request.getServletContext());
+        }
         long bundleId = fromBundle == null ? -1L : fromBundle;
-        boolean plain = "text".equalsIgnoreCase(format) || wantsPlainText(request.getHeader("Accept"));
+        boolean plain = "text".equalsIgnoreCase(format)
+                || ((format == null || format.isBlank()) && wantsPlainText(request.getHeader("Accept")));
         if (plain) {
             OperationDetails.Result r = source.decompileText(op, className, bundleId, scope, decompiler, method,
                     startLine, maxLines);
@@ -120,7 +122,6 @@ public class CodeResource {
                 startLine, maxLines, includeMeta));
     }
 
-    /** Combined operation details + decompiled source in a single agent-friendly round trip. */
     @GET
     @Path("/operation")
     @Produces(MediaType.APPLICATION_JSON)
@@ -136,7 +137,6 @@ public class CodeResource {
         return jsonResponse(source.operationBundle(op, scope, decompiler, details));
     }
 
-    /** BFS traversal of referenced Java classes across OSGi bundle wires. */
     @GET
     @Path("/graph")
     @Produces(MediaType.APPLICATION_JSON)
@@ -154,13 +154,14 @@ public class CodeResource {
         if (denied != null) {
             return denied;
         }
-        catalog.current(request.getServletContext());
+        if (op != null && !op.isBlank()) {
+            catalog.current(request.getServletContext());
+        }
         long bundleId = fromBundle == null ? -1L : fromBundle;
         return jsonResponse(source.traverseGraph(op, className, bundleId, depth, maxNodes, includeJdk,
                 packagePrefix, includeSources, decompiler));
     }
 
-    /** Search Java classes across active OSGi bundles by substring or package prefix. */
     @GET
     @Path("/search")
     @Produces(MediaType.APPLICATION_JSON)
@@ -172,110 +173,185 @@ public class CodeResource {
         if (denied != null) {
             return denied;
         }
-        catalog.current(request.getServletContext());
         return jsonResponse(source.searchClasses(query, limit, bundleId));
     }
 
-    /**
-     * Batch inspect or decompile up to 10 classes in one request.
-     * Body: {@code {"classes":["a.b.Foo","a.b.Bar"],"fromBundle":-1,"decompiler":"vineflower","includeSource":true,"includeMeta":false,"maxLines":200}}.
-     */
     @POST
     @Path("/batch")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response batch(String body, @Context HttpServletRequest request) {
+    public Response batch(InputStream body, @Context HttpServletRequest request) {
         Response denied = checkSysadmin(request);
         if (denied != null) {
             return denied;
         }
-        if (!"no-check".equals(request.getHeader("X-Atlassian-Token"))) {
-            return error(Response.Status.FORBIDDEN, "xsrf-check-failed");
+        if (!RestAuth.xsrfHeader(request)) {
+            return RestAuth.error(Response.Status.FORBIDDEN, "xsrf-check-failed");
         }
-        catalog.current(request.getServletContext());
-        BatchRequest req = parseBatchRequest(body);
+        String bodyText;
+        try {
+            bodyText = readBoundedUtf8(body, MAX_BATCH_BODY_BYTES);
+        } catch (BodyTooLargeException e) {
+            return RestAuth.error(Response.Status.BAD_REQUEST, "body-too-large");
+        } catch (IOException e) {
+            return RestAuth.error(Response.Status.BAD_REQUEST, "invalid-json");
+        }
+        BatchRequest req;
+        try {
+            req = parseBatchRequest(bodyText);
+        } catch (IllegalArgumentException e) {
+            return RestAuth.error(Response.Status.BAD_REQUEST, "invalid-json");
+        }
         if (req.classes().isEmpty()) {
-            return error(Response.Status.BAD_REQUEST, "missing-classes");
+            return RestAuth.error(Response.Status.BAD_REQUEST, "missing-classes");
+        }
+        if (req.op() != null && !req.op().isBlank()) {
+            catalog.current(request.getServletContext());
         }
         return jsonResponse(source.batch(req.classes(), req.fromBundle(), req.op(), req.decompiler(),
                 req.includeSource(), req.includeMeta(), req.maxLines()));
     }
 
-    // ---- lightweight JSON parsing for batch body (no Jackson dependency needed)
+    private static final class BodyTooLargeException extends IOException {
+    }
+
+    static String readBoundedUtf8(InputStream body, int maxBytes) throws IOException {
+        if (body == null) {
+            return "";
+        }
+        try (body) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[Math.min(4096, maxBytes + 1)];
+            int total = 0;
+            int n;
+            while ((n = body.read(buf, 0, Math.min(buf.length, (maxBytes + 1) - total))) > 0) {
+                total += n;
+                if (total > maxBytes) {
+                    throw new BodyTooLargeException();
+                }
+                out.write(buf, 0, n);
+            }
+            return out.toString(StandardCharsets.UTF_8);
+        }
+    }
 
     record BatchRequest(List<String> classes, long fromBundle, String op, String decompiler,
                         boolean includeSource, boolean includeMeta, Integer maxLines) {
     }
 
-    private static final Pattern CLASSES_ARR = Pattern.compile("\"classes\"\\s*:\\s*\\[([^\\]]*)]");
-    private static final Pattern QUOTED_STR = Pattern.compile("\"([^\"]+)\"");
-    private static final Pattern STR_FIELD = Pattern.compile("\"([a-zA-Z]+)\"\\s*:\\s*\"([^\"]*)\"");
-    private static final Pattern NUM_FIELD = Pattern.compile("\"([a-zA-Z]+)\"\\s*:\\s*(-?\\d+)");
-    private static final Pattern BOOL_FIELD = Pattern.compile("\"([a-zA-Z]+)\"\\s*:\\s*(true|false)");
-
     static BatchRequest parseBatchRequest(String body) {
         if (body == null || body.isBlank()) {
             return new BatchRequest(List.of(), -1L, null, "vineflower", true, false, null);
         }
+        Map<String, Object> obj = JsonParser.parseObject(body);
         List<String> classes = new ArrayList<>();
-        Matcher arr = CLASSES_ARR.matcher(body);
-        if (arr.find()) {
-            Matcher item = QUOTED_STR.matcher(arr.group(1));
-            while (item.find()) {
-                classes.add(item.group(1));
+        Object rawClasses = obj.get("classes");
+        if (rawClasses != null) {
+            if (!(rawClasses instanceof List<?> list)) {
+                throw new JsonParseException("expected array for classes");
+            }
+            for (Object item : list) {
+                if (!(item instanceof String s)) {
+                    throw new JsonParseException("expected string in classes");
+                }
+                if (!s.isBlank()) {
+                    classes.add(s);
+                }
             }
         }
-        long fromBundle = -1L;
-        Integer maxLines = null;
-        Matcher nm = NUM_FIELD.matcher(body);
-        while (nm.find()) {
-            switch (nm.group(1)) {
-                case "fromBundle" -> fromBundle = Long.parseLong(nm.group(2));
-                case "maxLines" -> maxLines = Integer.parseInt(nm.group(2));
-                default -> { }
-            }
-        }
-        String op = null;
-        String decompiler = "vineflower";
-        Matcher sm = STR_FIELD.matcher(body);
-        while (sm.find()) {
-            switch (sm.group(1)) {
-                case "op" -> op = sm.group(2);
-                case "decompiler" -> decompiler = sm.group(2);
-                default -> { }
-            }
-        }
-        boolean includeSource = true;
-        boolean includeMeta = false;
-        Matcher bm = BOOL_FIELD.matcher(body);
-        while (bm.find()) {
-            switch (bm.group(1)) {
-                case "includeSource" -> includeSource = Boolean.parseBoolean(bm.group(2));
-                case "includeMeta" -> includeMeta = Boolean.parseBoolean(bm.group(2));
-                default -> { }
-            }
-        }
+        long fromBundle = toLong(obj.get("fromBundle"), -1L);
+        Integer maxLines = toOptionalInt(obj.get("maxLines"));
+        String op = optionalString(obj.get("op"), null, "op");
+        String decompiler = optionalString(obj.get("decompiler"), "vineflower", "decompiler");
+        boolean includeSource = optionalBoolean(obj.get("includeSource"), true, "includeSource");
+        boolean includeMeta = optionalBoolean(obj.get("includeMeta"), false, "includeMeta");
         return new BatchRequest(classes, fromBundle, op, decompiler, includeSource, includeMeta, maxLines);
     }
 
-    private static boolean wantsPlainText(String accept) {
-        if (accept == null) {
+    private static String optionalString(Object v, String fallback, String field) {
+        if (v == null) {
+            return fallback;
+        }
+        if (v instanceof String s) {
+            return s;
+        }
+        throw new JsonParseException("expected string for " + field);
+    }
+
+    private static boolean optionalBoolean(Object v, boolean fallback, String field) {
+        if (v == null) {
+            return fallback;
+        }
+        if (v instanceof Boolean b) {
+            return b;
+        }
+        throw new JsonParseException("expected boolean for " + field);
+    }
+
+    private static long toLong(Object v, long fallback) {
+        if (v == null) {
+            return fallback;
+        }
+        if (v instanceof Long l) {
+            return l;
+        }
+        throw new JsonParseException("expected integer");
+    }
+
+    private static Integer toOptionalInt(Object v) {
+        if (v == null) {
+            return null;
+        }
+        if (v instanceof Long l) {
+            if (l < Integer.MIN_VALUE || l > Integer.MAX_VALUE) {
+                throw new JsonParseException("maxLines out of int range");
+            }
+            return l.intValue();
+        }
+        throw new JsonParseException("expected integer");
+    }
+
+    static boolean wantsPlainText(String accept) {
+        if (accept == null || accept.isBlank()) {
             return false;
         }
-        String a = accept.toLowerCase();
-        return a.contains("text/plain") && !a.contains("application/json");
+        double textQ = -1;
+        double jsonQ = -1;
+        double anyQ = -1;
+        for (String part : accept.toLowerCase(Locale.ROOT).split(",")) {
+            String[] segs = part.trim().split(";");
+            String type = segs[0].trim();
+            double q = 1.0;
+            for (int i = 1; i < segs.length; i++) {
+                String p = segs[i].trim();
+                if (p.startsWith("q=")) {
+                    try {
+                        double parsed = Double.parseDouble(p.substring(2).trim());
+                        q = Double.isFinite(parsed) && parsed >= 0.0 && parsed <= 1.0 ? parsed : 0.0;
+                    } catch (NumberFormatException ignored) {
+                        q = 0.0;
+                    }
+                }
+            }
+            if ("text/plain".equals(type)) {
+                textQ = Math.max(textQ, q);
+            } else if ("application/json".equals(type)) {
+                jsonQ = Math.max(jsonQ, q);
+            } else if ("*/*".equals(type)) {
+                anyQ = Math.max(anyQ, q);
+            }
+        }
+        double effectiveJsonQ = Math.max(jsonQ, anyQ);
+        return textQ > 0 && textQ > effectiveJsonQ;
     }
 
     private Response checkSysadmin(HttpServletRequest request) {
-        UserKey user = userManager.getRemoteUserKey(request);
-        if (user == null) {
-            return error(Response.Status.UNAUTHORIZED, "login-required");
-        }
-        if (!userManager.isSystemAdmin(user)) {
-            return error(Response.Status.FORBIDDEN, "system-admin-only");
+        Response denied = RestAuth.requireSysadmin(userManager, request);
+        if (denied != null) {
+            return denied;
         }
         if (source == null) {
-            return error(Response.Status.NOT_FOUND, "not-described");
+            return RestAuth.error(Response.Status.NOT_FOUND, "not-described");
         }
         return null;
     }
@@ -283,10 +359,5 @@ public class CodeResource {
     private static Response jsonResponse(OperationDetails.Result result) {
         return Response.status(result.status()).type(JSON).header("Cache-Control", "no-store")
                 .entity(result.json()).build();
-    }
-
-    private static Response error(Response.Status status, String code) {
-        return Response.status(status).type(JSON).header("Cache-Control", "no-store")
-                .entity("{\"error\":\"" + code + "\"}").build();
     }
 }

@@ -28,16 +28,42 @@ async function launch({ user, password, width = 1500, height = 1000 }) {
         try { target = (await (await fetch(`http://127.0.0.1:${port}/json`)).json()).find(t => t.type === 'page'); } catch (e) { /* starting */ }
         if (!target) await sleep(250);
     }
-    if (!target) { proc.kill(); throw new Error('the browser did not open its DevTools port'); }
+    if (!target) {
+        proc.kill();
+        await sleep(200);
+        try { fs.rmSync(profile, { recursive: true, force: true }); } catch (e) { /* best effort */ }
+        throw new Error('the browser did not open its DevTools port');
+    }
     const ws = new WebSocket(target.webSocketDebuggerUrl);
-    await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
+    try {
+        await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
+    } catch (err) {
+        proc.kill();
+        await sleep(200);
+        try { fs.rmSync(profile, { recursive: true, force: true }); } catch (e) { /* best effort */ }
+        throw err;
+    }
     let id = 0;
     const pending = {};
+    const rejectAllPending = err => {
+        for (const k of Object.keys(pending)) {
+            clearTimeout(pending[k].timer);
+            pending[k].rej(err);
+            delete pending[k];
+        }
+    };
+    ws.onclose = () => rejectAllPending(new Error('DevTools WebSocket closed'));
+    ws.onerror = () => rejectAllPending(new Error('DevTools WebSocket error'));
     const b = { exceptions: [], failedRequests: [], requests: {} };
     const auth = 'Basic ' + Buffer.from(user + ':' + password).toString('base64');
     ws.onmessage = m => {
         const d = JSON.parse(m.data);
-        if (d.id && pending[d.id]) { pending[d.id](d); delete pending[d.id]; return; }
+        if (d.id && pending[d.id]) {
+            clearTimeout(pending[d.id].timer);
+            pending[d.id].res(d);
+            delete pending[d.id];
+            return;
+        }
         if (d.method === 'Runtime.exceptionThrown') {
             const ex = d.params.exceptionDetails;
             b.exceptions.push(((ex.exception && ex.exception.description) || ex.text || '').split('\n')[0] + ' @ ' + (ex.url || ''));
@@ -55,7 +81,23 @@ async function launch({ user, password, width = 1500, height = 1000 }) {
             b.failedRequests.push(d.params.errorText + ' ' + (b.requests[d.params.requestId] || ''));
         }
     };
-    b.send = (method, params = {}) => new Promise(res => { const i = ++id; pending[i] = res; ws.send(JSON.stringify({ id: i, method, params })); });
+    b.send = (method, params = {}, timeoutMs = 30000) => new Promise((res, rej) => {
+        const i = ++id;
+        const timer = setTimeout(() => {
+            if (pending[i]) {
+                delete pending[i];
+                rej(new Error(`CDP timeout waiting for ${method}`));
+            }
+        }, timeoutMs);
+        pending[i] = { res, rej, timer };
+        try {
+            ws.send(JSON.stringify({ id: i, method, params }));
+        } catch (err) {
+            clearTimeout(timer);
+            delete pending[i];
+            rej(err);
+        }
+    });
     b.evaluate = async expr => {
         const r = await b.send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true });
         return r.result && r.result.result ? r.result.result.value : undefined;

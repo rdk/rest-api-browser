@@ -1,5 +1,5 @@
 import type { Index, Module, Summary } from './types';
-import { trimModulePath } from './template';
+import { trimModulePath } from '../lib/jaxrs-router';
 import { reasonInfo } from './explain';
 
 /**
@@ -85,6 +85,7 @@ export class CatalogStore {
   private attempt = 0;
   private stopped = false;
   private generation = 0;
+  private stopEpoch = 0;
   private waitingForVisible = false;
   private starts = new Map<string, Promise<void>>();
 
@@ -168,12 +169,14 @@ export class CatalogStore {
     if (this.stopped) return Promise.reject(new StartStopped());
     const running = this.starts.get(module.id);
     if (running) return running;
+    const epoch = this.stopEpoch;
     const failures = (change: (m: Map<string, StartFailure>) => void) => {
+      if (this.stopped || epoch !== this.stopEpoch) return;
       const next = new Map(this.startFailures);
       change(next);
       this.startFailures = next;
     };
-    const start = this.start(module).then(
+    const start = this.start(module, epoch).then(
       () => failures((m) => m.delete(module.id)),
       (e: unknown) => {
         if (!(e instanceof StartStopped) && !isSessionExpired(e)) {
@@ -182,7 +185,7 @@ export class CatalogStore {
         throw e;
       },
     ).finally(() => {
-      this.starts.delete(module.id);
+      if (this.starts.get(module.id) === start) this.starts.delete(module.id);
       this.starting = new Set(this.starts.keys());
       this.listeners.forEach((l) => l());
     });
@@ -192,7 +195,7 @@ export class CatalogStore {
     return start;
   }
 
-  private async start(module: Module): Promise<void> {
+  private async start(module: Module, epoch: number): Promise<void> {
     const segments = trimModulePath(module.path).split('/');
     if (!segments.some((s) => s === '' || s === '.' || s === '..')) {
       try {
@@ -205,87 +208,82 @@ export class CatalogStore {
         // the answer does not matter (a 404), only that the request reached the module
       }
     }
-    this.checkStopped();
+    this.checkStopped(epoch);
     const path = '/rest/restbrowser/1/catalog/started?module=' + encodeURIComponent(module.id);
     const res = await this.fetchFn(this.baseUrl + path, {
       method: 'POST',
       credentials: 'same-origin',
       headers: { Accept: 'application/json', 'X-Atlassian-Token': 'no-check' },
     });
-    this.checkStopped();
+    this.checkStopped(epoch);
     if (isLoginAnswer(res, true)) {
       const e = sessionExpired(path, res.status);
       this.expire(e);
       throw e;
     }
-    if (res.status === 200) return this.outcome((await res.json()) as { state: string; reason?: string });
-    if (res.status === 204) return this.reload();
-    if (res.status === 202) return this.follow(module.id);
+    if (res.status === 200) return this.outcome((await res.json()) as { state: string; reason?: string }, epoch);
+    if (res.status === 204) return this.reload(epoch);
+    if (res.status === 202) return this.follow(module.id, epoch);
     if (res.status === 404) {
-      await this.reload();
+      await this.reload(epoch);
       throw new Error('it is no longer on this instance');
     }
     if (res.status === 409) {
       const body = (await res.json().catch(() => ({}))) as { error?: string };
-      this.checkStopped();
+      this.checkStopped(epoch);
       if (body.error === 'still-not-started') throw new Error(DID_NOT_START);
-      await this.reload();
+      await this.reload(epoch);
       throw new Error('it is not waiting to start any more');
     }
     throw new Error(`HTTP ${res.status}`);
   }
 
-  // The read module: shown at once (the catalog stays complete, so this load is what brings it), or why it failed.
-  private async outcome(entry: { state: string; reason?: string }): Promise<void> {
-    await this.reload();
+  private async outcome(entry: { state: string; reason?: string }, epoch: number): Promise<void> {
+    await this.reload(epoch);
     if (entry.state === 'ok') return;
     const reason = reasonInfo(entry.reason);
     throw new Error(reason.kind === 'waiting' ? DID_NOT_START : `it started, but could not be read (${reason.code})`);
   }
 
-  // A read the server queued behind a running build: follow this module's entry (not the whole catalog) until it
-  // changes, for START_WAIT_MS of real time (timers of a hidden tab run late).
-  private async follow(id: string): Promise<void> {
+  private async follow(id: string, epoch: number): Promise<void> {
     const deadline = Date.now() + START_WAIT_MS;
     while (Date.now() < deadline) {
       await sleep(START_POLL_MS);
-      this.checkStopped();
+      this.checkStopped(epoch);
       let summary: Summary;
       try {
         summary = await this.fetchSummary();
       } catch (e) {
-        if (!isSessionExpired(e)) continue; // a transient failure: ask again
+        if (!isSessionExpired(e)) continue;
         this.expire(e as Error);
         throw e;
       }
-      this.checkStopped();
+      this.checkStopped(epoch);
       const now = summary.modules.find((m) => m.id === id);
       if (!now) {
-        await this.reload();
+        await this.reload(epoch);
         throw new Error('it is no longer on this instance');
       }
-      if (now.state === 'ok') return this.reload();
-      if (now.state === 'failed' && reasonInfo(now.reason).kind !== 'waiting') return this.outcome(now);
+      if (now.state === 'ok') return this.reload(epoch);
+      if (now.state === 'failed' && reasonInfo(now.reason).kind !== 'waiting') return this.outcome(now, epoch);
     }
-    await this.reload();
+    await this.reload(epoch);
     throw new Error('it is still being read: it shows when the catalog has read it');
   }
 
-  // Loads the catalog again. A failure is said (the start may have worked, but the page does not show it yet; load()
-  // asks again by itself); an expired session is the page's to say, and stops the start.
-  private async reload(): Promise<void> {
-    this.checkStopped(); // load() would start a stopped store again
+  private async reload(epoch: number): Promise<void> {
+    this.checkStopped(epoch);
     try {
       await this.load();
     } catch (e) {
-      this.checkStopped();
+      this.checkStopped(epoch);
       throw new Error('the catalog could not be loaded again: ' + message(e));
     }
-    this.checkStopped();
+    this.checkStopped(epoch);
   }
 
-  private checkStopped(): void {
-    if (this.stopped) throw new StartStopped();
+  private checkStopped(expectedEpoch?: number): void {
+    if (this.stopped || (expectedEpoch !== undefined && expectedEpoch !== this.stopEpoch)) throw new StartStopped();
   }
 
   private expire(e: Error): void {
@@ -297,6 +295,9 @@ export class CatalogStore {
   stop(): void {
     this.stopped = true;
     this.generation++;
+    this.stopEpoch++;
+    this.starts.clear();
+    this.starting = new Set();
     this.cancelPending();
   }
 
@@ -329,7 +330,7 @@ export class CatalogStore {
     let index: Index;
     for (let retry = 0; ; retry++) {
       try {
-        index = await this.getJson<Index>(`/rest/restbrowser/1/catalog/index/${current.hash}`);
+        index = await this.getJson<Index>(`/rest/restbrowser/1/catalog/index/${encodeURIComponent(current.hash)}`);
         if (generation !== this.generation) return;
         break;
       } catch (e) {
@@ -368,7 +369,7 @@ export class CatalogStore {
   // Polls while the catalog is incomplete, and after a failure (`retry`) also when it is complete: what failed to load
   // may be newer than what the page shows.
   private schedulePoll(retry = false): void {
-    if (this.stopped || !this.summary || (this.summary.complete && !retry)) return;
+    if (this.stopped || (!this.summary && !retry) || (this.summary?.complete && !retry)) return;
     const delay = POLL_DELAYS_MS[Math.min(this.attempt, POLL_DELAYS_MS.length - 1)];
     this.attempt++;
     this.timer = setTimeout(() => void this.poll(), delay);

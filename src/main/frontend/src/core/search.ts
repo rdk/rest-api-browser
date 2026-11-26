@@ -1,10 +1,11 @@
-import { joinPaths, trimOpPath } from './template';
+import type { Matcher, RouteMatch } from './routes';
+import { joinPaths, trimOpPath } from '../lib/jaxrs-router';
 import type { Index, Module, Operation, Origin, Stability, Summary } from './types';
 
 export interface SearchRow {
   op: Operation;
   module: Module;
-  hay: string;        // lowercased: method, full path, plugin name, operation summary
+  hay: string;        // lowercased: method, full path, plugin name & key, operation summary/description, DTO types, access
   path: string;       // lowercased module path + "/" + op path (joinPaths: one slash, none at the ends)
   rank: number;       // 0 supported, 1 internal, 2 app
   stability: Stability;
@@ -28,17 +29,90 @@ export function buildRows(summary: Summary, index: Index): SearchRow[] {
     if (!module) continue;
     // as the list shows it: an operation on the module's root is "api/", so a search for "api/" or "/" finds it too
     const path = (joinPaths(module.path, op.path) + (trimOpPath(op.path) ? '' : '/')).toLowerCase();
+    const extra = [
+      module.plugin.key,
+      op.summary,
+      op.description,
+      op.bodyType,
+      op.returnType,
+      op.access,
+      op.deprecated ? 'deprecated' : '',
+    ].filter(Boolean).join(' ');
     rows.push({
       op,
       module,
       path,
-      hay: `${op.method} ${path} ${module.plugin.name}${op.summary ? ' ' + op.summary : ''}`.toLowerCase(),
-      rank: STABILITY_RANK[module.stability],
+      hay: `${op.method} ${path} ${module.plugin.name}${extra ? ' ' + extra : ''}`.toLowerCase(),
+      rank: Object.hasOwn(STABILITY_RANK, module.stability) ? STABILITY_RANK[module.stability] : 2,
       stability: module.stability,
       origin: module.origin,
     });
   }
   return rows;
+}
+
+const HTTP_VERB_PREFIX = /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(.+)$/i;
+
+/**
+ * Parses a pasted live REST URL or path query (e.g. `https://host/jira/rest/api/2/issue/PROJ-1?expand=names`
+ * or `GET /rest/api/2/issue/PROJ-1`) and resolves matching catalog operations + extracted path/query parameter values.
+ */
+export function matchUrlQuery(
+  rows: SearchRow[],
+  query: string,
+  matcher: Matcher | undefined,
+  filters: Filters = {},
+): Map<string, RouteMatch> {
+  const byKey = new Map<string, RouteMatch>();
+  if (!matcher) return byKey;
+  const trimmed = query.trim();
+  if (!trimmed) return byKey;
+  let methodHint: string | undefined;
+  let candidate = trimmed;
+  const verbMatch = HTTP_VERB_PREFIX.exec(trimmed);
+  if (verbMatch) {
+    methodHint = verbMatch[1].toUpperCase();
+    candidate = verbMatch[2].trim();
+  }
+  const looksLikeUrl = candidate.startsWith('/')
+    || /^https?:\/\//i.test(candidate)
+    || candidate.includes('/rest/')
+    || (candidate.includes('/') && candidate.includes('?'));
+  if (!looksLikeUrl) return byKey;
+
+  if (/^https?:\/\//i.test(candidate)) {
+    try {
+      const u = new URL(candidate);
+      candidate = u.pathname + u.search;
+    } catch {
+      return byKey;
+    }
+  }
+  const restIdx = candidate.indexOf('/rest/');
+  if (restIdx >= 0) {
+    candidate = candidate.slice(restIdx);
+  } else {
+    candidate = '/rest/' + candidate.replace(/^\/+/, '');
+  }
+
+  const allowedMethods = filters.methods && filters.methods.length
+    ? new Set(filters.methods.map((m) => m.toUpperCase()))
+    : null;
+  const hit = matcher.match(candidate);
+  if (!hit) return byKey;
+
+  const siblings = rows.filter(
+    (r) => r.op.module === hit.op.module
+      && r.op.path === hit.op.path
+      && (!filters.supportedOnly || r.stability === 'supported')
+      && (!allowedMethods || methodAllowed(r.op.method, allowedMethods))
+      && (!methodHint || r.op.method.toUpperCase() === methodHint),
+  ).sort((a, b) => byMethod(a.op.method, b.op.method));
+
+  for (const s of siblings) {
+    byKey.set(s.op.key, { ...hit, op: s.op });
+  }
+  return byKey;
 }
 
 function methodAllowed(method: string, methods: Set<string>): boolean {
@@ -60,7 +134,13 @@ function segmentHits(path: string, tokens: string[]): number {
   return hits;
 }
 
-export function search(rows: SearchRow[], query: string, filters: Filters = {}): SearchRow[] {
+export function search(
+  rows: SearchRow[],
+  query: string,
+  filters: Filters = {},
+  matcher?: Matcher,
+  precomputedUrlMatches?: Map<string, RouteMatch>,
+): SearchRow[] {
   const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
   const methods = filters.methods && filters.methods.length ? new Set(filters.methods.map((m) => m.toUpperCase())) : null;
   const hits: { row: SearchRow; seg: number }[] = [];
@@ -82,7 +162,18 @@ export function search(rows: SearchRow[], query: string, filters: Filters = {}):
       (a.row.path < b.row.path ? -1 : a.row.path > b.row.path ? 1 : 0) ||
       byMethod(a.row.op.method, b.row.op.method),
   );
-  return hits.map((h) => h.row);
+  const ordered = hits.map((h) => h.row);
+  const urlMatches = precomputedUrlMatches ?? (matcher ? matchUrlQuery(rows, query, matcher, filters) : undefined);
+  if (urlMatches && urlMatches.size > 0) {
+    const urlRows: SearchRow[] = [];
+    for (const key of urlMatches.keys()) {
+      const r = rows.find((x) => x.op.key === key);
+      if (r) urlRows.push(r);
+    }
+    const seen = new Set(urlRows.map((r) => r.op.key));
+    return [...urlRows, ...ordered.filter((r) => !seen.has(r.op.key))];
+  }
+  return ordered;
 }
 
 export type GroupRow = { kind: 'module'; module: Module; count: number } | { kind: 'op'; op: Operation };
@@ -116,11 +207,15 @@ export function groupRows(
   const modules = summary.modules
     .filter((m) => byModule.has(m.id) || (m.state !== 'ok' && (!opts.supportedOnly || m.stability === 'supported')))
     .sort(
-      (a, b) =>
-        ORIGIN_ORDER.indexOf(a.origin) - ORIGIN_ORDER.indexOf(b.origin) ||
-        STABILITY_RANK[a.stability] - STABILITY_RANK[b.stability] ||
-        (a.path < b.path ? -1 : a.path > b.path ? 1 : 0) ||
-        (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+      (a, b) => {
+        const ao = ORIGIN_ORDER.indexOf(a.origin);
+        const bo = ORIGIN_ORDER.indexOf(b.origin);
+        return ((ao < 0 ? ORIGIN_ORDER.length : ao) - (bo < 0 ? ORIGIN_ORDER.length : bo)) ||
+          ((Object.hasOwn(STABILITY_RANK, a.stability) ? STABILITY_RANK[a.stability] : 2)
+            - (Object.hasOwn(STABILITY_RANK, b.stability) ? STABILITY_RANK[b.stability] : 2)) ||
+          (a.path < b.path ? -1 : a.path > b.path ? 1 : 0) ||
+          (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+      },
     );
   const out: GroupRow[] = [];
   for (const module of modules) {

@@ -1,7 +1,5 @@
 import { isLoginAnswer } from './catalog';
-
-// The Java behind one operation: GET /rest/restbrowser/1/catalog/details?op=<key> (system administrators only).
-// Every section may instead be { error }, when the server could not read it; the others are still there.
+export { shortJava } from '../lib/java-source/javatypes';
 
 export type Section<T> = T | { error: string };
 
@@ -19,7 +17,6 @@ export interface BundleInfo {
   headers: Record<string, string>;
   importCount?: number; imports?: { package: string; version: string; from: string; fromId: string }[];
   exportCount?: number; exports?: { package: string; version: string; users: number }[];
-  /** false when the bundle has no wiring (not resolved, or no longer in use): its imports and exports are unknown. */
   wiring?: boolean;
 }
 export interface PluginInfo {
@@ -147,41 +144,23 @@ export interface SourceQuery {
 export interface OperationDetails {
   format: 1; key: string;
   method: Section<JavaMethod>;
-  /** Where the JAX-RS annotations are, when that is another method (an interface's). */
   definition?: Section<JavaMethod>;
-  /** The sub-resource locators from the root resource down. */
   locators: Section<JavaMethod[]>;
   resourceClass: Section<JavaClass>;
-  /** The class that declares the method, when it is not the resource class. */
   declaringClass?: Section<JavaClass>;
   types: Section<{ name: string; from: string }[]>;
-  /** { none } when the class is not in an OSGi bundle (the product's own, the JDK's). */
   bundle: Section<BundleInfo | { none: string }>;
   plugin: Section<PluginInfo | null>;
   module: Section<RestModuleInfo>;
 }
 
+/** Whether a section object carries only `{ error: string }`. */
 export function isError<T>(s: Section<T> | undefined): s is { error: string } {
-  return !!s && typeof s === 'object' && !Array.isArray(s) && 'error' in (s as object) && Object.keys(s as object).length === 1;
+  return !!s && typeof s === 'object' && !Array.isArray(s)
+    && typeof (s as { error?: unknown }).error === 'string'
+    && Object.keys(s as object).length === 1;
 }
 
-/**
- * Java names without their packages: "java.util.Map<java.lang.String, x.y.Thread$State>" gives
- * "Map<String, Thread.State>", "@jakarta.ws.rs.PathParam(\"id\")" gives "@PathParam(\"id\")". Text in quotes stays:
- * strings, char literals ('"' is no string), and a string clipped before its closing quote.
- */
-export function shortJava(s: string): string {
-  return s
-    .split(/("(?:[^"\\]|\\.)*(?:"|\\?$)|'(?:[^'\\]|\\.)*(?:'|\\?$))/)
-    .map((part, i) => (i % 2 ? part : part.replace(/\b(?:[a-z_][\w]*\.)+(?=[A-Z_$])/g, '').replace(/(\w)\$(?=[A-Z])/g, '$1.')))
-    .join('');
-}
-
-/**
- * A failed fetch: the HTTP status and the server's reason ("system-admin-only", "unknown-operation", ...), or ours:
- * "session-expired" (the answer was the login page; the status is then 401) and "not-details" (a 200 that is not
- * the details). The message is the reason, or a sentence for ours.
- */
 export class DetailsError extends Error {
   constructor(readonly status: number, readonly reason: string, message: string = reason) {
     super(message);
@@ -189,10 +168,8 @@ export class DetailsError extends Error {
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
-// a section is { error } or what it holds; `holds` checks the latter
 const section = (v: unknown, holds: (x: unknown) => boolean) => isError(v as Section<unknown>) || holds(v);
 
-/** Whether a body has the sections the Java tab reads, each { error } or of the right kind. */
 function isDetails(b: unknown): b is OperationDetails {
   return isObject(b)
     && section(b.method, isObject) && section(b.resourceClass, isObject) && section(b.module, isObject)
@@ -202,38 +179,66 @@ function isDetails(b: unknown): b is OperationDetails {
     && (b.declaringClass === undefined || section(b.declaringClass, isObject));
 }
 
+function lruTouch<K, V>(map: Map<K, V>, key: K, val: V, max: number): void {
+  map.delete(key);
+  map.set(key, val);
+  while (map.size > max) map.delete(map.keys().next().value!);
+}
+
+const CACHE_SIZE = 30;
+const CLASS_INFO_CACHE_SIZE = 200;
+
 const cache = new Map<string, Promise<OperationDetails>>();
 const resolvedDetails = new Map<string, OperationDetails>();
 const sourceCache = new Map<string, Promise<OperationSource>>();
 const resolvedSources = new Map<string, OperationSource>();
 const classInfoCache = new Map<string, Promise<ClassInfo>>();
 const pluginInfoCache = new Map<string, Promise<PluginDetailInfo>>();
-const CACHE_SIZE = 30;
-const CLASS_INFO_CACHE_SIZE = 200;
+let lastBaseUrl = '';
 
-/** Synchronous cache read for already-loaded operation details so switching back to the Java tab never flashes. */
-export function peekDetails(key: string): OperationDetails | null {
-  return resolvedDetails.get(key) ?? null;
+const scoped = (baseUrl: string, key: string) => `${baseUrl}\0${key}`;
+
+function findResolved<T>(map: Map<string, T>, rawKey: string, baseUrl?: string): T | null {
+  if (baseUrl !== undefined) {
+    return map.get(scoped(baseUrl, rawKey)) ?? null;
+  }
+  const direct = map.get(scoped(lastBaseUrl, rawKey));
+  if (direct !== undefined) return direct;
+  for (const [k, v] of map) {
+    const sep = k.indexOf('\0');
+    if (k.slice(sep + 1) === rawKey) return v;
+  }
+  return null;
 }
 
-/** Synchronous cache read for already-decompiled source so switching class tabs never flashes a loading state. */
-export function peekSource(keyOrQuery: string | SourceQuery): OperationSource | null {
+/** Synchronous LRU cache read for already-loaded operation details. */
+export function peekDetails(key: string, baseUrl?: string): OperationDetails | null {
+  return findResolved(resolvedDetails, key, baseUrl);
+}
+
+/** Synchronous LRU cache read for already-decompiled source. */
+export function peekSource(keyOrQuery: string | SourceQuery, baseUrl?: string): OperationSource | null {
   const q: SourceQuery = typeof keyOrQuery === 'string' ? { op: keyOrQuery } : keyOrQuery;
-  return resolvedSources.get(sourceCacheKey(q)) ?? null;
+  return findResolved(resolvedSources, sourceCacheKey(q), baseUrl);
 }
 
 function isPluginDetailInfo(b: unknown): b is PluginDetailInfo {
   return isObject(b) && typeof b.key === 'string' && typeof b.name === 'string' && typeof b.state === 'string';
 }
 
-/** Rich plugin & OSGi bundle metadata for an app lozenge tooltip, cached per page load. */
+/** Rich plugin & OSGi bundle metadata for an app lozenge tooltip, cached per baseUrl & page load. */
 export function fetchPluginInfo(
   baseUrl: string,
   pluginKey: string,
   fetchFn: typeof fetch = (...a) => fetch(...a),
 ): Promise<PluginDetailInfo> {
-  const hit = pluginInfoCache.get(pluginKey);
-  if (hit) return hit;
+  lastBaseUrl = baseUrl;
+  const cacheKey = scoped(baseUrl, pluginKey);
+  const hit = pluginInfoCache.get(cacheKey);
+  if (hit) {
+    lruTouch(pluginInfoCache, cacheKey, hit, CACHE_SIZE * 2);
+    return hit;
+  }
   const p = (async () => {
     const res = await fetchFn(`${baseUrl}/rest/restbrowser/1/code/plugin?key=${encodeURIComponent(pluginKey)}`, {
       credentials: 'same-origin',
@@ -257,9 +262,8 @@ export function fetchPluginInfo(
     }
     return body;
   })();
-  pluginInfoCache.set(pluginKey, p);
-  p.catch(() => pluginInfoCache.get(pluginKey) === p && pluginInfoCache.delete(pluginKey));
-  while (pluginInfoCache.size > CACHE_SIZE * 2) pluginInfoCache.delete(pluginInfoCache.keys().next().value!);
+  lruTouch(pluginInfoCache, cacheKey, p, CACHE_SIZE * 2);
+  p.catch(() => pluginInfoCache.get(cacheKey) === p && pluginInfoCache.delete(cacheKey));
   return p;
 }
 
@@ -271,15 +275,19 @@ function classInfoCacheKey(q: ClassQuery): string {
   return JSON.stringify([q.classCandidates, q.fromBundle ?? -1, q.op ?? '']);
 }
 
-/** Rich class metadata (reflection, bytecode, OSGi bundle, plugin ownership, timestamps), cached per page load. */
+/** Rich class metadata (reflection, bytecode, OSGi bundle, plugin ownership, timestamps), LRU cached. */
 export function fetchClassInfo(
   baseUrl: string,
   q: ClassQuery,
   fetchFn: typeof fetch = (...a) => fetch(...a),
 ): Promise<ClassInfo> {
-  const key = classInfoCacheKey(q);
-  const hit = classInfoCache.get(key);
-  if (hit) return hit;
+  lastBaseUrl = baseUrl;
+  const cacheKey = scoped(baseUrl, classInfoCacheKey(q));
+  const hit = classInfoCache.get(cacheKey);
+  if (hit) {
+    lruTouch(classInfoCache, cacheKey, hit, CLASS_INFO_CACHE_SIZE);
+    return hit;
+  }
   const params = new URLSearchParams();
   if (q.classCandidates.length) params.set('class', q.classCandidates.join(','));
   if (q.fromBundle !== undefined && q.fromBundle >= 0) params.set('fromBundle', String(q.fromBundle));
@@ -307,9 +315,8 @@ export function fetchClassInfo(
     }
     return body;
   })();
-  classInfoCache.set(key, p);
-  p.catch(() => classInfoCache.get(key) === p && classInfoCache.delete(key));
-  while (classInfoCache.size > CLASS_INFO_CACHE_SIZE) classInfoCache.delete(classInfoCache.keys().next().value!);
+  lruTouch(classInfoCache, cacheKey, p, CLASS_INFO_CACHE_SIZE);
+  p.catch(() => classInfoCache.get(cacheKey) === p && classInfoCache.delete(cacheKey));
   return p;
 }
 
@@ -329,23 +336,28 @@ function sourceCacheKey(q: SourceQuery): string {
   ]);
 }
 
-/** Decompiled source of an operation's method/class or of any referenced Java class, cached per query for the page load. */
+/** Decompiled source of an operation's method/class or of any referenced Java class, LRU cached per baseUrl. */
 export function fetchSource(
   baseUrl: string,
   keyOrQuery: string | SourceQuery,
   fetchFn: typeof fetch = (...a) => fetch(...a),
 ): Promise<OperationSource> {
+  lastBaseUrl = baseUrl;
   const q: SourceQuery = typeof keyOrQuery === 'string' ? { op: keyOrQuery } : keyOrQuery;
-  const cacheKey = sourceCacheKey(q);
+  const cacheKey = scoped(baseUrl, sourceCacheKey(q));
   const hit = sourceCache.get(cacheKey);
-  if (hit) return hit;
+  if (hit) {
+    lruTouch(sourceCache, cacheKey, hit, CACHE_SIZE * 2);
+    return hit;
+  }
   const params = new URLSearchParams();
   if (q.op) params.set('op', q.op);
   if (q.classCandidates?.length) params.set('class', q.classCandidates.join(','));
   if (q.fromBundle !== undefined && q.fromBundle >= 0) params.set('fromBundle', String(q.fromBundle));
   if (q.scope) params.set('scope', q.scope);
   if (q.decompiler) params.set('decompiler', q.decompiler);
-  const p = (async () => {
+  let p!: Promise<OperationSource>;
+  p = (async () => {
     const res = await fetchFn(`${baseUrl}/rest/restbrowser/1/catalog/details/source?${params.toString()}`, {
       credentials: 'same-origin',
       headers: { Accept: 'application/json' },
@@ -366,47 +378,87 @@ export function fetchSource(
     if (!isSource(body)) {
       throw new DetailsError(res.status, 'not-source', 'The server answered with something other than the decompiled source.');
     }
-    resolvedSources.set(cacheKey, body);
-    while (resolvedSources.size > CACHE_SIZE * 2) resolvedSources.delete(resolvedSources.keys().next().value!);
+    if (sourceCache.get(cacheKey) === p) {
+      lruTouch(resolvedSources, cacheKey, body, CACHE_SIZE * 2);
+      if (body.class) {
+        const canonicalKey = scoped(baseUrl, sourceCacheKey({ ...q, classCandidates: [body.class] }));
+        if (canonicalKey !== cacheKey && !sourceCache.has(canonicalKey)) {
+          lruTouch(sourceCache, canonicalKey, p, CACHE_SIZE * 2);
+          lruTouch(resolvedSources, canonicalKey, body, CACHE_SIZE * 2);
+        }
+      }
+    }
     return body;
   })();
-  sourceCache.set(cacheKey, p);
+  lruTouch(sourceCache, cacheKey, p, CACHE_SIZE * 2);
   p.catch(() => sourceCache.get(cacheKey) === p && sourceCache.delete(cacheKey));
-  while (sourceCache.size > CACHE_SIZE * 2) {
-    const oldest = sourceCache.keys().next().value!;
-    sourceCache.delete(oldest);
-    resolvedSources.delete(oldest);
-  }
   return p;
 }
 
-export function forgetSource(keyOrQuery: string | SourceQuery): void {
+export function forgetSource(keyOrQuery: string | SourceQuery, baseUrl?: string): void {
   if (typeof keyOrQuery === 'string') {
     const prefix = JSON.stringify([keyOrQuery]).slice(0, -1);
-    for (const k of [...sourceCache.keys()]) {
-      if (k.startsWith(prefix)) {
-        sourceCache.delete(k);
-        resolvedSources.delete(k);
+    const dropPrefix = <T>(m: Map<string, T>) => {
+      for (const k of [...m.keys()]) {
+        const sep = k.indexOf('\0');
+        const b = k.slice(0, sep);
+        const raw = k.slice(sep + 1);
+        if ((baseUrl === undefined || b === baseUrl) && raw.startsWith(prefix)) {
+          m.delete(k);
+        }
       }
-    }
+    };
+    dropPrefix(sourceCache);
+    dropPrefix(resolvedSources);
     return;
   }
-  const k = sourceCacheKey(keyOrQuery);
-  sourceCache.delete(k);
-  resolvedSources.delete(k);
+  const rawKey = sourceCacheKey(keyOrQuery);
+  const wantScope = keyOrQuery.scope ?? 'class';
+  const wantDecompiler = keyOrQuery.decompiler ?? 'cfr';
+  const cands = new Set(keyOrQuery.classCandidates ?? []);
+  const aliasRawKeys = new Set<string>([rawKey]);
+  for (const [k, v] of resolvedSources.entries()) {
+    const sep = k.indexOf('\0');
+    const b = k.slice(0, sep);
+    const raw = k.slice(sep + 1);
+    if (baseUrl !== undefined && b !== baseUrl) continue;
+    const entryScope = v.scope ?? 'class';
+    const entryDecompiler = v.decompilerId ?? 'cfr';
+    if (raw === rawKey || (v.class && cands.has(v.class) && entryScope === wantScope && entryDecompiler === wantDecompiler)) {
+      aliasRawKeys.add(raw);
+      if (v.class) {
+        aliasRawKeys.add(sourceCacheKey({ ...keyOrQuery, classCandidates: [v.class] }));
+      }
+    }
+  }
+  const dropExact = <T>(m: Map<string, T>) => {
+    for (const k of [...m.keys()]) {
+      const sep = k.indexOf('\0');
+      if ((baseUrl === undefined || k.slice(0, sep) === baseUrl) && aliasRawKeys.has(k.slice(sep + 1))) {
+        m.delete(k);
+      }
+    }
+  };
+  dropExact(sourceCache);
+  dropExact(resolvedSources);
 }
 
-/** The details of an operation, fetched once per page load (the Java behind an operation does not change while it runs). */
+/** The details of an operation, LRU cached per baseUrl & page load. */
 export function fetchDetails(baseUrl: string, key: string, fetchFn: typeof fetch = (...a) => fetch(...a)): Promise<OperationDetails> {
-  const hit = cache.get(key);
-  if (hit) return hit;
-  const p = (async () => {
+  lastBaseUrl = baseUrl;
+  const cacheKey = scoped(baseUrl, key);
+  const hit = cache.get(cacheKey);
+  if (hit) {
+    lruTouch(cache, cacheKey, hit, CACHE_SIZE);
+    return hit;
+  }
+  let p!: Promise<OperationDetails>;
+  p = (async () => {
     const res = await fetchFn(`${baseUrl}/rest/restbrowser/1/catalog/details?op=${encodeURIComponent(key)}`, {
       credentials: 'same-origin',
       headers: { Accept: 'application/json' },
     });
     if (isLoginAnswer(res, true)) {
-      // 401 whatever the login page came with: a 200 would read as a success
       throw new DetailsError(401, 'session-expired', 'Your session has expired: reload the page to log in again.');
     }
     let body: unknown;
@@ -422,24 +474,28 @@ export function fetchDetails(baseUrl: string, key: string, fetchFn: typeof fetch
     if (!isDetails(body)) {
       throw new DetailsError(res.status, 'not-details', 'The server answered with something other than the details of the operation.');
     }
-    resolvedDetails.set(key, body);
-    while (resolvedDetails.size > CACHE_SIZE) resolvedDetails.delete(resolvedDetails.keys().next().value!);
+    if (cache.get(cacheKey) === p) {
+      lruTouch(resolvedDetails, cacheKey, body, CACHE_SIZE);
+    }
     return body;
   })();
-  cache.set(key, p);
-  p.catch(() => cache.get(key) === p && cache.delete(key)); // a failure is asked again next time
-  while (cache.size > CACHE_SIZE) {
-    const oldest = cache.keys().next().value!;
-    cache.delete(oldest);
-    resolvedDetails.delete(oldest);
-  }
+  lruTouch(cache, cacheKey, p, CACHE_SIZE);
+  p.catch(() => cache.get(cacheKey) === p && cache.delete(cacheKey));
   return p;
 }
 
-export function forgetDetails(key: string): void {
-  cache.delete(key);
-  resolvedDetails.delete(key);
-  forgetSource(key);
+export function forgetDetails(key: string, baseUrl?: string): void {
+  const dropExact = <T>(m: Map<string, T>) => {
+    for (const k of [...m.keys()]) {
+      const sep = k.indexOf('\0');
+      if ((baseUrl === undefined || k.slice(0, sep) === baseUrl) && k.slice(sep + 1) === key) {
+        m.delete(k);
+      }
+    }
+  };
+  dropExact(cache);
+  dropExact(resolvedDetails);
+  forgetSource(key, baseUrl);
 }
 
 /** Forgets every operation's details, e.g. when the catalog was rebuilt and the Java behind it may have changed. */

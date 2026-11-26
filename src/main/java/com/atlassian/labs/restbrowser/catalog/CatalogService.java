@@ -8,6 +8,7 @@ import com.atlassian.labs.restbrowser.catalog.Model.Operation;
 import com.atlassian.labs.restbrowser.catalog.Model.State;
 import com.atlassian.labs.restbrowser.catalog.ModuleDiscovery.RestModule;
 import com.atlassian.labs.restbrowser.catalog.SpecSource.SpecException;
+import com.atlassian.labs.restbrowser.spring.ServletContextHolder;
 import com.atlassian.plugin.event.events.PluginDisabledEvent;
 import com.atlassian.plugin.event.events.PluginEnabledEvent;
 import com.atlassian.plugin.event.events.PluginModuleDisabledEvent;
@@ -18,6 +19,7 @@ import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.InitializingBean;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -28,17 +30,19 @@ import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
@@ -48,10 +52,8 @@ import static org.slf4j.LoggerFactory.getLogger;
 /**
  * Builds and holds the catalog of this node's REST API.
  * <p>
- * Built on first use, never at product start: a tool few people open should not initialize every REST module of
- * every node. One background thread describes the modules one by one, with a short pause between them and a
- * timeout per module, and publishes a snapshot every few seconds until it is complete. Plugin events then mark only
- * the affected plugins' modules stale and rebuild them after a short debounce.
+ * Built on first use, never holding {@link RestModule} / {@code Plugin} / {@code ModuleDescriptor} references beyond a
+ * single build or single-module read so uninstalled/reloaded plugin classloaders can be garbage-collected freely.
  */
 public class CatalogService implements InitializingBean, DisposableBean {
 
@@ -61,91 +63,103 @@ public class CatalogService implements InitializingBean, DisposableBean {
     static final long PAUSE_BETWEEN_MODULES_MS = 10;
     static final long MODULE_TIMEOUT_MS = 30_000;
     static final long DEBOUNCE_MS = 3_000;
+    private static final int MAX_DESCRIBE_THREADS = 8;
+    private static final int TASK_PENDING = 0;
+    private static final int TASK_RUNNING = 1;
+    private static final int TASK_DONE = 2;
+    private static final int TASK_CANCELLED = 3;
 
     private final ModuleDiscovery discovery;
     private final List<SpecSource> sources;
     private final ProductAdapter product;
     private final EventPublisher eventPublisher;
     private final Supplier<String> ownVersion;
+    private final ServletContextHolder contextHolder;
 
     private final AtomicReference<CatalogSnapshot> current = new AtomicReference<>();
-    private final AtomicReference<ServletContext> servletContext = new AtomicReference<>();
     private volatile boolean started;
-    /** Results per module id; only touched by the build thread. */
+    /** Results per module id; only touched by the build thread. Pre-serialized ops prevent O(N^2) rebuild churn. */
     private final Map<String, Built> built = new LinkedHashMap<>();
-    /**
-     * Source calls that timed out and may still run; the module is not described again until its call ends. A flag
-     * the task clears itself, because a cancelled Future reports done at once, even while its thread still runs.
-     */
-    private final Map<String, AtomicBoolean> stuck = new HashMap<>();
+    /** Flagged calls that timed out while running; pruned alongside {@link #built}. */
+    private final Map<String, AtomicInteger> stuck = new HashMap<>();
     private final Set<String> stalePlugins = new HashSet<>();
     private boolean rebuildAll;
 
-    private ScheduledExecutorService buildThread;
-    private ExecutorService describeThreads;
+    private volatile ScheduledExecutorService buildThread;
+    private volatile ExecutorService describeThreads;
     private ScheduledFuture<?> pending;
+    private boolean pendingImmediate;
+    private volatile long debounceMs = DEBOUNCE_MS;
+    private volatile long pauseBetweenModulesMs = PAUSE_BETWEEN_MODULES_MS;
 
-    private record Built(ModuleEntry entry, List<Operation> operations) {
+    void setTimingForTests(long debounceMs, long pauseBetweenModulesMs) {
+        this.debounceMs = Math.max(0L, debounceMs);
+        this.pauseBetweenModulesMs = Math.max(0L, pauseBetweenModulesMs);
     }
 
-    /** What asking to read a started module gave (see {@link #readStarted}). */
+    private record BuiltOp(String key, String json) {
+    }
+
+    private record Built(ModuleEntry entry, List<BuiltOp> operations) {
+    }
+
     public enum StartOutcome {
-        /** Read again; the entry says how (ok, or failed for another reason). */
         READ,
-        /** Its Jersey application still does not run on this node: nothing was read. */
         STILL_NOT_STARTED,
-        /** The build thread is busy: the read is queued and finishes after the running build. */
         QUEUED,
-        /** No such module (any more). */
         UNKNOWN,
-        /** The read failed, or the catalog is shutting down: nothing is queued. */
         FAILED
     }
 
     public record Started(StartOutcome outcome, ModuleEntry entry) {
     }
 
-    /** Reads of started modules, per module id, so a second request for the same module waits for the same read. */
     private final Map<String, Future<ModuleEntry>> startedReads = new ConcurrentHashMap<>();
-    /** Requests that wait for such a read; more answer at once (202) and the page follows the module instead. */
     private final Semaphore startWaiters = new Semaphore(4);
-    /** The modules of the last build, by id: a start looks its module up here, not with a discovery per request. */
-    private volatile Map<String, RestModule> known = Map.of();
 
     public CatalogService(ModuleDiscovery discovery, List<SpecSource> sources, ProductAdapter product,
                           EventPublisher eventPublisher, Supplier<String> ownVersion) {
+        this(discovery, sources, product, eventPublisher, ownVersion, new ServletContextHolder());
+    }
+
+    public CatalogService(ModuleDiscovery discovery, List<SpecSource> sources, ProductAdapter product,
+                          EventPublisher eventPublisher, Supplier<String> ownVersion,
+                          ServletContextHolder contextHolder) {
         this.discovery = requireNonNull(discovery);
         this.sources = List.copyOf(sources);
         this.product = requireNonNull(product);
         this.eventPublisher = eventPublisher;
         this.ownVersion = requireNonNull(ownVersion);
+        this.contextHolder = requireNonNull(contextHolder);
     }
 
     @Override
     public void afterPropertiesSet() {
         buildThread = Executors.newSingleThreadScheduledExecutor(daemon("rest-api-browser-catalog"));
-        describeThreads = Executors.newCachedThreadPool(daemon("rest-api-browser-describe"));
+        describeThreads = new ThreadPoolExecutor(
+                0, MAX_DESCRIBE_THREADS, 30L, TimeUnit.SECONDS,
+                new SynchronousQueue<>(), numberedDaemon("rest-api-browser-describe"));
         if (eventPublisher != null) {
             eventPublisher.register(this);
         }
     }
 
     @Override
-    public void destroy() {
+    public synchronized void destroy() {
         if (eventPublisher != null) {
             eventPublisher.unregister(this);
         }
-        if (buildThread != null) {
-            buildThread.shutdownNow();
+        ScheduledExecutorService bt = buildThread;
+        if (bt != null) {
+            bt.shutdownNow();
         }
-        startedReads.values().forEach(read -> read.cancel(false)); // a request waiting for one answers at once
-        if (describeThreads != null) {
-            describeThreads.shutdownNow();
+        startedReads.values().forEach(read -> read.cancel(false));
+        ExecutorService dt = describeThreads;
+        if (dt != null) {
+            dt.shutdownNow();
         }
-        // the build thread may still be finishing: leave its maps to the garbage collector
     }
 
-    /** The source that reads Jersey's model, for the details of one operation; null when there is none. */
     public JerseyModelSource jersey() {
         for (SpecSource source : sources) {
             if (source instanceof JerseyModelSource j) {
@@ -155,19 +169,17 @@ public class CatalogService implements InitializingBean, DisposableBean {
         return null;
     }
 
-    /** The ServletContext of a request, needed to initialize REST modules that have not started yet. */
     public ServletContext servletContext() {
-        return servletContext.get();
+        return contextHolder.get();
     }
 
-    /**
-     * The current snapshot, never null. The first call starts the build and returns a snapshot that lists every
-     * module as pending; concurrent first calls wait for it.
-     */
+    /** Returns the latest snapshot if a build has already started, or {@code null} without triggering one. */
+    public CatalogSnapshot peek() {
+        return current.get();
+    }
+
     public CatalogSnapshot current(ServletContext context) {
-        if (context != null) {
-            servletContext.compareAndSet(null, context);
-        }
+        contextHolder.setIfAbsent(context);
         CatalogSnapshot snapshot = current.get();
         if (snapshot != null) {
             return snapshot;
@@ -176,7 +188,7 @@ public class CatalogService implements InitializingBean, DisposableBean {
             snapshot = current.get();
             if (snapshot == null) {
                 List<RestModule> modules = discovery.discover();
-                List<ModuleEntry> entries = new ArrayList<>();
+                List<ModuleEntry> entries = new ArrayList<>(modules.size());
                 for (RestModule m : modules) {
                     entries.add(entry(m, null, State.pending, null, null, 0));
                 }
@@ -189,12 +201,8 @@ public class CatalogService implements InitializingBean, DisposableBean {
         }
     }
 
-    /**
-     * Rebuilds one module, or everything when moduleId is null. The current snapshot is marked incomplete at once,
-     * so a client that reads the catalog right after the request sees the rebuild and follows it.
-     */
     public void refresh(String moduleId) {
-        synchronized (stalePlugins) { // with the work queued, so that publishDone cannot say complete in between
+        synchronized (stalePlugins) {
             if (moduleId == null) {
                 rebuildAll = true;
             } else {
@@ -209,19 +217,11 @@ public class CatalogService implements InitializingBean, DisposableBean {
         }
     }
 
-    /**
-     * Reads one module again that had not started, once a request has started it (Confluence starts a module's REST
-     * API on the first request to it, on each node). It checks first that the module's Jersey application now runs on
-     * this node: a module still not started costs nothing more. Then it reads that module alone, on the build thread,
-     * and publishes it without marking the catalog incomplete, so nothing else is read again and the clients keep
-     * the rest of what they have. Waits up to waitMs for the read (queued behind a running build), and only a few
-     * requests wait at a time: the others answer QUEUED at once and the page follows the module.
-     */
     public Started readStarted(String moduleId, long waitMs) {
-        RestModule module = known.get(moduleId);
-        if (module == null) { // not in the last build: a module that came since
-            module = discovery.discover().stream().filter(m -> m.id().equals(moduleId)).findFirst().orElse(null);
+        if (moduleId == null || moduleId.isBlank()) {
+            return new Started(StartOutcome.UNKNOWN, null);
         }
+        RestModule module = findModule(discovery.discover(), moduleId);
         if (module == null) {
             return new Started(StartOutcome.UNKNOWN, null);
         }
@@ -233,12 +233,11 @@ public class CatalogService implements InitializingBean, DisposableBean {
         if (thread == null || thread.isShutdown()) {
             return new Started(StartOutcome.FAILED, null);
         }
-        RestModule target = module;
         Future<ModuleEntry> read;
         try {
-            read = startedReads.computeIfAbsent(moduleId, id -> thread.submit(() -> readOne(target)));
+            read = startedReads.computeIfAbsent(moduleId, id -> thread.submit(() -> readOne(id)));
         } catch (RejectedExecutionException e) {
-            return new Started(StartOutcome.FAILED, null); // shutting down
+            return new Started(StartOutcome.FAILED, null);
         }
         if (!startWaiters.tryAcquire()) {
             return new Started(StartOutcome.QUEUED, null);
@@ -247,9 +246,9 @@ public class CatalogService implements InitializingBean, DisposableBean {
             ModuleEntry entry = read.get(waitMs, TimeUnit.MILLISECONDS);
             return entry == null ? new Started(StartOutcome.UNKNOWN, null) : new Started(StartOutcome.READ, entry);
         } catch (CancellationException e) {
-            return new Started(StartOutcome.FAILED, null); // shutting down
+            return new Started(StartOutcome.FAILED, null);
         } catch (TimeoutException e) {
-            return new Started(StartOutcome.QUEUED, null); // it goes on, and publishes once done
+            return new Started(StartOutcome.QUEUED, null);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return new Started(StartOutcome.QUEUED, null);
@@ -262,42 +261,55 @@ public class CatalogService implements InitializingBean, DisposableBean {
     }
 
     /**
-     * Runs on the build thread only: reads one module and publishes it (see publishDone). A module read meanwhile (by
-     * a build, or an earlier request's read) is not read again, and one that is gone (null) is not read at all; either
-     * way the catalog is published if it is incomplete, since a build or a read that ended while this one was queued
-     * left it so (moreQueued).
+     * Runs on the build thread only. Always removes {@code moduleId} from {@link #startedReads} inside
+     * {@code finally} — even if discovery or describe throws — so {@link #moreQueued()} can never stay stuck true.
      */
-    private ModuleEntry readOne(RestModule module) {
-        List<RestModule> modules = discovery.discover(); // now, not the last build's: a plugin may have gone since
-        boolean gone = modules.stream().noneMatch(m -> m.id().equals(module.id()));
-        Built previous = built.get(module.id());
-        if (gone || (previous != null && !waitingToStart(previous.entry()))) {
-            startedReads.remove(module.id());
-            CatalogSnapshot s = current.get();
-            if (s == null || !s.complete()) {
-                publishDone(modules);
-            }
-            return gone ? null : previous.entry();
-        }
+    private ModuleEntry readOne(String moduleId) {
+        List<RestModule> modules = null;
+        boolean needRediscover = false;
         try {
-            Built b = describe(module);
-            built.put(module.id(), b);
+            modules = discovery.discover();
+            RestModule fresh = findModule(modules, moduleId);
+            Built previous = built.get(moduleId);
+            if (fresh == null || (previous != null && !waitingToStart(previous.entry()))) {
+                return fresh == null ? null : previous.entry();
+            }
+            Built b = describe(fresh);
+            if (Thread.currentThread().isInterrupted()) {
+                return previous == null ? null : previous.entry();
+            }
+            needRediscover = true;
+            built.put(moduleId, b);
             return b.entry();
         } finally {
-            startedReads.remove(module.id());
-            publishDone(discovery.discover());
+            startedReads.remove(moduleId);
+            if (!Thread.currentThread().isInterrupted()) {
+                try {
+                    CatalogSnapshot snap = current.get();
+                    if (needRediscover || snap == null || !snap.complete()) {
+                        List<RestModule> publishModules = needRediscover || modules == null ? discovery.discover() : modules;
+                        publishDone(publishModules);
+                    }
+                } catch (RuntimeException | LinkageError e) {
+                    LOGGER.warn("Publishing snapshot after reading started module {} failed", moduleId, e);
+                }
+            }
         }
+    }
+
+    private static RestModule findModule(List<RestModule> modules, String id) {
+        for (RestModule m : modules) {
+            if (m.id().equals(id)) {
+                return m;
+            }
+        }
+        return null;
     }
 
     private static boolean waitingToStart(ModuleEntry e) {
         return e.state() == State.failed && JerseyModelSource.NOT_STARTED.equals(e.reason());
     }
 
-    /**
-     * Publishes the end of a build or of a read: complete when every module is read and no work is queued. The
-     * snapshot is built first (the slow part), then set under the lock that refresh() marks incomplete in, so a
-     * refresh that came meanwhile is never overwritten.
-     */
     private void publishDone(List<RestModule> modules) {
         int done = 0;
         for (RestModule m : modules) {
@@ -313,10 +325,9 @@ public class CatalogService implements InitializingBean, DisposableBean {
                 return;
             }
         }
-        publish(modules, done, false); // work came meanwhile: it runs next
+        publish(modules, done, false);
     }
 
-    /** Work that a build or a read queued after the running one will do: the catalog is not complete before. */
     private boolean moreQueued() {
         synchronized (stalePlugins) {
             return rebuildAll || !stalePlugins.isEmpty() || !startedReads.isEmpty();
@@ -344,27 +355,41 @@ public class CatalogService implements InitializingBean, DisposableBean {
     }
 
     private void stale(String pluginKey) {
-        if (!started) {
-            return; // nothing built yet: the first use discovers everything anyway
+        if (!started || pluginKey == null) {
+            return;
         }
         synchronized (stalePlugins) {
             stalePlugins.add(pluginKey);
         }
-        schedule(DEBOUNCE_MS);
+        schedule(debounceMs);
     }
 
     private synchronized void schedule(long delayMs) {
-        if (buildThread == null || buildThread.isShutdown()) {
+        ScheduledExecutorService bt = buildThread;
+        if (bt == null || bt.isShutdown()) {
             return;
         }
         if (pending != null && !pending.isDone()) {
+            if (delayMs > 0 && pendingImmediate) {
+                return;
+            }
             pending.cancel(false);
         }
-        pending = buildThread.schedule(this::build, delayMs, TimeUnit.MILLISECONDS);
+        try {
+            pendingImmediate = delayMs <= 0;
+            pending = bt.schedule(this::build, delayMs, TimeUnit.MILLISECONDS);
+        } catch (RejectedExecutionException ignored) {
+            pendingImmediate = false;
+            // concurrent shutdown between check and schedule
+        }
     }
 
     /** Runs on the build thread only. */
     void build() {
+        synchronized (this) {
+            pending = null;
+            pendingImmediate = false;
+        }
         try {
             buildOnce();
         } catch (RuntimeException | LinkageError e) {
@@ -381,18 +406,16 @@ public class CatalogService implements InitializingBean, DisposableBean {
             all = rebuildAll;
             rebuildAll = false;
         }
-        boolean changed = all || current.get() == null || !current.get().complete();
+        CatalogSnapshot curSnap = current.get();
+        boolean changed = all || curSnap == null || !curSnap.complete();
         List<RestModule> modules = discovery.discover();
-        Set<String> present = new HashSet<>();
-        Map<String, RestModule> byId = new HashMap<>();
+        Set<String> present = new HashSet<>(modules.size() * 2);
         for (RestModule m : modules) {
             present.add(m.id());
-            byId.put(m.id(), m);
         }
-        known = Map.copyOf(byId);
         changed |= built.keySet().removeIf(id -> !present.contains(id));
-        // a module being rebuilt keeps its previous operations until the new ones are ready, so they never vanish
-        // from the catalog (and from an open page) in between
+        stuck.keySet().removeIf(id -> !present.contains(id));
+
         List<RestModule> todo = new ArrayList<>();
         for (RestModule m : modules) {
             Built b = built.get(m.id());
@@ -401,7 +424,7 @@ public class CatalogService implements InitializingBean, DisposableBean {
             }
         }
         if (todo.isEmpty() && !changed) {
-            return; // an event for a plugin without REST modules: nothing to publish
+            return;
         }
         long lastPublish = System.currentTimeMillis();
         int done = modules.size() - todo.size();
@@ -412,7 +435,11 @@ public class CatalogService implements InitializingBean, DisposableBean {
             if (Thread.currentThread().isInterrupted()) {
                 return;
             }
-            built.put(m.id(), describe(m));
+            Built b = describe(m);
+            if (Thread.currentThread().isInterrupted()) {
+                return;
+            }
+            built.put(m.id(), b);
             done++;
             if (System.currentTimeMillis() - lastPublish >= PUBLISH_EVERY_MS) {
                 publish(modules, done, false);
@@ -420,44 +447,67 @@ public class CatalogService implements InitializingBean, DisposableBean {
             }
             pause();
         }
+        if (Thread.currentThread().isInterrupted()) {
+            return;
+        }
         publishDone(modules);
     }
 
-    /** Asks the sources in order; the first that describes the module wins, failures fall through to the next. */
     private Built describe(RestModule module) {
         String origin = product.origin(module.plugin());
         if (product.excluded(module)) {
             return failed(module, origin, "excluded",
                     "Not described: an API for applications with Crowd application credentials, not for users");
         }
-        AtomicBoolean previous = stuck.get(module.id());
+        AtomicInteger previous = stuck.get(module.id());
         if (previous != null) {
-            if (previous.get()) {
+            if (previous.get() == TASK_RUNNING) {
                 return failed(module, origin, "busy", "An earlier attempt is still running");
             }
             stuck.remove(module.id());
         }
+        ExecutorService executor = describeThreads;
+        if (executor == null || executor.isShutdown()) {
+            return failed(module, origin, "interrupted", "The build was stopped");
+        }
         String reason = module.restV2() ? "no-source" : "rest-v1";
         String error = "No source describes this module";
         for (SpecSource source : sources) {
-            AtomicBoolean running = new AtomicBoolean(true);
-            Future<Optional<ModuleSpec>> future = describeThreads.submit(() -> {
-                try {
-                    return source.describe(module);
-                } finally {
-                    running.set(false);
+            AtomicInteger state = new AtomicInteger(TASK_PENDING);
+            Future<Optional<ModuleSpec>> future;
+            try {
+                future = executor.submit(() -> {
+                    if (!state.compareAndSet(TASK_PENDING, TASK_RUNNING)) {
+                        return Optional.empty();
+                    }
+                    try {
+                        return source.describe(module);
+                    } finally {
+                        state.set(TASK_DONE);
+                    }
+                });
+            } catch (RejectedExecutionException e) {
+                if (executor.isShutdown()) {
+                    return failed(module, origin, "interrupted", "The build was stopped");
                 }
-            });
+                return failed(module, origin, "busy", "Too many modules are currently timing out");
+            }
             try {
                 Optional<ModuleSpec> spec = future.get(MODULE_TIMEOUT_MS, TimeUnit.MILLISECONDS);
                 if (spec.isPresent()) {
-                    List<Operation> operations = OperationKeys.assign(module.id(), spec.get().operations());
-                    return new Built(entry(module, origin, State.ok, null, null, operations.size())
-                            .withSource(source.id()), operations);
+                    List<Operation> ops = OperationKeys.assign(module.id(), spec.get().operations());
+                    List<BuiltOp> serialized = new ArrayList<>(ops.size());
+                    for (Operation op : ops) {
+                        serialized.add(new BuiltOp(op.key(), CatalogSnapshot.serializeOperation(op)));
+                    }
+                    return new Built(entry(module, origin, State.ok, null, null, ops.size())
+                            .withSource(source.id()), serialized);
                 }
             } catch (TimeoutException e) {
                 future.cancel(true);
-                stuck.put(module.id(), running);
+                if (!state.compareAndSet(TASK_PENDING, TASK_CANCELLED) && state.get() == TASK_RUNNING) {
+                    stuck.put(module.id(), state);
+                }
                 return failed(module, origin, "timeout", source.id() + ": no answer within " + MODULE_TIMEOUT_MS + " ms");
             } catch (ExecutionException e) {
                 Throwable cause = e.getCause();
@@ -471,6 +521,8 @@ public class CatalogService implements InitializingBean, DisposableBean {
                     error = source.id() + ": " + cause;
                 }
             } catch (InterruptedException e) {
+                future.cancel(true);
+                state.compareAndSet(TASK_PENDING, TASK_CANCELLED);
                 Thread.currentThread().interrupt();
                 return failed(module, origin, "interrupted", "The build was stopped");
             }
@@ -493,23 +545,32 @@ public class CatalogService implements InitializingBean, DisposableBean {
     }
 
     private CatalogSnapshot snapshotOf(List<RestModule> modules, int done, boolean complete) {
-        List<ModuleEntry> entries = new ArrayList<>();
-        List<Operation> operations = new ArrayList<>();
+        List<ModuleEntry> entries = new ArrayList<>(modules.size());
+        List<BuiltOp> allOps = new ArrayList<>();
         for (RestModule m : modules) {
             Built b = built.get(m.id());
             if (b == null) {
                 entries.add(entry(m, null, State.pending, null, null, 0));
             } else {
                 entries.add(b.entry());
-                operations.addAll(b.operations());
+                allOps.addAll(b.operations());
             }
         }
-        return CatalogSnapshot.of(entries, operations, complete, done, modules.size(), ownVersion.get());
+        allOps.sort(Comparator.comparing(BuiltOp::key));
+        List<String> jsonList = new ArrayList<>(allOps.size());
+        for (BuiltOp bo : allOps) {
+            jsonList.add(bo.json());
+        }
+        return CatalogSnapshot.ofPreserialized(entries, jsonList, complete, done, modules.size(), ownVersion.get());
     }
 
-    private static void pause() {
+    private void pause() {
+        long ms = pauseBetweenModulesMs;
+        if (ms <= 0) {
+            return;
+        }
         try {
-            Thread.sleep(PAUSE_BETWEEN_MODULES_MS);
+            Thread.sleep(ms);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
@@ -518,6 +579,15 @@ public class CatalogService implements InitializingBean, DisposableBean {
     private static ThreadFactory daemon(String name) {
         return r -> {
             Thread t = new Thread(r, name);
+            t.setDaemon(true);
+            return t;
+        };
+    }
+
+    private static ThreadFactory numberedDaemon(String prefix) {
+        AtomicInteger seq = new AtomicInteger(1);
+        return r -> {
+            Thread t = new Thread(r, prefix + "-" + seq.getAndIncrement());
             t.setDaemon(true);
             return t;
         };

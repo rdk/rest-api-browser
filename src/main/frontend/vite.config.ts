@@ -6,7 +6,7 @@ export default defineConfig({
   build: {
     outDir: '../../../target/classes/assets/next',
     emptyOutDir: true,
-    target: 'es2020',
+    target: 'es2022',
     cssCodeSplit: false,
     rollupOptions: {
       input: 'src/main.tsx',

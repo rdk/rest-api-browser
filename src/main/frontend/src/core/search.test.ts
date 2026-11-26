@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildRows, groupRows, search } from './search';
+import { createMatcher } from './routes';
+import { buildRows, groupRows, matchUrlQuery, search } from './search';
 import { index, module, op, summary } from './fixtures';
 
 const mods = [
@@ -155,5 +156,59 @@ describe('buildRows second review', () => {
     const hits = search(r, 'general');
     expect(hits.map((x) => x.op.path)).toEqual(['general/settings', 'serverInfo']);
     expect(search(r, 'information server').map((x) => x.op.path)).toEqual(['serverInfo']);
+  });
+
+  it('indexes DTO types, access annotations, plugin keys, deprecated status, and matches pasted live REST URLs', () => {
+    const sm = summary([module('jira:v2', 'api/2', { plugin: { key: 'com.atlassian.jira.rest', name: 'Jira REST' } })]);
+    const idx = index([
+      op('jira:v2', 'GET', 'issue/{issueIdOrKey}', {
+        returnType: 'IssueBean',
+        access: 'LicensedOnly',
+        description: 'Returns a full issue representation',
+      }),
+      op('jira:v2', 'POST', 'issue/{issueIdOrKey}/comment', {
+        bodyType: 'CommentJsonBean',
+        returnType: 'CommentJsonBean',
+        deprecated: true,
+      }),
+    ]);
+    const r = buildRows(sm, idx);
+    expect(search(r, 'IssueBean').map((x) => x.op.path)).toEqual(['issue/{issueIdOrKey}']);
+    expect(search(r, 'LicensedOnly').map((x) => x.op.path)).toEqual(['issue/{issueIdOrKey}']);
+    expect(search(r, 'com.atlassian.jira.rest')).toHaveLength(2);
+    expect(search(r, 'deprecated').map((x) => x.op.path)).toEqual(['issue/{issueIdOrKey}/comment']);
+
+    // Pasting a live URL matches the templated endpoint and extracts path + query values
+    const matcher = createMatcher(sm, idx);
+    const liveUrl = 'https://jira.example.com/jira/rest/api/2/issue/PROJ-42?expand=renderedFields';
+    const matchedRows = search(r, liveUrl, {}, matcher);
+    expect(matchedRows.map((x) => x.op.key)).toEqual(['jira:v2:GET:issue/{}']);
+    const urlMap = matchUrlQuery(r, liveUrl, matcher);
+    expect(urlMap.get('jira:v2:GET:issue/{}')).toMatchObject({
+      values: { issueIdOrKey: 'PROJ-42' },
+      query: { expand: ['renderedFields'] },
+    });
+  });
+
+  it('matches all sibling HTTP methods, foreign context prefixes, relative URLs, and method filters', () => {
+    const sm = summary([module('jira:v2', 'api/2')]);
+    const idx = index([
+      op('jira:v2', 'GET', 'issue/{issueIdOrKey}'),
+      op('jira:v2', 'PUT', 'issue/{issueIdOrKey}'),
+      op('jira:v2', 'DELETE', 'issue/{issueIdOrKey}'),
+    ]);
+    const r = buildRows(sm, idx);
+    const matcher = createMatcher(sm, idx);
+
+    // Bare path matches all sibling methods on that template, filtered by filters.methods
+    const allSiblings = matchUrlQuery(r, '/other-ctx/rest/api/2/issue/PROJ-9', matcher);
+    expect([...allSiblings.keys()]).toEqual([
+      'jira:v2:GET:issue/{}',
+      'jira:v2:PUT:issue/{}',
+      'jira:v2:DELETE:issue/{}',
+    ]);
+    const putOnly = matchUrlQuery(r, 'api/2/issue/PROJ-9?fields=summary', matcher, { methods: ['PUT'] });
+    expect([...putOnly.keys()]).toEqual(['jira:v2:PUT:issue/{}']);
+    expect(putOnly.get('jira:v2:PUT:issue/{}')?.query).toEqual({ fields: ['summary'] });
   });
 });

@@ -116,6 +116,7 @@ public class CatalogServiceTest {
         source = new FakeSource();
         service = new CatalogService(discovery, List.of(source), new ProductAdapter("jira", () -> null), null,
                 () -> "1.0.0");
+        service.setTimingForTests(50, 0);
         service.afterPropertiesSet();
     }
 
@@ -383,8 +384,8 @@ public class CatalogServiceTest {
         completeSnapshot();
         assertEquals(1, source.count("a"));
         service.refresh("b");
-        await(() -> source.count("b") == 2);
-        Thread.sleep(300);
+        await(() -> source.count("b") == 2 && service.current(null).complete());
+        Thread.sleep(40);
         assertEquals(1, source.count("a"));
         assertEquals(2, source.count("b"));
         assertEquals(1, source.count("c"));
@@ -397,7 +398,7 @@ public class CatalogServiceTest {
         completeSnapshot();
         service.refresh(null);
         await(() -> source.count("a") == 2 && source.count("b") == 2 && source.count("c") == 2);
-        Thread.sleep(300);
+        Thread.sleep(40);
         assertEquals(2, source.count("a"));
     }
 
@@ -410,8 +411,8 @@ public class CatalogServiceTest {
         when(plugin.getKey()).thenReturn("plugin.c");
         when(event.getPlugin()).thenReturn(plugin);
         service.onPluginEnabled(event);
-        await(() -> source.count("c") == 2); // after the debounce
-        Thread.sleep(300);
+        await(() -> source.count("c") == 2 && service.current(null).complete()); // after the debounce
+        Thread.sleep(40);
         assertEquals(1, source.count("a"));
         assertEquals(1, source.count("b"));
         assertEquals(2, source.count("c"));
@@ -424,7 +425,7 @@ public class CatalogServiceTest {
         when(plugin.getKey()).thenReturn("plugin.a");
         when(event.getPlugin()).thenReturn(plugin);
         service.onPluginEnabled(event);
-        Thread.sleep(200);
+        Thread.sleep(80);
         assertEquals(0, source.count("a"));
     }
 
@@ -459,6 +460,7 @@ public class CatalogServiceTest {
 
     private CatalogService serviceWith(List<SpecSource> sources, ModuleDiscovery d) {
         CatalogService svc = new CatalogService(d, sources, new ProductAdapter("jira", () -> null), null, () -> "1");
+        svc.setTimingForTests(50, 0);
         svc.afterPropertiesSet();
         return svc;
     }
@@ -602,11 +604,113 @@ public class CatalogServiceTest {
         await(() -> service.current(null).complete() && source.count("c") == 2);
     }
 
+    @Test
+    public void aDiscoveryFailureInsideReadStartedDoesNotStuckTheCatalogIncomplete() throws Exception {
+        source.failures.put("b", new SpecSource.SpecException(JerseyModelSource.NOT_STARTED, "not started", null));
+        completeSnapshot();
+        source.failures.remove("b");
+        AtomicInteger armedCalls = new AtomicInteger(-1);
+        FakeDiscovery flaky = new FakeDiscovery() {
+            @Override
+            public List<RestModule> discover() {
+                if (armedCalls.get() >= 0 && armedCalls.incrementAndGet() == 2) {
+                    throw new IllegalStateException("discovery hiccup");
+                }
+                return super.discover();
+            }
+        };
+        flaky.modules = discovery.modules;
+        service.destroy();
+        service = new CatalogService(flaky, List.of(source), new ProductAdapter("jira", () -> null), null, () -> "1.0.0");
+        service.afterPropertiesSet();
+        source.failures.put("b", new SpecSource.SpecException(JerseyModelSource.NOT_STARTED, "not started", null));
+        completeSnapshot();
+        source.failures.remove("b");
+        armedCalls.set(0);
+        // Call 1 after arming is readStarted() finding module b; call 2 is inside readOne() and throws
+        assertEquals(CatalogService.StartOutcome.FAILED, service.readStarted("b", 5_000).outcome());
+        assertEquals(CatalogService.StartOutcome.READ, service.readStarted("b", 5_000).outcome());
+        assertTrue(service.current(null).complete());
+    }
+
+    @Test
+    public void synchronousDescribePoolScalesAboveTwoConcurrentModules() throws Exception {
+        CountDownLatch threeEntered = new CountDownLatch(3);
+        CountDownLatch release = new CountDownLatch(1);
+        List<Thread> runners = List.of();
+        FakeSource concurrent = new FakeSource() {
+            @Override
+            public Optional<ModuleSpec> describe(RestModule module) {
+                threeEntered.countDown();
+                try {
+                    release.await(5, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                return Optional.of(new ModuleSpec("fake", List.of()));
+            }
+        };
+        var callers = java.util.concurrent.Executors.newFixedThreadPool(3);
+        CatalogService svc = new CatalogService(discovery, List.of(concurrent), new ProductAdapter("jira", () -> null),
+                null, () -> "1.0.0");
+        svc.afterPropertiesSet();
+        try {
+            // 3 readStarted/build calls hitting describe concurrently must scale past 2 workers (MAX_DESCRIBE_THREADS = 8)
+            var m = CatalogService.class.getDeclaredMethod("describe", RestModule.class);
+            m.setAccessible(true);
+            for (RestModule mod : discovery.modules) {
+                callers.submit(() -> m.invoke(svc, mod));
+            }
+            assertTrue("Expected >= 3 concurrent describe tasks inside SynchronousQueue pool",
+                    threeEntered.await(5, TimeUnit.SECONDS));
+            assertNotNull(runners);
+        } finally {
+            release.countDown();
+            callers.shutdownNow();
+            svc.destroy();
+        }
+    }
+
     private static PluginEnabledEvent pluginEvent(String key) {
         PluginEnabledEvent event = mock(PluginEnabledEvent.class);
         Plugin plugin = mock(Plugin.class);
         when(plugin.getKey()).thenReturn(key);
         when(event.getPlugin()).thenReturn(plugin);
         return event;
+    }
+
+    @Test
+    public void debouncedPluginEventDoesNotCancelPendingImmediateBuild() throws Exception {
+        service.setTimingForTests(5_000, 0);
+        source.gate = new CountDownLatch(1);
+        service.current(null); // first build starts and blocks on source.gate inside describe("a")
+        await(() -> source.count("a") == 1);
+        // While scheduler thread is busy in build #1, queue an immediate refresh (schedule(0))
+        service.refresh("b");
+        // Now a debounced plugin event arrives (schedule(5_000)); it must NOT cancel the queued immediate schedule(0)
+        service.onPluginEnabled(pluginEvent("plugin.c"));
+        long t0 = System.currentTimeMillis();
+        source.gate.countDown();
+        await(() -> service.current(null).complete() && source.count("b") == 2 && source.count("c") == 2);
+        assertTrue("Queued immediate build should not have been replaced by 5s debounce",
+                System.currentTimeMillis() - t0 < 2_500);
+    }
+
+    @Test
+    public void interruptedRebuildPreservesPreviousValidEntryAndDoesNotMarkComplete() throws Exception {
+        service.current(null);
+        completeSnapshot();
+        assertEquals(State.ok, entry(service.current(null), "b").state());
+
+        source.duringDescribe = () -> Thread.currentThread().interrupt();
+        service.refresh("b");
+        await(() -> source.count("b") == 2);
+        Thread.sleep(40);
+        source.duringDescribe = null;
+
+        // Interrupted describe must not overwrite valid State.ok entry for 'b' with failed/interrupted
+        ModuleEntry b = entry(service.current(null), "b");
+        assertEquals(State.ok, b.state());
+        assertEquals(2, b.opCount());
     }
 }

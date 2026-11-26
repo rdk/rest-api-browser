@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pathParts, searchWords } from './pathparts';
+import { pathParts, searchWords } from '../lib/jaxrs-router';
 import { buildRequest, urlParts, type RequestValues } from './request';
 import type { Operation, Summary } from './types';
 

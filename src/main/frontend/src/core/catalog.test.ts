@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CatalogStore, isLoginAnswer, RETRY_DELAYS_MS, START_WAIT_MS, StartStopped, type FetchFn } from './catalog';
+import { CatalogStore, isLoginAnswer, POLL_DELAYS_MS, RETRY_DELAYS_MS, START_WAIT_MS, StartStopped, type FetchFn } from './catalog';
 import { index, module, summary } from './fixtures';
 import type { Index, Module, Summary } from './types';
 
@@ -224,7 +224,9 @@ describe('CatalogStore.startModule', () => {
     const { calls, fetchFn } = product(status(200, { state: 'ok', opCount: 3 }));
     const store = new CatalogStore('', (url, init) => (url.includes('/catalog/started') ? gate.then(() => fetchFn(url, init)) : fetchFn(url, init)));
     const done = store.startModule(waiting);
+    expect(store.starting.has('p:m')).toBe(true);
     store.stop();
+    expect(store.starting.size).toBe(0);
     release();
     await expect(done).rejects.toBeInstanceOf(StartStopped);
     expect(calls.some(([, u]) => u.endsWith('/catalog'))).toBe(false); // no load(), which would start the store again
@@ -572,5 +574,35 @@ describe('CatalogStore second review', () => {
     expect(isLoginAnswer(new Response('', { status: 401 }))).toBe(true);
     expect(isLoginAnswer(new Response('', { status: 401 }), false, true)).toBe(false);
     expect(isLoginAnswer(new Response('', { status: 401, headers: { 'X-Seraph-LoginReason': 'OUT' } }), false, true)).toBe(true);
+  });
+
+  it('startModule detects stop() + load() generation change and retries initial transient load() failure', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const store = new CatalogStore('', (url) => {
+      if (url.includes('/catalog/started')) return gate.then(() => json({ state: 'ok', opCount: 1 }));
+      if (/\/index\//.test(url)) return json(index([], 'h1'));
+      return json(summary([module('p:m', 'api/1', { opCount: 1 })], { hash: 'h1' }));
+    });
+    const p = store.startModule(module('p:m', 'api/1', { state: 'failed', reason: 'not-started' }));
+    store.stop();
+    await store.load();
+    release();
+    await expect(p).rejects.toBeInstanceOf(StartStopped);
+    store.stop();
+
+    let failOnce = true;
+    const srv = server({ summary: () => summary(mods, { complete: true }), index: (h) => index([], h) });
+    const recovering = new CatalogStore('http://host/jira', (url, init) => {
+      if (failOnce) {
+        failOnce = false;
+        return Promise.resolve(new Response('', { status: 503 }));
+      }
+      return srv.fetchFn(url, init);
+    });
+    await expect(recovering.load()).rejects.toThrow('HTTP 503');
+    await vi.advanceTimersByTimeAsync(POLL_DELAYS_MS[0] ?? 1000);
+    expect(recovering.summary?.complete).toBe(true);
+    recovering.stop();
   });
 });

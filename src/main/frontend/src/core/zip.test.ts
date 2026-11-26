@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildZip, crc32, javaSourceZipPath } from './zip';
+import { buildZip, crc32 } from '../lib/mini-zip';
+import { javaSourceZipPath } from './sourceexport';
 
 describe('zip', () => {
   it('computes standard IEEE CRC-32', () => {
@@ -36,5 +37,21 @@ describe('zip', () => {
     expect(javaSourceZipPath('jakarta.ws.rs.core.Response$Status')).toBe(
       'sources/jakarta/ws/rs/core/Response$Status.java',
     );
+  });
+
+  it('sanitizes Zip Slip traversal, invalid dates, and entry limits', () => {
+    const zip = buildZip([
+      { name: '../../C:\\evil\\..\\Foo.java\0', data: 'ok', date: new Date(Number.NaN) },
+      { name: '/C:/Windows/win.ini', data: 'x' },
+      { name: 'C:../bar.txt', data: 'y' },
+    ]);
+    const text = new TextDecoder().decode(zip);
+    expect(text).toContain('evil/Foo.java');
+    expect(text).toContain('Windows/win.ini');
+    expect(text).toContain('bar.txt');
+    expect(text).not.toContain('C:');
+    expect(text).not.toContain('..');
+    expect(() => buildZip([{ name: '../../', data: 'x' }])).toThrow(/Invalid empty ZIP entry/);
+    expect(() => buildZip([{ name: '/C:/', data: 'x' }])).toThrow(/Invalid empty ZIP entry/);
   });
 });

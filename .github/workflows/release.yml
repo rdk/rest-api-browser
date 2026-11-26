@@ -26,7 +26,7 @@ jobs:
             echo "pom.xml has version $version, the tag is $GITHUB_REF_NAME"
             exit 1
           fi
-      - run: mvn -B -ntp package -DskipTests
+      - run: mvn -B -ntp package
       - name: Create a draft release with the jar
         env:
           GH_TOKEN: ${{ github.token }}

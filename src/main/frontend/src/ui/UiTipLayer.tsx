@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { placeFloatingTip, readTipAttrs, splitShortcutKeys, type UiTipSpec } from '../core/uitips';
+import { ESCAPE_PRIORITY, isInsideInert, onInertChange, useEscape } from '../lib/overlay';
 import { usePin } from './bits';
 
 interface ActiveTip {
@@ -13,9 +14,8 @@ const HIDE_DELAY_MS = 70;
 
 /**
  * Single delegated rich tooltip renderer for all buttons, links, tabs, and badges carrying `data-tip`.
- * Lives as a fixed overlay above dialogs (`z-index: 98`), never disturbs flex/segmented layouts, suppresses
- * conflicts with `RichTip` / `About` / `ClassHoverCard` / `RowCard`, hides immediately on click/scroll/Escape,
- * and supports `Alt+P` pinning consistently with every other rich tooltip in the app.
+ * Never disturbs flex/segmented layouts, yields to dedicated rich tooltips (`RichTip`, `About`, `ClassHoverCard`, `RowCard`),
+ * hides immediately on click/scroll/blur/Escape, and supports `Alt+P` pinning consistently across the app.
  */
 export function UiTipLayer({ rootRef }: { rootRef: { current: HTMLElement | null } }) {
   const [active, setActive] = useState<ActiveTip | null>(null);
@@ -26,23 +26,41 @@ export function UiTipLayer({ rootRef }: { rootRef: { current: HTMLElement | null
   const pinnedRef = useRef(false);
 
   const [pinned] = usePin(
-    () => !!activeRef.current,
+    () => !!activeRef.current && !isInsideInert(activeRef.current.el),
     boxRef,
     () => setActive(null),
+    () => isInsideInert(activeRef.current?.el),
   );
   pinnedRef.current = pinned;
 
-  // Escape dismisses an unpinned tooltip before any outer handler sees it
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || pinnedRef.current || !activeRef.current) return;
-      e.preventDefault();
-      e.stopImmediatePropagation();
+  useEscape(!!active && !pinned, () => {
+    if (isInsideInert(activeRef.current?.el)) {
       setActive(null);
+      return false;
+    }
+    setActive(null);
+    return true;
+  }, ESCAPE_PRIORITY.TOOLTIP);
+
+  useEffect(() => {
+    if (!active) return;
+    const dismissIfInert = () => {
+      if (activeRef.current && isInsideInert(activeRef.current.el)) {
+        setActive(null);
+      }
     };
-    document.addEventListener('keydown', onKey, true);
-    return () => document.removeEventListener('keydown', onKey, true);
-  }, []);
+    dismissIfInert();
+    const offInert = onInertChange(dismissIfInert);
+    const root = rootRef.current;
+    const obs = typeof MutationObserver !== 'undefined'
+      ? new MutationObserver(dismissIfInert)
+      : null;
+    if (obs && root) obs.observe(root, { attributes: true, subtree: true, attributeFilter: ['inert'] });
+    return () => {
+      offInert();
+      obs?.disconnect();
+    };
+  }, [!!active, rootRef]);
 
   useEffect(() => {
     const root = rootRef.current;
@@ -53,10 +71,9 @@ export function UiTipLayer({ rootRef }: { rootRef: { current: HTMLElement | null
 
     const findTarget = (node: EventTarget | null): HTMLElement | null => {
       if (!(node instanceof Element)) return null;
-      // Yield to dedicated rich tooltips (ClassHoverCard, About, RichTip, sidebar RowCard)
       if (node.closest('[data-class-ref], .rab-n-class-tip, .rab-n-tip-wrap, .rab-n-brand-wrap, [data-i]')) return null;
       const el = node.closest('[data-tip]') as HTMLElement | null;
-      if (!el || !root.contains(el) || el.closest('[inert]')) return null;
+      if (!el || !root.contains(el) || isInsideInert(el)) return null;
       if (el.hasAttribute('data-class-ref') || el.closest('[data-class-ref]')) return null;
       return el;
     };
@@ -69,9 +86,8 @@ export function UiTipLayer({ rootRef }: { rootRef: { current: HTMLElement | null
       if (!spec) return;
       lastEl = el;
       const commit = () => {
-        if (pinnedRef.current || !el.isConnected) return;
-        // Never compete with an active ClassHoverCard
-        if (root.querySelector('[data-testid=class-hover-card]')) return;
+        if (pinnedRef.current || !el.isConnected || isInsideInert(el)) return;
+        if (root.querySelector('[data-testid=class-hover-card], .rab-n-tip-wrap.pinned, .rab-n-brand-wrap.pinned, #rab-n-row-card.pinned')) return;
         const fresh = readTipAttrs(el);
         if (!fresh) return;
         setActive({ el, spec: fresh, rect: el.getBoundingClientRect() });
@@ -99,7 +115,6 @@ export function UiTipLayer({ rootRef }: { rootRef: { current: HTMLElement | null
 
     const onOver = (e: MouseEvent) => {
       const target = e.target instanceof Element ? e.target : null;
-      // Immediately clear/hide when pointer enters a class name or another dedicated rich tooltip
       if (target?.closest('[data-class-ref], .rab-n-class-tip, .rab-n-tip-wrap, .rab-n-brand-wrap, [data-i]')) {
         hideNow();
         return;
@@ -113,7 +128,6 @@ export function UiTipLayer({ rootRef }: { rootRef: { current: HTMLElement | null
         clearTimeout(hideTimer);
         return;
       }
-      // Instant handoff when moving between adjacent toolbar buttons while a tooltip is already visible
       show(el, activeRef.current ? 0 : HOVER_DELAY_MS);
     };
 
@@ -127,6 +141,9 @@ export function UiTipLayer({ rootRef }: { rootRef: { current: HTMLElement | null
     };
 
     const onFocusIn = (e: FocusEvent) => {
+      if (activeRef.current && isInsideInert(activeRef.current.el)) {
+        setActive(null);
+      }
       const el = findTarget(e.target);
       if (!el) {
         hideNow();
@@ -145,7 +162,7 @@ export function UiTipLayer({ rootRef }: { rootRef: { current: HTMLElement | null
     };
 
     const onScroll = () => {
-      if (activeRef.current && !pinnedRef.current) hideNow();
+      if (!pinnedRef.current) hideNow();
     };
 
     root.addEventListener('mouseover', onOver);
@@ -169,16 +186,23 @@ export function UiTipLayer({ rootRef }: { rootRef: { current: HTMLElement | null
   }, [rootRef]);
 
   useLayoutEffect(() => {
-    if (!active || !boxRef.current) {
+    const box = boxRef.current;
+    if (!active || !box) {
       setPos(null);
       return;
     }
+    // Reset any prior right-edge clamping before measuring intrinsic dimensions on instant target handoff.
+    box.style.left = '-9999px';
+    box.style.top = '-9999px';
     const r = active.el.isConnected ? active.el.getBoundingClientRect() : active.rect;
     const vw = document.documentElement.clientWidth || window.innerWidth;
     const vh = document.documentElement.clientHeight || window.innerHeight;
-    const b = boxRef.current.getBoundingClientRect();
-    setPos(placeFloatingTip(r, { width: b.width, height: b.height }, { width: vw, height: vh }));
-  }, [active]);
+    const b = box.getBoundingClientRect();
+    const next = placeFloatingTip(r, { width: b.width, height: b.height }, { width: vw, height: vh });
+    box.style.left = next.left + 'px';
+    box.style.top = next.top + 'px';
+    setPos(next);
+  }, [active, pinned]);
 
   if (!active) return null;
   const { spec } = active;

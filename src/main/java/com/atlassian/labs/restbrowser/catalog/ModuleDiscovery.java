@@ -1,11 +1,12 @@
 package com.atlassian.labs.restbrowser.catalog;
 
+import com.atlassian.labs.restbrowser.jaxrs.ReflectiveBridge;
 import com.atlassian.plugin.ModuleDescriptor;
 import com.atlassian.plugin.Plugin;
 import com.atlassian.plugin.PluginAccessor;
+import com.atlassian.plugin.PluginInformation;
 import org.slf4j.Logger;
 
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -40,7 +41,7 @@ public class ModuleDiscovery {
         this.pluginAccessor = requireNonNull(pluginAccessor);
     }
 
-    @SuppressWarnings("deprecation") // the predicate variant is the one that sees descriptors of every type
+    @SuppressWarnings("deprecation")
     public List<RestModule> discover() {
         List<RestModule> modules = new ArrayList<>();
         for (ModuleDescriptor<?> md : pluginAccessor.getEnabledModuleDescriptorsByClass(ModuleDescriptor.class)) {
@@ -49,13 +50,18 @@ public class ModuleDiscovery {
                 continue;
             }
             try {
-                // the descriptors' packages are not exported, so their getters are reached by reflection
-                String basePath = (String) call(md, "getBasePath");
-                String version = String.valueOf(call(md, "getVersion"));
+                Object rawBase = ReflectiveBridge.call(md, "getBasePath");
+                String basePath = rawBase == null ? "" : String.valueOf(rawBase);
+                Object rawVer = ReflectiveBridge.call(md, "getVersion");
+                String version = rawVer == null ? null : String.valueOf(rawVer);
                 Plugin plugin = md.getPlugin();
+                PluginInformation info = plugin == null ? null : plugin.getPluginInformation();
+                String pluginKey = plugin == null ? "" : plugin.getKey();
+                String pluginName = plugin == null ? "" : plugin.getName();
+                String pluginVer = info == null ? null : info.getVersion();
                 modules.add(new RestModule(md.getCompleteKey(), path(basePath, version), basePath, version,
-                        REST_V2_DESCRIPTOR.equals(type), plugin.getKey(), plugin.getName(),
-                        plugin.getPluginInformation().getVersion(), md.getDescription(), plugin, md));
+                        REST_V2_DESCRIPTOR.equals(type), pluginKey, pluginName,
+                        pluginVer, md.getDescription(), plugin, md));
             } catch (Exception | LinkageError e) {
                 LOGGER.debug("Couldn't read REST module {}", md.getCompleteKey(), e);
             }
@@ -65,15 +71,11 @@ public class ModuleDiscovery {
     }
 
     static String path(String basePath, String version) {
-        String p = basePath.replaceAll("^/+|/+$", "");
-        if ("none".equals(version) || version == null || version.isEmpty()) {
+        String p = basePath == null ? "" : basePath.replaceAll("^/+|/+$", "");
+        String v = version == null ? "" : version.replaceAll("^/+|/+$", "");
+        if ("none".equals(v) || v.isEmpty()) {
             return p;
         }
-        return p.isEmpty() ? version : p + "/" + version;
-    }
-
-    private static Object call(Object target, String method) throws ReflectiveOperationException {
-        Method m = target.getClass().getMethod(method);
-        return m.invoke(target);
+        return p.isEmpty() ? v : p + "/" + v;
     }
 }

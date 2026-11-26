@@ -10,7 +10,7 @@
 
     <groupId>com.atlassian.labs</groupId>
     <artifactId>rest-api-browser</artifactId>
-    <version>4.3.1-SNAPSHOT</version>
+    <version>4.3.2-SNAPSHOT</version>
     <packaging>atlassian-plugin</packaging>
 
     <name>REST API Browser</name>
@@ -250,14 +250,55 @@
 
     <build>
         <resources>
-            <!-- Maven's default, minus what npm install leaves in assets/rab for the Grunt bundle: everything under
-                 assets/rab is a download resource of the plugin -->
+            <!-- Maven's default, minus what npm install leaves in assets/rab and vendor docs/demos/tests -->
             <resource>
                 <directory>src/main/resources</directory>
                 <excludes>
                     <exclude>assets/rab/node_modules/**</exclude>
                     <exclude>assets/rab/package-lock.json</exclude>
+                    <exclude>assets/rab/package.json</exclude>
+                    <exclude>assets/rab/Gruntfile.js</exclude>
+                    <exclude>assets/rab/vendor/**/demo/**</exclude>
+                    <exclude>assets/rab/vendor/**/test/**</exclude>
+                    <exclude>assets/rab/vendor/**/doc/**</exclude>
+                    <exclude>assets/rab/vendor/**/index.html</exclude>
+                    <exclude>assets/rab/vendor/**/*.html</exclude>
+                    <exclude>assets/rab/vendor/**/*test*.js</exclude>
+                    <exclude>assets/rab/vendor/**/.*</exclude>
+                    <exclude>assets/rab/vendor/**/bin/**</exclude>
+                    <exclude>assets/rab/vendor/**/gruntFile.js</exclude>
+                    <exclude>assets/rab/vendor/**/bower.json</exclude>
+                    <exclude>assets/rab/vendor/**/package.json</exclude>
+                    <exclude>assets/rab/vendor/**/README.md</exclude>
+                    <exclude>assets/rab/vendor/**/CONTRIBUTING.md</exclude>
+                    <exclude>assets/rab/vendor/codemirror-3.15/lib/codemirror.js</exclude>
+                    <exclude>assets/rab/vendor/codemirror-3.15/keymap/**</exclude>
+                    <exclude>assets/rab/vendor/codemirror-3.15/mode/**</exclude>
+                    <exclude>assets/rab/vendor/codemirror-3.15/theme/**</exclude>
+                    <exclude>assets/rab/vendor/codemirror-3.15/addon/comment/**</exclude>
+                    <exclude>assets/rab/vendor/codemirror-3.15/addon/display/**</exclude>
+                    <exclude>assets/rab/vendor/codemirror-3.15/addon/hint/**</exclude>
+                    <exclude>assets/rab/vendor/codemirror-3.15/addon/lint/**</exclude>
+                    <exclude>assets/rab/vendor/codemirror-3.15/addon/merge/**</exclude>
+                    <exclude>assets/rab/vendor/codemirror-3.15/addon/mode/**</exclude>
+                    <exclude>assets/rab/vendor/codemirror-3.15/addon/runmode/**</exclude>
+                    <exclude>assets/rab/vendor/codemirror-3.15/addon/scroll/**</exclude>
+                    <exclude>assets/rab/vendor/codemirror-3.15/addon/selection/**</exclude>
+                    <exclude>assets/rab/vendor/codemirror-3.15/addon/tern/**</exclude>
+                    <exclude>assets/rab/vendor/codemirror-3.15/addon/wrap/**</exclude>
+                    <exclude>assets/rab/vendor/ui-utils/modules/**</exclude>
+                    <exclude>assets/rab/images/**</exclude>
                 </excludes>
+            </resource>
+            <!-- Explicitly keep the subset of vendor/image files referenced by atlassian-plugin.xml and app.css -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <includes>
+                    <include>assets/rab/vendor/codemirror-3.15/theme/neat.css</include>
+                    <include>assets/rab/vendor/ui-utils/modules/unique/unique.js</include>
+                    <include>assets/rab/images/getting-started.png</include>
+                    <include>assets/rab/images/code.png</include>
+                </includes>
             </resource>
         </resources>
         <plugins>
@@ -326,10 +367,9 @@
                     <enableQuickReload>true</enableQuickReload>
                     <instructions>
                         <Atlassian-Plugin-Key>${atlassian.plugin.key}</Atlassian-Plugin-Key>
-                        <Export-Package>com.atlassian.labs.restbrowser.*</Export-Package>
+                        <Export-Package>!*</Export-Package>
                         <Import-Package>
-                            com.atlassian.annotations.security*;resolution:="optional",
-                            com.atlassian.plugins.rest.common.security*;resolution:="optional",
+                            com.atlassian.annotations.security*,
                             !javax.inject,
                             *
                         </Import-Package>

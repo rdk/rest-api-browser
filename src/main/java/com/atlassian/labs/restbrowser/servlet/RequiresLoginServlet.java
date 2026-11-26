@@ -1,12 +1,14 @@
 package com.atlassian.labs.restbrowser.servlet;
 
+import com.atlassian.labs.restbrowser.rest.RestAuth;
 import com.atlassian.sal.api.auth.LoginUriProvider;
+import com.atlassian.sal.api.user.UserKey;
 import com.atlassian.sal.api.user.UserManager;
 import com.atlassian.templaterenderer.TemplateRenderer;
-
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+
 import java.io.IOException;
 import java.net.URI;
 import java.util.Map;
@@ -14,14 +16,11 @@ import java.util.Map;
 import static java.util.Objects.requireNonNull;
 
 /**
- * Sends anonymous users to the login page if anonymous usage is not allowed.
+ * Sends anonymous users to the login page (unless {@link #allowAnonymous()} is enabled) and blocks logged-in
+ * unlicensed accounts with 403 Forbidden.
  */
 public abstract class RequiresLoginServlet extends HttpServlet {
 
-    /**
-     * If this system property is set to "true", the RAB can be used anonymously.
-     * Otherwise, the user needs to be logged in.
-     */
     public static final String RAB_ANONYMOUS = "rest.api.browser.anonymous";
 
     private final LoginUriProvider loginUriProvider;
@@ -35,43 +34,34 @@ public abstract class RequiresLoginServlet extends HttpServlet {
         this.userManager = requireNonNull(userManager, "userManager");
     }
 
-    /**
-     * Subclasses must return the template for the view to be rendered.
-     *
-     * @return a valid template path
-     * @see #getContext(HttpServletRequest)
-     */
     protected abstract String getTemplatePath();
 
-    /**
-     * Subclasses must return the model required by the view.
-     *
-     * @param request the request
-     * @return the model
-     * @see #getTemplatePath()
-     */
     protected abstract Map<String, Object> getContext(HttpServletRequest request);
 
-    /**
-     * Optional pre-render hook after authentication succeeds. Return {@code true} if the response has been handled
-     * (for example, a redirect from a legacy URL).
-     */
+    protected boolean allowAnonymous() {
+        return Boolean.getBoolean(RAB_ANONYMOUS);
+    }
+
     protected boolean handleRequest(HttpServletRequest req, HttpServletResponse resp) throws IOException {
         return false;
     }
 
     @Override
     protected final void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-        if (loginRequired(req)) {
+        UserKey user = userManager.getRemoteUserKey(req);
+        if (user == null && !allowAnonymous()) {
             redirectToLogin(req, resp);
-        } else if (!handleRequest(req, resp)) {
+            return;
+        }
+        if (!allowAnonymous() && !RestAuth.isLicensedUser(userManager, user)) {
+            resp.sendError(HttpServletResponse.SC_FORBIDDEN, "A product license is required to use REST API Browser.");
+            return;
+        }
+        if (!handleRequest(req, resp)) {
+            resp.setHeader("Cache-Control", "private, no-store");
             resp.setContentType("text/html;charset=utf-8");
             renderer.render(getTemplatePath(), getContext(req), resp.getWriter());
         }
-    }
-
-    private boolean loginRequired(final HttpServletRequest req) {
-        return !Boolean.getBoolean(RAB_ANONYMOUS) && userManager.getRemoteUserKey(req) == null;
     }
 
     private void redirectToLogin(final HttpServletRequest request, final HttpServletResponse response) throws IOException {
@@ -81,24 +71,28 @@ public abstract class RequiresLoginServlet extends HttpServlet {
     static URI getUri(final HttpServletRequest request) {
         final StringBuilder builder = new StringBuilder(request.getRequestURL());
         if (request.getQueryString() != null) {
-            builder.append("?");
-            builder.append(request.getQueryString());
+            builder.append("?").append(request.getQueryString());
         }
         return URI.create(encodeIllegal(builder.toString()));
     }
 
-    /** Characters URI.create rejects in a path or query, which browsers may send unencoded. */
     private static final String ILLEGAL = "{}|\\^`\"<> []#";
 
-    /**
-     * Percent-encodes what a URI may not contain in its path and query (braces of deep links, brackets, a stray
-     * percent sign or #, spaces, non-ASCII), leaving the scheme and authority as they are (an IPv6 host has brackets).
-     */
     static String encodeIllegal(String uri) {
         final int schemeEnd = uri.indexOf("://");
-        final int pathStart = schemeEnd < 0 ? 0 : indexOrEnd(uri, '/', schemeEnd + 3);
-        final StringBuilder out = new StringBuilder(uri.length()).append(uri, 0, pathStart);
-        final String rest = uri.substring(pathStart);
+        final int afterAuth = schemeEnd > 0 && isScheme(uri, schemeEnd)
+                ? Math.min(indexOrEnd(uri, '/', schemeEnd + 3), indexOrEnd(uri, '?', schemeEnd + 3))
+                : 0;
+        return encodeIllegalFrom(uri, afterAuth);
+    }
+
+    static String encodeQuery(String query) {
+        return encodeIllegalFrom(query, 0);
+    }
+
+    private static String encodeIllegalFrom(String value, int startIndex) {
+        final StringBuilder out = new StringBuilder(value.length()).append(value, 0, startIndex);
+        final String rest = value.substring(startIndex);
         for (int i = 0; i < rest.length(); ) {
             final int c = rest.codePointAt(i);
             final int len = Character.charCount(c);
@@ -115,6 +109,21 @@ public abstract class RequiresLoginServlet extends HttpServlet {
         return out.toString();
     }
 
+    private static boolean isScheme(String s, int end) {
+        char first = s.charAt(0);
+        if (!((first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z'))) {
+            return false;
+        }
+        for (int i = 1; i < end; i++) {
+            char c = s.charAt(i);
+            if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+                    || c == '+' || c == '-' || c == '.')) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private static int indexOrEnd(String s, char c, int from) {
         final int i = s.indexOf(c, from);
         return i < 0 ? s.length() : i;
@@ -124,7 +133,7 @@ public abstract class RequiresLoginServlet extends HttpServlet {
         if (i >= s.length()) {
             return false;
         }
-        final char c = s.charAt(i); // ASCII only: Character.digit also accepts other scripts' digits
+        final char c = s.charAt(i);
         return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
     }
 }

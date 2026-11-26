@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatJavaSource } from './javaformat';
+import { formatJavaSource } from '../lib/java-source';
 
 describe('javaformat', () => {
   it('reformats compressed CFR annotations, spacing, indentation, and blank lines', () => {
@@ -45,5 +45,43 @@ describe('javaformat', () => {
     expect(pretty).toContain('String s = "if(a){b();}";');
     expect(pretty).toContain('    public Response fetch(\n        @QueryParam("pluginKey") String pluginKey,\n        @QueryParam("expand") String expand,\n        @QueryParam("maxResults") int maxResults\n    ) {');
     expect(pretty).toContain('    public void noop() {}');
+  });
+
+  it('tracks braces on /* synthetic */ declarations and mid-line block comments', () => {
+    const raw = [
+      'public class Syn {',
+      '    /* synthetic */ public void bridge() {',
+      '        int x = /* comment { ignored */ 1;',
+      '    }',
+      '    public void after() {}',
+      '}',
+    ].join('\n');
+    const pretty = formatJavaSource(raw);
+    expect(pretty).toContain('    /* synthetic */ public void bridge() {\n        int x = /* comment { ignored */ 1;\n    }');
+    expect(pretty).toContain('\n    public void after() {}');
+  });
+
+  it('preserves Java 15+ text blocks verbatim and tracks mid-line or back-to-back block comments', () => {
+    const raw = [
+      'public class TextBlocks {',
+      '    public String sql() {',
+      '        String q = """',
+      '              SELECT id /* keep */',
+      '                FROM users WHERE brace = "{}"',
+      '',
+      '              """;',
+      '        int a = 1; /* multi-line',
+      '        comment { ignored */ /* another',
+      '        comment } */ int b = 2;',
+      '        if(a<b){return q;}',
+      '        return "";',
+      '    }',
+      '    public void trailingMethod() {}',
+      '}',
+    ].join('\n');
+    const pretty = formatJavaSource(raw);
+    expect(pretty).toContain('              SELECT id /* keep */\n                FROM users WHERE brace = "{}"\n\n              """;');
+    expect(pretty).toContain('if (a<b) {');
+    expect(pretty).toContain('\n    public void trailingMethod() {}');
   });
 });

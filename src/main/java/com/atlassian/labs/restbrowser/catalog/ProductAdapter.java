@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Properties;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
@@ -17,19 +18,17 @@ import java.util.regex.Pattern;
 import static org.slf4j.LoggerFactory.getLogger;
 
 /**
- * What differs between products: which REST modules are supported (data, in /catalog/stability.properties) and who
- * provides a plugin. New products get a line in the data file; product-specific code goes into a subclass only when
- * a product really needs it.
+ * Product-specific REST module rules loaded once from {@code /catalog/stability.properties}.
  */
 public class ProductAdapter {
 
     private static final Logger LOGGER = getLogger(ProductAdapter.class);
+    private static final Properties STABILITY_PROPS = loadProperties();
 
     private final String productId;
     private final List<Pattern> supported;
-    private final List<Pattern> excluded = rules("excluded");
+    private final List<Pattern> excluded;
     private final Supplier<PluginMetadataManager> metadata;
-    /** Set on the first failure: an optional service that is not there would otherwise time out on every call. */
     private volatile boolean metadataUnavailable;
 
     public ProductAdapter(ApplicationProperties applicationProperties, Supplier<PluginMetadataManager> metadata) {
@@ -39,6 +38,7 @@ public class ProductAdapter {
     ProductAdapter(String productId, Supplier<PluginMetadataManager> metadata) {
         this.productId = productId;
         this.supported = rules(productId);
+        this.excluded = rules("excluded");
         this.metadata = metadata;
     }
 
@@ -46,8 +46,10 @@ public class ProductAdapter {
         return productId;
     }
 
-    /** product (the product's own modules), bundled (shipped with the product), or user (installed by an admin). */
     public String origin(Plugin plugin) {
+        if (plugin == null) {
+            return "bundled";
+        }
         PluginMetadataManager pmm = metadataOrNull();
         if (pmm != null) {
             try {
@@ -66,7 +68,6 @@ public class ProductAdapter {
         return plugin.isSystemPlugin() ? "product" : "bundled";
     }
 
-    /** Whether the catalog lists the module without describing it (Crowd's application APIs). */
     public boolean excluded(RestModule module) {
         for (Pattern p : excluded) {
             if (p.matcher(module.path()).find()) {
@@ -76,7 +77,6 @@ public class ProductAdapter {
         return false;
     }
 
-    /** supported (the product's public API), app (from a user-installed app), or internal. */
     public String stability(RestModule module, String origin) {
         for (Pattern p : supported) {
             if (p.matcher(module.path()).find()) {
@@ -93,20 +93,32 @@ public class ProductAdapter {
         try {
             return metadata == null ? null : metadata.get();
         } catch (RuntimeException | LinkageError e) {
-            metadataUnavailable = true; // the product does not export it
+            metadataUnavailable = true;
             return null;
         }
     }
 
     private static String platformId(ApplicationProperties applicationProperties) {
+        if (applicationProperties == null) {
+            return "";
+        }
         try {
-            return applicationProperties.getPlatformId();
-        } catch (RuntimeException | LinkageError e) {
-            return applicationProperties.getDisplayName().toLowerCase();
+            String id = applicationProperties.getPlatformId();
+            if (id != null && !id.isBlank()) {
+                return id;
+            }
+        } catch (RuntimeException | LinkageError ignored) {
+            // fallback to displayName
+        }
+        try {
+            String name = applicationProperties.getDisplayName();
+            return name == null ? "" : name.toLowerCase(Locale.ROOT);
+        } catch (RuntimeException | LinkageError ignored) {
+            return "";
         }
     }
 
-    static List<Pattern> rules(String productId) {
+    private static Properties loadProperties() {
         Properties p = new Properties();
         try (InputStream in = ProductAdapter.class.getResourceAsStream("/catalog/stability.properties")) {
             if (in != null) {
@@ -115,8 +127,12 @@ public class ProductAdapter {
         } catch (IOException e) {
             LOGGER.warn("Couldn't read /catalog/stability.properties", e);
         }
+        return p;
+    }
+
+    static List<Pattern> rules(String productId) {
         List<Pattern> patterns = new ArrayList<>();
-        String value = p.getProperty(productId == null ? "" : productId, "");
+        String value = STABILITY_PROPS.getProperty(productId == null ? "" : productId, "");
         for (String rule : value.split(",")) {
             if (!rule.isBlank()) {
                 patterns.add(Pattern.compile(rule.trim()));

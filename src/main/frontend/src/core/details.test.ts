@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { clearDetails, DetailsError, fetchDetails, fetchSource, forgetDetails, isError, peekDetails, peekSource, shortJava, type BundleInfo } from './details';
+import {
+  clearDetails, DetailsError, fetchClassInfo, fetchDetails, fetchPluginInfo, fetchSource,
+  forgetDetails, forgetSource, isError, peekDetails, peekSource, shortJava, type BundleInfo,
+} from './details';
 
 const DETAILS = {
   format: 1, key: 'k', method: { error: 'm' }, locators: [], resourceClass: { error: 'c' }, types: [],
@@ -125,5 +128,136 @@ describe('details second review', () => {
     expect(peekDetails('sync-k')).toEqual(d);
     forgetDetails('sync-k');
     expect(peekDetails('sync-k')).toBeNull();
+  });
+
+  it('scopes cache by baseUrl, guards stale writes after clearDetails, and checks error string', async () => {
+    clearDetails();
+    expect(isError({ error: 123 } as never)).toBe(false);
+    let calls = 0;
+    const f = (async (url: string) => {
+      calls++;
+      return new Response(JSON.stringify({ ...DETAILS, key: url }));
+    }) as typeof fetch;
+    const a = await fetchDetails('/jira', 'k1', f);
+    const b = await fetchDetails('/wiki', 'k1', f);
+    expect(a.key).toContain('/jira');
+    expect(b.key).toContain('/wiki');
+    expect(calls).toBe(2);
+
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const slow = (async () => {
+      await gate;
+      return new Response(JSON.stringify(DETAILS));
+    }) as typeof fetch;
+    const inflight = fetchDetails('/jira', 'race-k', slow);
+    clearDetails();
+    release();
+    await inflight;
+    expect(peekDetails('race-k', '/jira')).toBeNull();
+  });
+
+  it('aliases multi-candidate fetchSource under the resolved class name and forgets both resolved and promise maps', async () => {
+    clearDetails();
+    let calls = 0;
+    const f = (async () => {
+      calls++;
+      return new Response(JSON.stringify({
+        format: 1,
+        class: 'com.example.Real',
+        decompiler: 'Vineflower 1.11.1',
+        decompilerId: 'vineflower',
+        source: 'public class Real {}',
+        refs: [],
+      }));
+    }) as typeof fetch;
+
+    const query = { op: 'op:1', classCandidates: ['com.example.Alt', 'com.example.Real'], fromBundle: 2, scope: 'class' as const, decompiler: 'vineflower' as const };
+    const loaded = await fetchSource('/jira', query, f);
+    expect(loaded.class).toBe('com.example.Real');
+
+    const canonical = { op: 'op:1', classCandidates: ['com.example.Real'], fromBundle: 2, scope: 'class' as const, decompiler: 'vineflower' as const };
+    expect(peekSource(canonical, '/jira')).toEqual(loaded);
+    await fetchSource('/jira', canonical, f);
+    expect(calls).toBe(1);
+
+    forgetDetails('op:1', '/jira');
+    expect(peekSource(query, '/jira')).toBeNull();
+    expect(peekSource(canonical, '/jira')).toBeNull();
+
+    // forgetSource with a SourceQuery also evicts aliased resolved class entries
+    await fetchSource('/jira', query, f);
+    expect(peekSource(canonical, '/jira')).not.toBeNull();
+    forgetSource(query, '/jira');
+    expect(peekSource(query, '/jira')).toBeNull();
+    expect(peekSource(canonical, '/jira')).toBeNull();
+  });
+
+  it('fetchClassInfo and fetchPluginInfo cache per baseUrl, evict on failure, and validate response shapes', async () => {
+    clearDetails();
+    let classCalls = 0;
+    const classPayload = {
+      format: 1,
+      name: 'com.example.Demo',
+      simpleName: 'Demo',
+      package: 'com.example',
+      kind: 'class',
+      modifiers: 'public',
+      deprecated: false,
+      superclasses: [],
+      interfaces: [],
+      annotations: [],
+      innerClasses: [],
+      fieldCount: 1,
+      constructorCount: 1,
+      methodCount: 2,
+      methods: ['a()'],
+      bytecodeBytes: 120,
+      codeSource: null,
+      classLoader: 'BundleClassLoader',
+      origin: 'bundle',
+      bundleId: 5,
+      refCount: 0,
+      refs: [],
+    };
+    const classFetch = (async () => {
+      classCalls++;
+      return new Response(JSON.stringify(classPayload), { status: 200 });
+    }) as typeof fetch;
+    const c1 = await fetchClassInfo('/jira', { classCandidates: ['com.example.Demo'], fromBundle: 5 }, classFetch);
+    const c2 = await fetchClassInfo('/jira', { classCandidates: ['com.example.Demo'], fromBundle: 5 }, classFetch);
+    expect(c1.name).toBe('com.example.Demo');
+    expect(c2).toEqual(c1);
+    expect(classCalls).toBe(1);
+
+    await expect(fetchClassInfo('/jira', { classCandidates: ['bad.Shape'] }, answer('{}'))).rejects.toMatchObject({
+      reason: 'not-class-info',
+    });
+
+    let pluginCalls = 0;
+    const pluginPayload = {
+      format: 1,
+      key: 'com.example.plugin',
+      name: 'Example Plugin',
+      state: 'ENABLED',
+      pluginsVersion: 2,
+      moduleCount: 3,
+      enabledModuleCount: 3,
+      dependsOn: [],
+      optionallyDependsOn: [],
+    };
+    const pluginFetch = (async () => {
+      pluginCalls++;
+      return new Response(JSON.stringify(pluginPayload), { status: 200 });
+    }) as typeof fetch;
+    const p1 = await fetchPluginInfo('/jira', 'com.example.plugin', pluginFetch);
+    const p2 = await fetchPluginInfo('/jira', 'com.example.plugin', pluginFetch);
+    expect(p1.name).toBe('Example Plugin');
+    expect(p2).toEqual(p1);
+    expect(pluginCalls).toBe(1);
+
+    await expect(fetchPluginInfo('/jira', 'bad.plugin', answer('{}'))).rejects.toMatchObject({
+      reason: 'not-plugin-info',
+    });
   });
 });

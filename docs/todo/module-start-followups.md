@@ -19,14 +19,9 @@ that work (2b3e183) left these open on purpose:
 2. **A build that throws.** `CatalogService.build()` logs the error and waits for the next change or refresh, so the
    catalog stays incomplete and every open page polls it every 8 s until then. This was so before 4.2.1;
    `publishDone` now also keeps a read from claiming complete while modules are unread.
-3. **RichTip's target has no role.** `RichTip` (`src/main/frontend/src/ui/bits.tsx`) makes a `<span tabIndex=0>` so the
-   keyboard reaches the status code's tooltip; a focusable element with the generic role has no accessible name by
-   the spec, and axe flags it (`focus-order-semantics`).
-4. **An admin's rebuild costs a full re-serialisation at once.** `CatalogSnapshot.incomplete()` builds the snapshot
-   again (the index JSON and its SHA-256) only to flip `complete`, because `complete` is part of the hash
-   (`CatalogSnapshot.of`).
-5. **Duplicated test setup.** `failedModule` in `CatalogResourceTest` belongs next to `CatalogTestSupport.module`; the
-   start tests in `catalog.test.ts` route summary and index by hand next to the `server()` helper.
+3. ~~**RichTip's target has no role.**~~ *(Done: `RichTip` sets `role="button"` and `aria-pressed` when `clickPin` is enabled.)*
+4. ~~**An admin's rebuild costs a full re-serialisation at once.**~~ *(Done: `CatalogSnapshot.incomplete()` reuses index bytes and hash.)*
+5. ~~**Duplicated test setup.**~~ *(Done: shared via `CatalogTestSupport.failedModule`.)*
 
 ## Approach
 

@@ -80,6 +80,7 @@ angular.module('RAB')
 
                 if (services.length) {
                     _.each(services, function(service) {
+                        loadedServices[service.relativeResource] = true;
                         processWADL(service).done(resolvedWADL).always(handledWADL);
                     });
                 } else {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { annotationTokens, toLines, tokenize, tokenizeSource, type Token } from './javatokens';
+import { annotationTokens, splitSourceLines, toLines, tokenize, tokenizeSource, type Token } from '../lib/java-source';
 
 const show = (ts: Token[]) => ts.map((t) => (t.kind === 'space' ? t.text : `${t.kind}:${t.text}`)).join('|');
 const text = (ts: Token[]) => ts.map((t) => t.text).join('');
@@ -83,5 +83,21 @@ describe('javatokens review fixes', () => {
     expect(toks.some((t) => t.kind === 'kw' && t.text === 'return')).toBe(true);
     expect(toks.some((t) => t.kind === 'kw' && t.text === 'if')).toBe(true);
     expect(toks.some((t) => t.kind === 'str' && t.text === '"ok"')).toBe(true);
+  });
+
+  it('handles text blocks, scientific/hex numbers, nested calls in annotations, and backslash-newline parity', () => {
+    const numToks = show(tokenize('a=1e-5, b=0xFF_FFL'));
+    expect(numToks).toContain('num:1e-5');
+    expect(numToks).toContain('num:0xFF_FFL');
+
+    const nested = text(annotationTokens('@Ann(a=foo(1, 2), b=(3 + 4))', 100));
+    expect(nested).toBe('@Ann(a = foo(1, 2), b = (3 + 4))');
+
+    const slashed = text(annotationTokens('@Op(description="line1\\\\\\nline2_long_enough_to_split")', 25));
+    expect(slashed).toContain('"line1\\\\\\n" +');
+
+    const blockSrc = 'String s = """\nhello {\n""";';
+    const spl = splitSourceLines(blockSrc);
+    expect(spl.inTextBlock).toEqual([false, true, true]);
   });
 });

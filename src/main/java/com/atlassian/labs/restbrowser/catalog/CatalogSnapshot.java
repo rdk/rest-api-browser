@@ -4,14 +4,18 @@ import com.atlassian.labs.restbrowser.catalog.Model.ModuleEntry;
 import com.atlassian.labs.restbrowser.catalog.Model.Operation;
 import com.atlassian.labs.restbrowser.catalog.Model.OperationSpec;
 import com.atlassian.labs.restbrowser.catalog.Model.Param;
+import com.atlassian.labs.restbrowser.json.Json;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 /**
  * An immutable catalog: the modules, the serialized index, and their hash.
@@ -29,20 +33,21 @@ public final class CatalogSnapshot {
     private final int done;
     private final int total;
     private final List<ModuleEntry> modules;
-    private final List<Operation> operations;
+    private final Map<String, ModuleEntry> moduleIndex;
+    private final String operationsJson;
     private final byte[] index;
     private final String adminTag;
 
     private CatalogSnapshot(String hash, boolean complete, int done, int total, List<ModuleEntry> modules,
-                            List<Operation> operations, byte[] index) {
+                            Map<String, ModuleEntry> moduleIndex, String operationsJson, byte[] index) {
         this.hash = hash;
         this.complete = complete;
         this.done = done;
         this.total = total;
         this.modules = modules;
-        this.operations = operations;
+        this.moduleIndex = moduleIndex;
+        this.operationsJson = operationsJson;
         this.index = index;
-        // error details are node-specific, so they stay out of the shared hash; admins' ETag covers them
         StringBuilder errors = new StringBuilder(hash);
         for (ModuleEntry m : modules) {
             if (m.error() != null) {
@@ -54,12 +59,46 @@ public final class CatalogSnapshot {
 
     static CatalogSnapshot of(List<ModuleEntry> modules, List<Operation> operations, boolean complete, int done,
                               int total, String ownVersion) {
-        List<ModuleEntry> sortedModules = new ArrayList<>(modules);
-        sortedModules.sort(Comparator.comparing(ModuleEntry::id));
         List<Operation> sortedOps = new ArrayList<>(operations);
         sortedOps.sort(Comparator.comparing(Operation::key));
-        String operationsJson = operationsJson(sortedOps);
-        StringBuilder hashInput = new StringBuilder()
+        return fromSortedOperations(modules, operationsJson(sortedOps), complete, done, total, ownVersion);
+    }
+
+    /**
+     * Fast path for progressive catalog builds using pre-serialized per-operation JSON strings so incremental
+     * snapshots do not re-serialize previously built modules repeatedly.
+     */
+    static CatalogSnapshot ofPreserialized(List<ModuleEntry> modules, List<String> sortedOpJson,
+                                           boolean complete, int done, int total, String ownVersion) {
+        // Combine and verify deterministic key order using pre-serialized items
+        StringBuilder arr = new StringBuilder(Math.max(16, sortedOpJson.size() * 192)).append('[');
+        for (int i = 0; i < sortedOpJson.size(); i++) {
+            if (i > 0) {
+                arr.append(',');
+            }
+            arr.append(sortedOpJson.get(i));
+        }
+        arr.append(']');
+        return fromSortedOperations(modules, arr.toString(), complete, done, total, ownVersion);
+    }
+
+    private static CatalogSnapshot fromSortedOperations(List<ModuleEntry> modules, String operationsJson,
+                                                      boolean complete, int done, int total, String ownVersion) {
+        List<ModuleEntry> sortedModules = new ArrayList<>(modules);
+        sortedModules.sort(Comparator.comparing(ModuleEntry::id));
+        Map<String, ModuleEntry> byId = new HashMap<>(sortedModules.size() * 2);
+        for (ModuleEntry m : sortedModules) {
+            byId.put(m.id(), m);
+        }
+        String hash = computeHash(sortedModules, operationsJson, complete, ownVersion);
+        String index = "{\"format\":" + FORMAT + ",\"hash\":\"" + hash + "\",\"operations\":" + operationsJson + "}";
+        return new CatalogSnapshot(hash, complete, done, total, List.copyOf(sortedModules),
+                Map.copyOf(byId), operationsJson, index.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static String computeHash(List<ModuleEntry> sortedModules, String operationsJson,
+                                      boolean complete, String ownVersion) {
+        StringBuilder hashInput = new StringBuilder(operationsJson.length() + sortedModules.size() * 96 + 64)
                 .append("format=").append(FORMAT).append('\n')
                 .append("plugin=").append(ownVersion).append('\n')
                 .append("complete=").append(complete).append('\n');
@@ -69,18 +108,23 @@ public final class CatalogSnapshot {
                     String.valueOf(m.pluginName()), String.valueOf(m.pluginVersion()))).append('\n');
         }
         hashInput.append(operationsJson);
-        String hash = sha256(hashInput.toString()).substring(0, 24);
-        String index = "{\"format\":" + FORMAT + ",\"hash\":\"" + hash + "\",\"operations\":" + operationsJson + "}";
-        return new CatalogSnapshot(hash, complete, done, total, List.copyOf(sortedModules), List.copyOf(sortedOps),
-                index.getBytes(StandardCharsets.UTF_8));
+        return sha256(hashInput.toString()).substring(0, 24);
     }
 
-    /** The same catalog marked incomplete: a rebuild has started. */
+    /**
+     * Marks this catalog incomplete (e.g. when a manual refresh starts) without re-sorting or re-serializing any
+     * operations. Safe to run under {@code synchronized (stalePlugins)}.
+     */
     CatalogSnapshot incomplete(String ownVersion) {
-        return complete ? of(modules, operations, false, done, total, ownVersion) : this;
+        if (!complete) {
+            return this;
+        }
+        String newHash = computeHash(modules, operationsJson, false, ownVersion);
+        String newIndex = "{\"format\":" + FORMAT + ",\"hash\":\"" + newHash + "\",\"operations\":" + operationsJson + "}";
+        return new CatalogSnapshot(newHash, false, done, total, modules, moduleIndex,
+                operationsJson, newIndex.getBytes(StandardCharsets.UTF_8));
     }
 
-    /** The ETag base for admins: the hash plus the error details only admins see. */
     public String adminTag() {
         return adminTag;
     }
@@ -101,9 +145,9 @@ public final class CatalogSnapshot {
         return total;
     }
 
-    /** The module with this id, if the catalog has it. */
-    public java.util.Optional<ModuleEntry> module(String id) {
-        return modules.stream().filter(m -> m.id().equals(id)).findFirst();
+    /** O(1) lookup of the module with this id. */
+    public Optional<ModuleEntry> module(String id) {
+        return id == null ? Optional.empty() : Optional.ofNullable(moduleIndex.get(id));
     }
 
     public List<ModuleEntry> modules() {
@@ -124,15 +168,11 @@ public final class CatalogSnapshot {
         return index.length;
     }
 
-    /**
-     * The summary document for one user. Plugin versions and error details are for admins only.
-     */
     public String summary(String productName, String productVersion, String productBuild, String baseUrl,
                           boolean admin) {
         return summary(productName, productVersion, productBuild, baseUrl, admin, false);
     }
 
-    /** The summary document; sysadmin tells the UI whether its user may trigger a rebuild. */
     public String summary(String productName, String productVersion, String productBuild, String baseUrl,
                           boolean admin, boolean sysadmin) {
         Json j = new Json().beginObject()
@@ -166,39 +206,44 @@ public final class CatalogSnapshot {
         return j.endArray().endObject().toString();
     }
 
+    static String serializeOperation(Operation op) {
+        OperationSpec s = op.spec();
+        Json j = new Json().beginObject()
+                .field("key", op.key()).field("module", op.moduleId())
+                .field("method", s.method()).field("path", s.path())
+                .strings("consumes", s.consumes()).strings("produces", s.produces())
+                .name("params").beginArray();
+        for (Param p : s.params()) {
+            j.beginObject().field("name", p.name()).field("in", p.in()).field("type", p.type())
+                    .field("required", p.required()).optional("default", p.defaultValue());
+            if (p.options() != null && !p.options().isEmpty()) {
+                j.strings("options", p.options());
+            }
+            if (p.repeating()) {
+                j.field("repeating", true);
+            }
+            j.optional("description", p.description());
+            j.optional("javaType", p.javaType());
+            j.endObject();
+        }
+        j.endArray().optional("access", s.access());
+        if (s.deprecated()) {
+            j.field("deprecated", true);
+        }
+        j.optional("bodyType", s.bodyType())
+                .optional("bodyJavaType", s.bodyJavaType())
+                .optional("returnType", s.returnType())
+                .optional("returnJavaType", s.returnJavaType())
+                .optional("summary", s.summary())
+                .optional("description", s.description())
+                .endObject();
+        return j.toString();
+    }
+
     static String operationsJson(List<Operation> operations) {
         Json j = new Json().beginArray();
         for (Operation op : operations) {
-            OperationSpec s = op.spec();
-            j.beginObject()
-                    .field("key", op.key()).field("module", op.moduleId())
-                    .field("method", s.method()).field("path", s.path())
-                    .strings("consumes", s.consumes()).strings("produces", s.produces())
-                    .name("params").beginArray();
-            for (Param p : s.params()) {
-                j.beginObject().field("name", p.name()).field("in", p.in()).field("type", p.type())
-                        .field("required", p.required()).optional("default", p.defaultValue());
-                if (p.options() != null && !p.options().isEmpty()) {
-                    j.strings("options", p.options());
-                }
-                if (p.repeating()) {
-                    j.field("repeating", true);
-                }
-                j.optional("description", p.description());
-                j.optional("javaType", p.javaType());
-                j.endObject();
-            }
-            j.endArray().optional("access", s.access());
-            if (s.deprecated()) {
-                j.field("deprecated", true);
-            }
-            j.optional("bodyType", s.bodyType())
-                    .optional("bodyJavaType", s.bodyJavaType())
-                    .optional("returnType", s.returnType())
-                    .optional("returnJavaType", s.returnJavaType())
-                    .optional("summary", s.summary())
-                    .optional("description", s.description())
-                    .endObject();
+            j.raw(serializeOperation(op));
         }
         return j.endArray().toString();
     }

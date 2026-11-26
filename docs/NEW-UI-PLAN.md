@@ -1,9 +1,6 @@
 # New UI: plan
 
-Status: step 0 (spike) done: the Jersey runtime model works on Jira 11.3.13 and Confluence 10.2.20 and matches every
-WADL that loads. Step 1 is implemented (backend, `/catalog` API, Preact page, `src/test/product` checks). Draft,
-reviewed once (Gemini 4 Neon, notes worked in). The classic AngularJS UI stays at its URL, unchanged; the new UI gets
-its own page.
+Status: implemented and shipped (steps 0–3 complete: Jersey runtime model, `/catalog` & `/code` REST APIs, CFR & Vineflower decompilation, Preact + TypeScript UI at `/plugins/servlet/rest-api-browser`, `llms.txt`, and `src/test/product` checks). The classic AngularJS UI stays at `/plugins/servlet/restbrowser`.
 
 **[verify]** marks an assumption about the Atlassian platform that the step 0 spike confirms or refutes.
 

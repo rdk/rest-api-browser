@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { annotationTokens, splitSourceLines, tokenizeSource } from './javatokens';
 import {
-  classLabel, createRefContext, extractAnnotationClassMap, extractClassOutline, fallbackJavaType, findMethodHeaderLine,
-  linkAnnotationTokens, linkSourceLine, linkSourceTokens, matchOutlineEndpoints, normalizeRestPath, parseJavaTypeParts,
-} from './javarefs';
+  annotationTokens, classLabel, createRefContext, extractAnnotationClassMap, extractClassOutline,
+  findEnclosingOutlineLine, findMethodHeaderLine, linkAnnotationTokens, linkSourceLine, linkSourceTokens,
+  normalizeRestPath, parseJavaTypeParts, splitSourceLines, tokenizeSource,
+} from '../lib/java-source';
+import { fallbackJavaType, matchOutlineEndpoints } from './restoutline';
 import { shortJava } from './details';
 import type { Module, Operation } from './types';
 
@@ -326,5 +327,165 @@ describe('javarefs', () => {
     expect(fullSpans.find((s) => s.text === 'RestUsageInfoResponse')?.target).toBe('com.example.usage.RestUsageInfoResponse');
     expect(fullSpans.find((s) => s.text === '@io.swagger.v3.oas.annotations.media.Schema')?.target)
       .toBe('io.swagger.v3.oas.annotations.media.Schema');
+  });
+
+  it('ignores header comments before imports, ignores static wildcard for types, avoids annotation regex ReDoS, and stops qualified chains at methods', () => {
+    const headerSrc = [
+      '/* License { header } */',
+      'package com.example;',
+      'import static com.example.Const.*;',
+      'import com.example.dto.Item;',
+      'public class C {',
+      '    Item x = com.example.dto.Item.create();',
+      '    // @Path("ignored")',
+      '    @GET @Path("real")',
+      '    public void deepIndentedMethod(@Ann(")") String s) {}',
+      '}',
+    ].join('\n');
+    const ctx = createRefContext(headerSrc, 'com.example.C');
+    expect(ctx.wildcards).toEqual([]);
+    expect(ctx.explicit.get('Item')).toBe('com.example.dto.Item');
+    const spans = linkSourceTokens(tokenizeSource(headerSrc), headerSrc, 'com.example.C');
+    expect(spans.some((s) => s.text === 'create' && s.target)).toBe(false);
+    expect(spans.some((s) => s.text === 'Item' && s.target === 'com.example.dto.Item')).toBe(true);
+
+    const outline = extractClassOutline(headerSrc.split('\n'));
+    expect(outline).toEqual([
+      { kind: 'method', name: 'deepIndentedMethod', params: '(String)', returns: 'void', visibility: 'public', isStatic: false, httpMethod: 'GET', restPath: 'real', fullRestPath: 'real', line: 8, depth: 0 },
+    ]);
+
+    const t0 = performance.now();
+    const evilAnn = '@pkg.' + 'A$'.repeat(120) + 'End';
+    extractAnnotationClassMap(evilAnn);
+    expect(performance.now() - t0).toBeLessThan(25);
+  });
+
+  it('handles nested regex quantifiers in normalizeRestPath, multiline Spring array mappings, text-block exits, and block-comment closing lines', () => {
+    expect(normalizeRestPath('/issue/{id: [0-9]{1,3}}/x/')).toBe('issue/{}/x');
+
+    const lines = [
+      '@Path("/root")',
+      'public class TextAndSpringResource {',
+      '    @GetMapping(',
+      '        value = {"/items/{id: [0-9]{1,3}}"}',
+      '    )',
+      '    public String items() {',
+      '        String q = """',
+      '            { "notAMethod": true }',
+      '            public void fake() {}',
+      '            """;',
+      '        return q;',
+      '    }',
+      '    /* comment */ public void afterBlockComment() {}',
+      '    /* multi',
+      '       line */ public void sameLineAfterClose() {}',
+      '    public void afterTextBlock() {}',
+      '}',
+    ];
+    // Clean single-line @Path multiline form separately
+    const multilinePathLines = [
+      '@Path(',
+      '    "/root"',
+      ')',
+      'public class Rooted {',
+      '    @GetMapping(',
+      '        "/ping"',
+      '    )',
+      '    public String ping() { return "ok"; }',
+      '}',
+    ];
+    expect(extractClassOutline(multilinePathLines)).toEqual([
+      { kind: 'method', name: 'ping', params: '()', returns: 'String', visibility: 'public', isStatic: false, httpMethod: 'GET', restPath: '/ping', fullRestPath: 'root/ping', line: 7, depth: 0 },
+    ]);
+
+    const outline = extractClassOutline(lines);
+    expect(outline.map((o) => ({ name: o.name, httpMethod: o.httpMethod, restPath: o.restPath, line: o.line }))).toEqual([
+      { name: 'items', httpMethod: 'GET', restPath: '/items/{id: [0-9]{1,3}}', line: 5 },
+      { name: 'afterBlockComment', httpMethod: undefined, restPath: undefined, line: 12 },
+      { name: 'sameLineAfterClose', httpMethod: undefined, restPath: undefined, line: 14 },
+      { name: 'afterTextBlock', httpMethod: undefined, restPath: undefined, line: 15 },
+    ]);
+    expect(findMethodHeaderLine(lines, 'sameLineAfterClose')).toBe(14);
+    expect(findMethodHeaderLine(lines, 'fake')).toBe(-1);
+
+    const textBlockExitLines = [
+      'public class Tb {',
+      '    public void first() {',
+      '        String s = """',
+      '            body',
+      '            """; }',
+      '    public void afterTextClose() {}',
+      '}',
+    ];
+    expect(extractClassOutline(textBlockExitLines).map((o) => o.name)).toEqual(['first', 'afterTextClose']);
+    expect(findMethodHeaderLine(textBlockExitLines, 'afterTextClose')).toBe(5);
+    expect(findMethodHeaderLine(['String q = """', '""" public void inlineAfterClose() {}'], 'inlineAfterClose')).toBe(1);
+    const tbSrc = textBlockExitLines.join('\n');
+    const tbSplit = splitSourceLines(tbSrc);
+    const tbCtx = createRefContext(tbSrc, 'Tb');
+    const insideSpans = linkSourceLine(tbSplit.lines[3], tbSplit.inComment[3], tbCtx, tbSplit.inTextBlock[3]);
+    expect(insideSpans.filter((s) => s.target)).toHaveLength(0);
+    const exitSpans = linkSourceLine('""" + Helper.make()', false, tbCtx, true);
+    expect(exitSpans.some((s) => s.kind === 'str' && s.text === '"""')).toBe(true);
+    expect(exitSpans.some((s) => s.target && s.text === 'Helper')).toBe(true);
+  });
+
+  it('links all-caps nested classes (Outer.DTO), normalizes CRLF, reuses ScannedSource, and handles uppercase/C-array params and package-private ctors', () => {
+    const crlf = [
+      'package com.example;',
+      'public class Outer {',
+      '    Outer(String ID, int matrix[]) {',
+      '    }',
+      '    strictfp double compute(double X) {',
+      '        Outer.DTO dto = null;',
+      '        return X;',
+      '    }',
+      '}',
+    ].join('\r\n');
+    const scanned = splitSourceLines(crlf);
+    expect(scanned.lines.every((l) => !l.includes('\r'))).toBe(true);
+
+    const outline = extractClassOutline(scanned);
+    expect(outline).toEqual([
+      { kind: 'ctor', name: 'Outer', params: '(String, int[])', returns: '', visibility: 'package', isStatic: false, line: 2, depth: 0 },
+      { kind: 'method', name: 'compute', params: '(double)', returns: 'double', visibility: 'package', isStatic: false, line: 4, depth: 0 },
+    ]);
+    expect(findMethodHeaderLine(scanned, 'Outer', 2)).toBe(2);
+    expect(findMethodHeaderLine(scanned, 'compute', 1)).toBe(4);
+    expect(findEnclosingOutlineLine(outline, 1)).toBe(-1);
+    expect(findEnclosingOutlineLine(outline, 3)).toBe(2);
+    expect(findEnclosingOutlineLine(outline, 6)).toBe(4);
+
+    const spans = linkSourceTokens(
+      tokenizeSource(scanned.lines.join('\n')),
+      scanned.lines.join('\n'),
+      'com.example.Outer',
+      ['com.example.Outer$DTO'],
+    );
+    expect(spans.find((s) => s.text === 'Outer.DTO')?.target).toBe('com.example.Outer$DTO');
+  });
+
+  it('does not confuse static enum constants like HttpMethod.GET with imported annotations and includes nested types in enclosing outline lookup', () => {
+    const src = [
+      'package com.example;',
+      'import jakarta.ws.rs.GET;',
+      'import com.example.HttpMethod;',
+      'public class Client {',
+      '    public void call() { send(HttpMethod.GET); }',
+      '    public static class Nested {',
+      '        int x;',
+      '    }',
+      '}',
+    ].join('\n');
+    const ctx = createRefContext(src, 'com.example.Client', ['com.example.HttpMethod', 'jakarta.ws.rs.GET']);
+    const callSpans = linkSourceLine('    public void call() { send(HttpMethod.GET); }', false, ctx);
+    expect(callSpans.filter((s) => s.target && s.text.includes('GET'))).toEqual([]);
+    expect(callSpans.find((s) => s.text === 'HttpMethod')?.target).toBe('com.example.HttpMethod');
+    expect(linkSourceTokens(tokenizeSource(src), src, 'com.example.Client', ['com.example.HttpMethod', 'jakarta.ws.rs.GET'])
+      .some((s) => s.target?.includes('HttpMethod$GET'))).toBe(false);
+
+    const outline = extractClassOutline(splitSourceLines(src));
+    const nestedLine = outline.find((o) => o.kind === 'type' && o.name === 'Nested')!.line;
+    expect(findEnclosingOutlineLine(outline, nestedLine + 1)).toBe(nestedLine);
   });
 });

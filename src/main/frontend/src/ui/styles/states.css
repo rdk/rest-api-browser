@@ -1,0 +1,74 @@
+/*
+ * Interactive state overrides & user motion preferences.
+ * Loaded last so active/copied/failed/selected states beat :where(:hover) rules cleanly.
+ */
+
+.rab-n-menu-choice.checked {
+  border-color: var(--ds-border-selected, #0c66e4);
+  background: var(--ds-background-selected, #e9f2ff);
+  color: var(--ds-text-selected, #0c66e4);
+}
+
+.rab-n-pill.on {
+  background: var(--rab-grad-success);
+  border-color: transparent;
+  color: var(--rab-on-brand);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--rab-success-bold) 32%, transparent);
+}
+.rab-n-pill.on:hover {
+  box-shadow: 0 2px 7px color-mix(in srgb, var(--rab-success-bold) 36%, transparent);
+}
+
+.rab-n-copy.copied,
+.rab-n-url-group .rab-n-copy.copied {
+  background: var(--rab-bg-success);
+  border-color: color-mix(in srgb, var(--rab-success) 40%, var(--rab-border));
+  color: var(--rab-success);
+}
+.rab-n-copy.failed,
+.rab-n-url-group .rab-n-copy.failed {
+  background: var(--rab-bg-danger);
+  border-color: color-mix(in srgb, var(--rab-danger) 40%, var(--rab-border));
+  color: var(--rab-danger);
+}
+
+.rab-n-quiet.copied {
+  color: var(--rab-success);
+  background: none;
+  border-color: transparent;
+}
+.rab-n-quiet.failed {
+  color: var(--rab-danger);
+  background: none;
+  border-color: transparent;
+}
+.rab-n-quiet.rab-n-copy:is(.copied, .failed):hover {
+  background: var(--rab-hover);
+}
+
+.rab-n-tool.on { color: var(--rab-link); background: var(--rab-selected); }
+.rab-n-tool.done { color: var(--rab-success); }
+.rab-n-tool.failed { color: var(--rab-danger); }
+
+.rab-n-outline-btn.on { color: var(--rab-info); background: var(--rab-selected); }
+
+.rab-n-modal-hbtn.on { background: var(--rab-topbar-glass-hover); color: var(--rab-topbar-fg); }
+.rab-n-modal-hbtn.done { background: var(--rab-modal-done-bg); color: var(--rab-topbar-fg); }
+.rab-n-modal-hbtn.failed { background: var(--rab-modal-failed-bg); color: var(--rab-topbar-fg); }
+
+.rab-n-modal-win-tools .rab-n-tool.on,
+.rab-n-modal-win-tools .rab-n-tool.on:hover:not(:disabled) {
+  background: var(--rab-topbar-glass-hover);
+  color: var(--rab-topbar-fg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rab-n, .rab-n *, .rab-n *::before, .rab-n *::after {
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .rab-n .rab-n-welcome-card:hover { transform: none; }
+  .rab-n .rab-n-card, .rab-n .rab-n-check, .rab-n .rab-n-class-tip, .rab-n .rab-n-uitip { animation: none; }
+  .rab-n :is(.rab-n-about, .rab-n-tip) { transform: none; }
+  .rab-n .rab-n-spinner { animation-duration: 1.8s; }
+}

@@ -1,6 +1,17 @@
 import { Fragment, type ComponentChildren } from 'preact';
-import { useEffect, useRef, useState } from 'preact/hooks';
-import { tipProps } from '../core/uitips';
+import { useEffect, useId, useRef, useState } from 'preact/hooks';
+import { tipProps, type UiTipSpec } from '../core/uitips';
+import { ESCAPE_PRIORITY, isInsideInert, useEscape } from '../lib/overlay';
+
+export interface MenuChoice {
+  id: string;
+  label: string;
+  icon: ComponentChildren;
+  checked: boolean;
+  onSelect: () => void;
+  testId?: string;
+  tip?: UiTipSpec;
+}
 
 export interface MenuItem {
   id: string;
@@ -20,73 +31,94 @@ export interface MenuItem {
   checked?: boolean;
   /** Choosing it leaves the menu open (a skin, to compare them), like the choices row. */
   keepOpen?: boolean;
-  /** A row of small choices with icons instead of one item (light, dark, system); label and onSelect are unused. */
-  choices?: { id: string; label: string; icon: ComponentChildren; checked: boolean; onSelect: () => void; testId?: string }[];
+  /** A row of small choices with icons instead of one item; label and onSelect are unused. */
+  choices?: MenuChoice[];
 }
 
 /**
- * One button that opens a menu below it. The keyboard works as in any menu: the arrows, Home and End move (Left and
- * Right inside a row of choices), Enter and Space pick, Escape and Tab close; a click outside closes it too.
+ * One button that opens a menu below it. The keyboard works as in any menu: Up/Down moves vertically (treating
+ * a horizontal choices strip as a single row), Left/Right steps inside a choices row, Home/End jump to first/last,
+ * Enter and Space pick, Escape closes and focuses the trigger button, and Tab closes gracefully from the trigger.
  */
 export function Menu({ label, items }: { label: string; items: MenuItem[] }) {
   const [open, setOpen] = useState(false);
+  const menuId = useId();
   const button = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
-  const enabled = () => [...(menu.current?.querySelectorAll<HTMLElement>(':is([role=menuitem], [role=menuitemradio]):not([aria-disabled=true])') ?? [])];
 
-  useEffect(() => {
-    if (!open) return;
-    enabled()[0]?.focus();
-    const onDown = (e: PointerEvent) => {
-      const t = e.target as Node;
-      if (!menu.current?.contains(t) && !button.current?.contains(t)) setOpen(false);
-    };
-    const onEscape = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      e.preventDefault();
-      e.stopImmediatePropagation(); // it only closes the menu, nothing behind it
-      setOpen(false);
-      button.current?.focus();
-    };
-    document.addEventListener('pointerdown', onDown, true);
-    document.addEventListener('keydown', onEscape, true);
-    return () => {
-      document.removeEventListener('pointerdown', onDown, true);
-      document.removeEventListener('keydown', onEscape, true);
-    };
-  }, [open]);
+  const verticalStops = (): HTMLElement[] => {
+    const root = menu.current;
+    if (!root) return [];
+    const stops: HTMLElement[] = [];
+    for (const child of Array.from(root.children)) {
+      if (child.classList.contains('rab-n-menu-choices')) {
+        const picked = (child.querySelector('[role=menuitemradio][aria-checked=true]:not([aria-disabled=true])')
+          ?? child.querySelector('[role=menuitemradio]:not([aria-disabled=true])')) as HTMLElement | null;
+        if (picked) stops.push(picked);
+      } else if (
+        (child.getAttribute('role') === 'menuitem' || child.getAttribute('role') === 'menuitemradio')
+        && child.getAttribute('aria-disabled') !== 'true'
+      ) {
+        stops.push(child as HTMLElement);
+      }
+    }
+    return stops;
+  };
 
   const close = () => {
     setOpen(false);
     button.current?.focus();
   };
+
+  useEscape(open, () => {
+    if (isInsideInert(button.current)) return false;
+    close();
+    return true;
+  }, ESCAPE_PRIORITY.MENU);
+
+  useEffect(() => {
+    if (!open) return;
+    verticalStops()[0]?.focus();
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Node;
+      if (!menu.current?.contains(t) && !button.current?.contains(t)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', onDown, true);
+    return () => {
+      document.removeEventListener('pointerdown', onDown, true);
+    };
+  }, [open]);
+
   const onKey = (e: KeyboardEvent) => {
-    if (e.ctrlKey || e.metaKey || e.altKey) return; // the browser's shortcuts (Alt+Left is Back)
-    const list = enabled();
-    const i = list.indexOf(document.activeElement as HTMLElement);
-    const inRow = !!(document.activeElement as HTMLElement | null)?.closest('.rab-n-menu-choices');
-    if (e.key === 'Escape') {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const activeEl = document.activeElement as HTMLElement | null;
+    const choiceRow = activeEl?.closest('.rab-n-menu-choices');
+    const stops = verticalStops();
+    const currentStop = choiceRow
+      ? stops.find((s) => choiceRow.contains(s)) ?? null
+      : activeEl;
+    const i = currentStop ? stops.indexOf(currentStop) : -1;
+
+    if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && choiceRow) {
       e.preventDefault();
-      e.stopPropagation(); // Escape also cancels a running request; here it only closes the menu
-      close();
-    } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && inRow) {
+      const row = [...choiceRow.querySelectorAll<HTMLElement>('[role=menuitemradio]:not([aria-disabled=true])')];
+      const j = activeEl ? row.indexOf(activeEl) : 0;
+      if (row.length) row[(j + (e.key === 'ArrowRight' ? 1 : row.length - 1)) % row.length]?.focus();
+    } else if (e.key === ' ' && activeEl?.tagName === 'A') {
       e.preventDefault();
-      const row = [...(document.activeElement as HTMLElement).closest('.rab-n-menu-choices')!.querySelectorAll<HTMLElement>('[role=menuitemradio]')];
-      const j = row.indexOf(document.activeElement as HTMLElement);
-      row[(j + (e.key === 'ArrowRight' ? 1 : row.length - 1)) % row.length]?.focus();
-    } else if (e.key === ' ' && (document.activeElement as HTMLElement | null)?.tagName === 'A') {
-      e.preventDefault(); // a link item picks with Space too, like the buttons
-      (document.activeElement as HTMLElement).click();
+      activeEl.click();
     } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
-      const n = list.length;
+      const n = stops.length;
+      if (!n) return;
       const next = i < 0 ? (e.key === 'ArrowDown' ? 0 : n - 1) : (i + (e.key === 'ArrowDown' ? 1 : n - 1)) % n;
-      list[next]?.focus();
+      stops[next]?.focus();
     } else if (e.key === 'Home' || e.key === 'End') {
       e.preventDefault();
-      list[e.key === 'Home' ? 0 : list.length - 1]?.focus();
+      stops[e.key === 'Home' ? 0 : stops.length - 1]?.focus();
     } else if (e.key === 'Tab') {
       setOpen(false);
+      button.current?.focus();
     }
   };
 
@@ -97,6 +129,7 @@ export function Menu({ label, items }: { label: string; items: MenuItem[] }) {
         class={'rab-n-menu-button' + (open ? ' open' : '')}
         aria-haspopup="menu"
         aria-expanded={open}
+        aria-controls={open ? menuId : undefined}
         aria-label={label}
         {...tipProps({
           title: label,
@@ -107,10 +140,6 @@ export function Menu({ label, items }: { label: string; items: MenuItem[] }) {
           if (e.key === 'ArrowDown' && !open) {
             e.preventDefault();
             setOpen(true);
-          } else if (e.key === 'Escape' && open) {
-            e.preventDefault();
-            e.stopPropagation();
-            setOpen(false);
           }
         }}
         data-testid="menu-button"
@@ -122,7 +151,7 @@ export function Menu({ label, items }: { label: string; items: MenuItem[] }) {
         </svg>
       </button>
       {open && (
-        <div ref={menu} class="rab-n-menu" role="menu" aria-label={label} onKeyDown={onKey} data-testid="menu">
+        <div ref={menu} id={menuId} class="rab-n-menu" role="menu" aria-label={label} onKeyDown={onKey} data-testid="menu">
           {items.map((it) => (
             <Fragment key={it.id}>
               {it.group && <div class="rab-n-menu-sep" role="separator" />}
@@ -132,14 +161,7 @@ export function Menu({ label, items }: { label: string; items: MenuItem[] }) {
                   {it.choices.map((c) => (
                     <button key={c.id} role="menuitemradio" aria-checked={c.checked} tabIndex={-1}
                             class={'rab-n-menu-choice' + (c.checked ? ' checked' : '')}
-                            {...tipProps({
-                              title: `${c.label} colour mode`,
-                              body: c.id === 'light'
-                                ? 'Always use the light colour palette on this page.'
-                                : c.id === 'dark'
-                                  ? 'Always use the dark colour palette on this page.'
-                                  : 'Follow your operating system or browser colour scheme automatically.',
-                            })}
+                            {...tipProps(c.tip ?? { title: c.label, body: `Select ${c.label}.` })}
                             onClick={() => c.onSelect()} data-testid={c.testId}>
                       {c.icon}
                       <span>{c.label}</span>

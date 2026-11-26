@@ -7,7 +7,9 @@ interface Props {
   renderRow: (index: number) => ComponentChildren;
   /** Scrolled into view when it changes, or when revealKey changes (the same row again, after the user scrolled away). */
   activeIndex?: number;
-  revealKey?: number;
+  revealKey?: number | string;
+  /** Keep this many context rows above `activeIndex` when revealing it (e.g. 3 for source annotations). */
+  revealTopOffset?: number;
   /** A change scrolls the list back to its top (a new search). */
   resetKey?: string;
   /** A row kept rendered when the list scrolls away from it: the one with the list's tab stop, so it keeps the focus.
@@ -26,7 +28,7 @@ interface Props {
   overscan?: number;
   /** Set for a semantic list (the operations); code lines leave it out. */
   ariaLabel?: string;
-  /** Optional callback fired when the first visible row index changes on scroll. */
+  /** Optional callback fired when the first visible row index changes on scroll or programmatic reset/reveal. */
   onFirstChange?: (first: number) => void;
 }
 
@@ -38,21 +40,29 @@ const MAX_HEIGHT = 8_000_000;
  * without measuring, and a million rows cost as much as the 30 on screen. Past MAX_HEIGHT the scrollbar maps
  * proportionally onto the rows, so the end of a 20 MB response stays reachable.
  */
-export function VirtualList({ count, rowHeight, renderRow, activeIndex, revealKey, resetKey, keepIndex, keyOf, innerMinWidth, focusable,
-                             followIndex = true, className, overscan = 8, ariaLabel, onFirstChange }: Props) {
+export function VirtualList({
+  count, rowHeight, renderRow, activeIndex, revealKey, revealTopOffset, resetKey, keepIndex, keyOf,
+  innerMinWidth, focusable, followIndex = true, className, overscan = 8, ariaLabel, onFirstChange,
+}: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [first, setFirst] = useState(0);
+  const firstRef = useRef(0);
+  firstRef.current = first;
+  const programmaticTopRef = useRef<number | null>(null);
   const [, setTick] = useState(0);
   const [height, setHeight] = useState(400);
   const onFirstRef = useRef(onFirstChange);
   onFirstRef.current = onFirstChange;
+  const tickRaf = useRef(0);
 
   const total = count * rowHeight;
   const scrollHeight = Math.min(total, MAX_HEIGHT);
+  const scrollHeightRef = useRef(scrollHeight);
+  scrollHeightRef.current = scrollHeight;
   // scrollTop -> virtual offset; 1 below the cap
   const scale = total > MAX_HEIGHT ? (total - height) / Math.max(1, scrollHeight - height) : 1;
 
-  const firstFor = (scrollTop: number) => Math.max(0, Math.min(count - 1, Math.floor((scrollTop * scale) / rowHeight)));
+  const firstFor = (scrollTop: number) => Math.max(0, Math.min(Math.max(0, count - 1), Math.floor((scrollTop * scale) / rowHeight)));
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -64,10 +74,18 @@ export function VirtualList({ count, rowHeight, renderRow, activeIndex, revealKe
     return () => observer?.disconnect();
   }, []);
 
-  // a list that shrank under the current scroll position must not render empty until the next scroll event
+  useEffect(() => () => {
+    if (tickRaf.current) cancelAnimationFrame(tickRaf.current);
+  }, []);
+
+  // A list that shrank under the current scroll position must not render empty until the next scroll event.
   useLayoutEffect(() => {
     const el = ref.current;
-    if (el) setFirst(firstFor(el.scrollTop));
+    if (el) {
+      const f = firstFor(el.scrollTop);
+      firstRef.current = f;
+      setFirst(f);
+    }
   }, [count, rowHeight, scale]);
 
   const firstReset = useRef(resetKey);
@@ -76,36 +94,56 @@ export function VirtualList({ count, rowHeight, renderRow, activeIndex, revealKe
     if (!el || firstReset.current === resetKey) return;
     firstReset.current = resetKey;
     el.scrollTop = 0;
+    programmaticTopRef.current = null;
+    firstRef.current = 0;
     setFirst(0);
+    onFirstRef.current?.(0);
   }, [resetKey]);
 
   useEffect(() => {
     const el = ref.current;
-    // a hidden list (display: none, behind a box on the whole screen) has no height to scroll within; it scrolls
-    // once it is shown again (height is a dependency)
+    // A hidden list (display: none, behind a box on the whole screen) has no height to scroll within;
+    // it scrolls once it is shown again (height is a dependency).
     if (!el || !el.clientHeight || activeIndex === undefined || activeIndex < 0) return;
-    // compare in virtual coordinates (the rows'), then convert back to the scaled scroll position
-    const vTop = activeIndex * rowHeight;
-    const vScroll = el.scrollTop * scale;
-    if (vTop < vScroll) el.scrollTop = vTop / scale;
-    else if (vTop + rowHeight > vScroll + el.clientHeight) el.scrollTop = (vTop + rowHeight - el.clientHeight) / scale;
-    setFirst(firstFor(el.scrollTop));
-  }, [followIndex ? activeIndex : -2, revealKey, rowHeight, scale, height > 0]);
+    const prevTop = el.scrollTop;
+    if (revealTopOffset !== undefined) {
+      const maxScroll = Math.max(0, scrollHeightRef.current - el.clientHeight);
+      const targetTop = Math.max(0, ((activeIndex - revealTopOffset) * rowHeight) / scale);
+      el.scrollTop = Math.min(maxScroll, targetTop);
+    } else {
+      const vTop = activeIndex * rowHeight;
+      const vScroll = el.scrollTop * scale;
+      if (vTop < vScroll) el.scrollTop = vTop / scale;
+      else if (vTop + rowHeight > vScroll + el.clientHeight) el.scrollTop = (vTop + rowHeight - el.clientHeight) / scale;
+    }
+    if (el.scrollTop !== prevTop) {
+      programmaticTopRef.current = el.scrollTop;
+    }
+    const nextFirst = firstFor(el.scrollTop);
+    firstRef.current = nextFirst;
+    setFirst(nextFirst);
+  }, [followIndex ? activeIndex : -2, revealKey, revealTopOffset, rowHeight, scale, height > 0]);
 
   const onScroll = (e: Event) => {
-    const f = firstFor((e.currentTarget as HTMLDivElement).scrollTop);
-    if (f !== first) {
+    const top = (e.currentTarget as HTMLDivElement).scrollTop;
+    const f = firstFor(top);
+    const isProg = programmaticTopRef.current !== null && Math.abs(top - programmaticTopRef.current) <= 1;
+    programmaticTopRef.current = null;
+    if (f !== firstRef.current) {
+      firstRef.current = f;
       setFirst(f); // only when the window of rows moves, not on every pixel
-      onFirstRef.current?.(f);
-    } else if (scale !== 1) {
-      setTick((t) => t + 1); // scaled: the rows' offset follows every pixel
+      if (!isProg) onFirstRef.current?.(f);
+    } else if (scale !== 1 && !tickRaf.current) {
+      tickRaf.current = requestAnimationFrame(() => {
+        tickRaf.current = 0;
+        setTick((t) => t + 1);
+      });
     }
   };
 
   const visible = Math.ceil(height / rowHeight) + 1;
   const start = Math.max(0, first - overscan);
   const end = Math.min(count, first + visible + overscan);
-  // rows are placed relative to the first row's position in the (possibly scaled) scroll area
   const scrollTop = ref.current?.scrollTop ?? 0;
   const offset = scrollTop * (1 - scale);
   const rows = [];
@@ -116,10 +154,6 @@ export function VirtualList({ count, rowHeight, renderRow, activeIndex, revealKe
       {renderRow(i)}
     </div>
   );
-  // the kept row stays rendered when the list scrolls away from it, so a row with the keyboard focus keeps it. It sits
-  // where its index belongs (before the window, or after it), so the rows' order in the DOM never changes: a focused
-  // element that Preact moves (moveBefore) is scrolled back into view by Chrome and Edge, and the wheel could never
-  // take the list past it (insertBefore, where moveBefore is missing, would drop the focus instead)
   const keep = keepIndex !== undefined && keepIndex >= 0 && keepIndex < count && scale === 1 && (keepIndex < start || keepIndex >= end);
   if (keep && keepIndex! < start) rows.push(row(keepIndex!));
   for (let i = start; i < end; i++) rows.push(row(i));

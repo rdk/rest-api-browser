@@ -51,9 +51,16 @@ export function readTipAttrs(el: Pick<Element, 'getAttribute'> | null | undefine
  * so the tooltip can render each key in a `<kbd>` element.
  */
 export function splitShortcutKeys(shortcut: string): string[] {
-  return shortcut
+  const s = shortcut.trim();
+  if (!s) return [];
+  if (s === '+') return ['+'];
+  if (s.endsWith('++')) {
+    const head = s.slice(0, -2).split('+').map((x) => x.trim()).filter(Boolean);
+    return [...head, '+'];
+  }
+  return s
     .split('+')
-    .map((s) => s.trim())
+    .map((part) => part.trim())
     .filter(Boolean);
 }
 

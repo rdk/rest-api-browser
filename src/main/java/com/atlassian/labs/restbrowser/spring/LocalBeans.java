@@ -7,9 +7,9 @@ import com.atlassian.labs.restbrowser.catalog.ModuleDiscovery;
 import com.atlassian.labs.restbrowser.catalog.OperationDetails;
 import com.atlassian.labs.restbrowser.catalog.OperationSource;
 import com.atlassian.labs.restbrowser.catalog.ProductAdapter;
-import com.atlassian.labs.restbrowser.util.TextUtils;
 import com.atlassian.plugin.Plugin;
 import com.atlassian.plugin.PluginAccessor;
+import com.atlassian.plugin.PluginInformation;
 import com.atlassian.plugin.metadata.PluginMetadataManager;
 import com.atlassian.plugin.servlet.ServletModuleManager;
 import com.atlassian.sal.api.ApplicationProperties;
@@ -17,19 +17,29 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.util.List;
-import java.util.concurrent.atomic.AtomicReference;
 
 @Configuration
 public class LocalBeans {
 
     public static final String PLUGIN_KEY = "com.atlassian.labs.rest-api-browser";
 
-    // Velocity templates require this instance, because they can't call static methods
+    public static String pluginVersion(PluginAccessor pluginAccessor) {
+        if (pluginAccessor == null) {
+            return "";
+        }
+        try {
+            Plugin own = pluginAccessor.getPlugin(PLUGIN_KEY);
+            PluginInformation info = own == null ? null : own.getPluginInformation();
+            String version = info == null ? null : info.getVersion();
+            return version == null ? "" : version.trim();
+        } catch (RuntimeException | LinkageError e) {
+            return "";
+        }
+    }
+
     @Bean
-    @SuppressWarnings("squid:S2440")
-    public TextUtils textUtils() {
-        //noinspection InstantiationOfUtilityClass
-        return new TextUtils();
+    public ServletContextHolder servletContextHolder() {
+        return new ServletContextHolder();
     }
 
     @Bean
@@ -44,31 +54,32 @@ public class LocalBeans {
     }
 
     @Bean
-    public CatalogService catalogService(ModuleDiscovery discovery, ProductAdapter productAdapter,
-                                         EventPublisher eventPublisher, PluginAccessor pluginAccessor,
-                                         ServletModuleManager servletModuleManager) {
-        // the source needs the catalog's ServletContext, the catalog needs the source: tie the knot by reference
-        AtomicReference<CatalogService> self = new AtomicReference<>();
-        JerseyModelSource jersey = new JerseyModelSource(() -> servletModuleManager,
-                () -> self.get() == null ? null : self.get().servletContext());
-        CatalogService service = new CatalogService(discovery, List.of(jersey), productAdapter, eventPublisher,
+    public JerseyModelSource jerseyModelSource(ServletModuleManager servletModuleManager,
+                                               ServletContextHolder servletContextHolder) {
+        return new JerseyModelSource(() -> servletModuleManager, servletContextHolder::get);
+    }
+
+    @Bean
+    public CatalogService catalogService(ModuleDiscovery discovery, JerseyModelSource jersey,
+                                         ProductAdapter productAdapter, EventPublisher eventPublisher,
+                                         PluginAccessor pluginAccessor, ServletContextHolder servletContextHolder) {
+        return new CatalogService(discovery, List.of(jersey), productAdapter, eventPublisher,
                 () -> {
-                    Plugin own = pluginAccessor.getPlugin(PLUGIN_KEY);
-                    return own == null ? "unknown" : own.getPluginInformation().getVersion();
-                });
-        self.set(service);
-        return service;
+                    String ver = pluginVersion(pluginAccessor);
+                    return ver.isEmpty() ? "unknown" : ver;
+                },
+                servletContextHolder);
     }
 
     @Bean
-    public OperationDetails operationDetails(ModuleDiscovery discovery, CatalogService catalogService,
+    public OperationDetails operationDetails(ModuleDiscovery discovery, JerseyModelSource jersey,
                                              ProductAdapter productAdapter) {
-        return new OperationDetails(discovery, catalogService::jersey, productAdapter);
+        return new OperationDetails(discovery, () -> jersey, productAdapter);
     }
 
     @Bean
-    public OperationSource operationSource(ModuleDiscovery discovery, CatalogService catalogService,
+    public OperationSource operationSource(ModuleDiscovery discovery, JerseyModelSource jersey,
                                            PluginAccessor pluginAccessor, ProductAdapter productAdapter) {
-        return new OperationSource(discovery, catalogService::jersey, pluginAccessor, productAdapter);
+        return new OperationSource(discovery, () -> jersey, pluginAccessor, productAdapter);
     }
 }

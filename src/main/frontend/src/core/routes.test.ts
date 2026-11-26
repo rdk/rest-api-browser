@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createMatcher } from './routes';
-import { splitSegments } from './template';
+import { findTemplates, pathParts, splitSegments } from '../lib/jaxrs-router';
 import { index, module, op, summary } from './fixtures';
 
 const s = summary([module('jira:api2', 'api/2'), module('jira:api', 'api'), module('x:files', 'files/1')]);
@@ -144,5 +144,26 @@ describe('routes second review', () => {
     expect(mm.match('/rest/api/g')?.values.p).toBe('');
     expect(mm.match('/rest/api/h/x')?.values.id).toBe('x');
     expect(mm.match('/rest/api/h/x/y')).toBeNull();
+  });
+
+  it('parses pathological unclosed templates in linear time and matches Unicode search words', () => {
+    const t0 = performance.now();
+    const evil = '{a: ' + 'x '.repeat(2500);
+    expect(findTemplates(evil)).toEqual([]);
+    const nestedEvil = '{a:{a:'.repeat(2500);
+    expect(findTemplates(nestedEvil)).toEqual([]);
+    expect(performance.now() - t0).toBeLessThan(25);
+    expect(findTemplates('a/{id: [0-9]{1,3}}/{name}')).toHaveLength(2);
+    expect(splitSegments('files/{p: a\\/b}/{name}')).toEqual(['files', '{p: a\\/b}', '{name}']);
+    expect(pathParts('café/über', { words: ['über'] }).some((p) => p.hit && p.text === 'über')).toBe(true);
+
+    // Trailing slash on op.path and sorted catch-all rests (restricted beats Java-fallback wildcard)
+    const mm = createMatcher(summary([module('m', 'api')]), index([
+      op('m', 'GET', 'items/'),
+      op('m', 'GET', 'files/{all: (?i).*}'),
+      op('m', 'GET', 'files/{path: docs/.+}'),
+    ]));
+    expect(mm.match('/rest/api/items')?.op.path).toBe('items/');
+    expect(mm.match('/rest/api/files/docs/readme')?.op.path).toBe('files/{path: docs/.+}');
   });
 });

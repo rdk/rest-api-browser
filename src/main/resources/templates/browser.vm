@@ -1,47 +1,53 @@
-#* @vtlvariable name="textUtils" type="com.opensymphony.util.TextUtils" *#
 #* @vtlvariable name="webResourceManager" type="com.atlassian.plugin.webresource.WebResourceManager" *#
-#* @vtlvariable name="restDescriptors" type="java.util.List<com.atlassian.labs.restbrowser.rest.model.RestDescriptor>" *#
-#* @vtlvariable name="applicationProperties" type="com.atlassian.sal.api.ApplicationProperties" *#
+#* @vtlvariable name="baseUrl" type="java.lang.String" *#
+#* @vtlvariable name="isBamboo" type="java.lang.Boolean" *#
+#* @vtlvariable name="rabConfigBase64" type="java.lang.String" *#
 #* @vtlvariable name="devMode" type="java.lang.String" *#
 <html>
   <head>
     <title>REST API Browser</title>
     <meta name="decorator" content="atl.general">
     $webResourceManager.requireResource("com.atlassian.labs.rest-api-browser:assets")
-    <script type="text/javascript"></script>
   </head>
   <body class="page-type-admin">
+    <div id="rab-config" hidden data-config-b64="$rabConfigBase64"></div>
     <script>
-window.RAB={};
-#if($applicationProperties.displayName == "Bamboo")
-window.RAB.originalHash = location.hash;
-jQuery._data(jQuery(window)[0],'events')['hashchange'] = _.filter(jQuery._data(jQuery(window)[0],'events')['hashchange'], function(d){ return !/m\.Adapter\.trigger/.test(d.handler.toString())});
+window.RAB = window.RAB || {};
+(function() {
+    var el = document.getElementById('rab-config');
+    var b64 = el ? (el.getAttribute('data-config-b64') || '') : '';
+    var cfg = {};
+    if (b64) {
+        var bin = atob(b64);
+        var bytes = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        cfg = JSON.parse(new TextDecoder('utf-8').decode(bytes));
+    }
+#if($isBamboo)
+    window.RAB.originalHash = location.hash;
+    var events = jQuery._data(jQuery(window)[0], 'events');
+    if (events && events['hashchange']) {
+        events['hashchange'] = events['hashchange'].filter(function(d){ return !/m\.Adapter\.trigger/.test(d.handler.toString()); });
+    }
 #end
-RAB.product = "$applicationProperties.displayName";
-RAB.rest = {};
-RAB.rest.services = [
-    #foreach($descriptor in $restDescriptors)
-        {
-            "wadl":"$textUtils.htmlEncode($applicationProperties.baseUrl)/rest${descriptor.restPath}/application.wadl",
-            "path":"$textUtils.htmlEncode($applicationProperties.baseUrl)/rest${descriptor.restPath}",
-            "relativeResource": "${descriptor.displayPath}"
-        }#if($velocityCount < $restDescriptors.size()),#end
-    #end
-];
+    RAB.product = cfg.product || '';
+    RAB.baseUrl = cfg.baseUrl || '';
+    RAB.rest = { services: cfg.services || [] };
+})();
     </script>
     <div id="rab" ng-app="RAB" ng-controller="SidebarCtrl">
         <header class="aui-page-header rab-header">
             <div class="aui-page-header">
                 <div class="aui-page-header-inner">
-                    <form class="aui">
-                        <input id="searchField" class="text rab-search" type="text" class="search" ng-model="searchQuery" placeholder="Search">
+                    <form class="aui" onsubmit="return false;">
+                        <input id="searchField" class="text rab-search" type="text" ng-model="searchQuery" placeholder="Search">
                         <input type="checkbox" id="publicOnlyFilter" name="publicOnlyFilter" class="checkbox" ng-model="publicOnly" />
                         <label for="publicOnlyFilter">Show only public APIs</label>
                     </form>
                     <div class="aui-page-header-actions">
                         <a ng-href="#/search/{{searchQuery | encodeQuery}}" ng-show="searchQuery">Link to filtered results</a>
                         <a class="rab-new-ui-link" id="rab-new-ui-link"
-                           href="$textUtils.htmlEncode($applicationProperties.baseUrl)/plugins/servlet/rest-api-browser"
+                           href="$baseUrl/plugins/servlet/rest-api-browser"
                            target="_blank" rel="noopener noreferrer"
                            title="Open the new REST API Browser in a new tab: faster, searchable, works on Confluence 10">Try the new UI<svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8h9.5M9 4.5L12.5 8 9 11.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
                     </div>
@@ -58,7 +64,7 @@ RAB.rest.services = [
                         <div class="aui-navgroup-inner">
                             <ul class="aui-nav" id="searchTextResults">
                                 <li ng-repeat="resource in resources | filter:searchQuery | showPublicOnly:publicOnly | unique:'name' | orderBy:'name'" ng-class='{"aui-nav-selected": selectCurrent()}'>
-                                    <a class="rab-sidebar-item" href="$applicationProperties.baseUrl/plugins/servlet/restbrowser#/resource/{{resource.key}}" title="{{resource.name}}" ng-bind="resource.name"></a>
+                                    <a class="rab-sidebar-item" ng-href="$baseUrl/plugins/servlet/restbrowser#/resource/{{resource.key}}" title="{{resource.name}}" ng-bind="resource.name"></a>
                                 </li>
                             </ul>
                         </div>
@@ -78,14 +84,11 @@ RAB.rest.services = [
         ## this is generated by running `grunt` in the assets/rab directory
         $webResourceManager.requireResource("com.atlassian.labs.rest-api-browser:assets-production")
     #end
-    #if($applicationProperties.displayName == "Bamboo")
+    #if($isBamboo)
     <script type="text/javascript">
-        // very stupid hack for Bamboo. Bamboo has a global hashchange listener that
-        // makes it close to impossible to provide any other hashchange listener.
-        // This hack does not solve the problem 100% unfortunately. When a page
-        // is initially loaded with a hash, links on the sidebar break.
+        // Work around Bamboo's global hashchange listener interfering with AngularJS routing on initial hash loads.
         jQuery(function(){
-            window.history.replaceState({},'REST API Browser','$applicationProperties.baseUrl/plugins/servlet/restbrowser'+window.RAB.originalHash);
+            window.history.replaceState({},'REST API Browser',(window.RAB.baseUrl||'')+'/plugins/servlet/restbrowser'+(window.RAB.originalHash||''));
         });
     </script>
     #end

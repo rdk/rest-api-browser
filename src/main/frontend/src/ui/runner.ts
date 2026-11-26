@@ -1,37 +1,11 @@
 import { isLoginAnswer } from '../core/catalog';
 import type { BuiltRequest } from '../core/request';
+import { responseBlob, type ResultKind, type RunResult } from '../core/responsetext';
 
-export type ResultKind = 'json' | 'xml' | 'html' | 'text' | 'binary' | 'empty';
-
-export interface RunResult {
-  method: string;
-  url: string;
-  status: number;
-  statusText: string;
-  ok: boolean;
-  headers: [string, string][];
-  /** The headers the app set on the request; the browser adds its own (cookies, User-Agent, …). */
-  requestHeaders: [string, string][];
-  /** The size of the request's body in bytes, when it had one (the browser sends it as Content-Length). */
-  requestBodyBytes?: number;
-  contentType: string;
-  durationMs: number;
-  size: number;
-  truncated: boolean;
-  /** How to show the body; 'binary' and 'empty' have no text. */
-  kind: ResultKind;
-  /** The body as text, in the charset of its Content-Type (UTF-8 when it names none the browser knows); not for binary or empty. */
-  text?: string;
-  /**
-   * The body's bytes as received (up to the cap), so a download saves them unchanged: binary and text bodies alike,
-   * none for an empty one. Whether a body is binary is `kind`, not whether this is set.
-   */
-  blob?: Blob;
-  sessionExpired: boolean;
-  error?: string;
-}
+export type { ResultKind, RunResult };
 
 const DEFAULT_CAP = 20 * 1024 * 1024;
+const ENCODER = new TextEncoder();
 
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
@@ -42,7 +16,15 @@ export function kindOf(contentType: string, size: number): ResultKind {
   // XML itself only: Office files (application/vnd.openxmlformats-...) have "xml" in their type but are zips
   if (ct === 'application/xml' || ct === 'text/xml' || ct.endsWith('+xml')) return 'xml';
   if (ct === 'text/html') return 'html';
-  if (ct.startsWith('text/') || ct === 'application/javascript') return 'text';
+  if (
+    ct.startsWith('text/')
+    || ct === 'application/javascript'
+    || ct === 'application/ecmascript'
+    || ct === 'application/x-www-form-urlencoded'
+    || ct === 'application/yaml'
+    || ct === 'application/x-yaml'
+    || ct === 'application/graphql'
+  ) return 'text';
   return 'binary';
 }
 
@@ -62,18 +44,22 @@ async function readCapped(res: Response, cap: number): Promise<{ chunks: Uint8Ar
   const chunks: Uint8Array[] = [];
   let size = 0;
   let truncated = false;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (size + value.length > cap) {
-      chunks.push(value.slice(0, cap - size));
-      size = cap;
-      truncated = true;
-      await reader.cancel().catch(() => undefined);
-      break;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (size + value.length > cap) {
+        chunks.push(value.slice(0, cap - size));
+        size = cap;
+        truncated = true;
+        await reader.cancel().catch(() => undefined);
+        break;
+      }
+      chunks.push(value);
+      size += value.length;
     }
-    chunks.push(value);
-    size += value.length;
+  } finally {
+    reader.releaseLock();
   }
   return { chunks, size, truncated };
 }
@@ -134,17 +120,15 @@ export function fetchEcho(baseUrl: string, result: RunResult, fetchFn: typeof fe
 
 // What a download should save: the bytes as received, or, for a result without them, the text as a Blob made on demand.
 export function downloadBlob(result: RunResult): Blob | null {
-  if (result.blob) return result.blob;
-  if (result.text !== undefined) return new Blob([result.text], { type: result.contentType });
-  return null;
+  return responseBlob(result);
 }
 
 function bodyBytes(body: string | FormData | undefined): number | undefined {
   if (body === undefined) return undefined;
-  if (typeof body === 'string') return new TextEncoder().encode(body).length;
+  if (typeof body === 'string') return ENCODER.encode(body).length;
   let total = 0;
   for (const [, v] of body.entries()) {
-    total += typeof v === 'string' ? new TextEncoder().encode(v).length : v.size;
+    total += typeof v === 'string' ? ENCODER.encode(v).length : v.size;
   }
   return total;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findRows, rowEnd, wrapRows } from './textrows';
+import { findRows, rowEnd, wrapRows } from '../lib/json-lines';
 
 const texts = (t: string, cols: number) => {
   const rows = wrapRows(t, cols);
@@ -28,6 +28,12 @@ describe('wrapRows', () => {
     expect(rows.count).toBe(10_000);
     expect(rows.starts[9_999]).toBe(999_900);
   });
+  it('guards NaN, non-positive, Infinity and fractional widths', () => {
+    expect(texts('ab\ncd', Number.NaN)).toEqual([[0, 'a'], [0, 'b'], [1, 'c'], [1, 'd']]);
+    expect(texts('ab', 0)).toEqual([[0, 'a'], [0, 'b']]);
+    expect(texts('abcdef', 2.9)).toEqual([[0, 'ab'], [0, 'cd'], [0, 'ef']]);
+    expect(texts('abcdef', Number.POSITIVE_INFINITY)).toEqual([[0, 'abcdef']]);
+  });
 });
 
 describe('findRows', () => {
@@ -40,5 +46,17 @@ describe('findRows', () => {
     expect(findRows(t, wrapRows(t, 100), 'a.b')).toEqual([0, 1]);
     expect(findRows(t, wrapRows(t, 100), '(')).toEqual([]);
     expect(findRows(t, wrapRows(t, 100), '')).toEqual([]);
+  });
+
+  it('reuses per-Rows lowercase cache across repeated searches and trims oversized buffers', () => {
+    const t = 'Alpha Beta\nGamma alpha';
+    const rows = wrapRows(t, 50);
+    expect(findRows(t, rows, 'alpha')).toEqual([0, 1]);
+    expect(findRows(t, rows, 'gamma')).toEqual([1]);
+
+    const large = Array.from({ length: 1_500 }, (_, i) => `line-${i}`).join('\n');
+    const wrapped = wrapRows(large, 20);
+    expect(wrapped.lines.buffer.byteLength).toBe(wrapped.lines.byteLength);
+    expect(wrapped.starts.buffer.byteLength).toBe(wrapped.starts.byteLength);
   });
 });

@@ -1,8 +1,11 @@
-import { useEffect, useId, useRef, useState } from 'preact/hooks';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
-import { pathParts } from '../core/pathparts';
+import { pathParts } from '../lib/jaxrs-router';
 import type { Check } from '../core/validate';
 import { tipProps, type UiTipSpec } from '../core/uitips';
+import { acquireInert, ESCAPE_PRIORITY, isInsideInert, onInertChange, useEscape } from '../lib/overlay';
+
+export { acquireInert };
 
 export const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -39,9 +42,17 @@ export function PathText({ path, prefix, words, rank }: { path: string; prefix?:
   );
 }
 
-/** The button that makes a box take the whole screen, and gives it back its place (Escape does too). */
-export function MaximizeButton({ on, onToggle, what, testId }: { on: boolean; onToggle: () => void; what: string; testId: string }) {
-  const label = on ? `Restore the ${what} (Esc)` : `Show the ${what} on the whole screen`;
+/** The button that makes a box take the whole screen, and gives it back its place (Escape unless overridden). */
+export function MaximizeButton({ on, onToggle, what, testId, shortcut, tip }: {
+  on: boolean; onToggle: () => void; what: string; testId: string; shortcut?: string; tip?: UiTipSpec;
+}) {
+  const resolvedShortcut = shortcut === undefined ? (on ? 'Esc' : undefined) : (shortcut || undefined);
+  const label = on
+    ? (resolvedShortcut ? `Restore the ${what} (${resolvedShortcut})` : `Restore the ${what}`)
+    : `Show the ${what} on the whole screen`;
+  const resolvedTip: UiTipSpec = tip ?? (on
+    ? { title: `Restore ${what}`, body: `Return the ${what} to its normal size.`, shortcut: resolvedShortcut }
+    : { title: `Maximize ${what}`, body: `Expand the ${what} to fill the viewport.` });
   return (
     <button
       class={'rab-n-tool' + (on ? ' on' : '')}
@@ -50,9 +61,7 @@ export function MaximizeButton({ on, onToggle, what, testId }: { on: boolean; on
       aria-pressed={on}
       data-testid={testId}
       data-state={on ? 'max' : 'normal'}
-      {...tipProps(on
-        ? { title: `Restore ${what}`, body: `Return the ${what} to its normal size.`, shortcut: 'Esc' }
-        : { title: `Maximize ${what}`, body: `Expand the ${what} to fill the viewport.` })}
+      {...tipProps(resolvedTip)}
     >
       <svg class="rab-n-svg" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
         <path d={on ? 'M6 2.5v3.5H2.5M13.5 6H10V2.5M10 13.5V10h3.5M2.5 10H6v3.5' : 'M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10'}
@@ -65,71 +74,110 @@ export function MaximizeButton({ on, onToggle, what, testId }: { on: boolean; on
 /** The key that pins a rich tooltip: Alt+P (by key position, so Option+P on a Mac works too). */
 export const isPinKey = (e: KeyboardEvent) => e.altKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyP';
 
-/**
- * Ref-counted `inert` guard for stacked overlays (e.g. maximized request pane + floating Classes window) so closing
- * the inner overlay never strips `inert` while an outer overlay still covers the same elements.
- */
-const inertCounts = new WeakMap<HTMLElement, number>();
-export function acquireInert(elements: HTMLElement[]): () => void {
-  for (const el of elements) {
-    const n = (inertCounts.get(el) ?? 0) + 1;
-    inertCounts.set(el, n);
-    if (n === 1) el.setAttribute('inert', '');
-  }
-  return () => {
-    for (const el of elements) {
-      const n = Math.max(0, (inertCounts.get(el) ?? 1) - 1);
-      if (n === 0) {
-        inertCounts.delete(el);
-        el.removeAttribute('inert');
-      } else {
-        inertCounts.set(el, n);
-      }
-    }
-  };
-}
+let releaseActivePin: (() => void) | null = null;
 
 /**
  * Pinning of a rich tooltip (the list's hover card, the header's about): Alt+P while it shows pins it, so it stays
  * and takes the pointer (its text can be selected, its links clicked); a click outside `box`, Escape or Alt+P again
- * lets it go, and `onRelease` hides it.
+ * lets it go, and `onRelease` hides it. Coordinates globally so only one tooltip is pinned at a time.
  */
-export function usePin(shown: () => boolean, box: { current: HTMLElement | null }, onRelease?: () => void): [boolean, (next: boolean) => void] {
+export function usePin(
+  shown: () => boolean,
+  box: { current: HTMLElement | null },
+  onRelease?: () => void,
+  isInert?: () => boolean,
+): [boolean, (next: boolean) => void] {
   const [pinned, setPinned] = useState(false);
-  const latest = useRef({ shown, onRelease });
-  latest.current = { shown, onRelease };
+  const latest = useRef({ shown, onRelease, isInert });
+  latest.current = { shown, onRelease, isInert };
+
+  const inert = () => (latest.current.isInert ? latest.current.isInert() : isInsideInert(box.current));
+
+  const releaseRef = useRef<() => void>(() => undefined);
+  const pinTokenRef = useRef<(() => void) | null>(null);
+  if (!pinTokenRef.current) {
+    pinTokenRef.current = () => releaseRef.current();
+  }
+
+  const setPin = (next: boolean) => {
+    const token = pinTokenRef.current!;
+    if (next) {
+      const prev = releaseActivePin;
+      releaseActivePin = token;
+      if (prev && prev !== token) prev();
+    } else if (releaseActivePin === token) {
+      releaseActivePin = null;
+    }
+    setPinned(next);
+  };
+
+  const release = () => {
+    setPin(false);
+    latest.current.onRelease?.();
+  };
+  releaseRef.current = release;
+
+  useEffect(() => () => {
+    if (releaseActivePin === pinTokenRef.current) releaseActivePin = null;
+  }, []);
+
+  useEscape(pinned, () => {
+    if (inert()) {
+      release();
+      return false;
+    }
+    release();
+    return true;
+  }, ESCAPE_PRIORITY.TOOLTIP);
+
   useEffect(() => {
-    const release = () => {
-      setPinned(false);
-      latest.current.onRelease?.();
-    };
+    const token = pinTokenRef.current!;
+    if (pinned) {
+      const prev = releaseActivePin;
+      releaseActivePin = token;
+      if (prev && prev !== token) prev();
+    }
     const onKey = (e: KeyboardEvent) => {
-      if (box.current?.closest('[inert]')) {
-        if (pinned) release(); // hidden behind a box on the whole screen: let go, and leave the key to that box
+      if (inert()) {
+        if (pinned) release();
         return;
       }
       if (isPinKey(e) && (pinned || latest.current.shown())) {
         e.preventDefault();
         e.stopImmediatePropagation();
         if (pinned) release();
-        else setPinned(true);
-      } else if (pinned && e.key === 'Escape') {
-        e.preventDefault();
-        e.stopImmediatePropagation(); // Escape would also cancel a running request
-        release();
+        else setPin(true);
       }
     };
     const onDown = (e: PointerEvent) => {
-      if (pinned && !box.current?.contains(e.target as Node)) release();
+      if (pinned && (inert() || !box.current?.contains(e.target as Node))) release();
     };
+    const onFocusIn = () => {
+      if (pinned && inert()) release();
+    };
+    const offInert = pinned ? onInertChange(() => {
+      if (inert()) release();
+    }) : undefined;
+    const obs = pinned && typeof MutationObserver !== 'undefined'
+      ? new MutationObserver(() => {
+        if (inert()) release();
+      })
+      : null;
+    if (obs && typeof document !== 'undefined' && document.body) {
+      obs.observe(document.body, { attributes: true, subtree: true, attributeFilter: ['inert'] });
+    }
     document.addEventListener('keydown', onKey, true);
     document.addEventListener('pointerdown', onDown, true);
+    document.addEventListener('focusin', onFocusIn, true);
     return () => {
+      offInert?.();
+      obs?.disconnect();
       document.removeEventListener('keydown', onKey, true);
       document.removeEventListener('pointerdown', onDown, true);
+      document.removeEventListener('focusin', onFocusIn, true);
     };
   }, [pinned]);
-  return [pinned, setPinned];
+  return [pinned, setPin];
 }
 
 /**
@@ -144,22 +192,19 @@ export function useTip(wrap: { current: HTMLElement | null }, clickPin = false) 
   const shown = () => {
     const el = wrap.current;
     const tip = el?.querySelector('[role="tooltip"]');
-    return !!el && !dismissedRef.current && !el.closest('[inert]') && (el.matches(':hover') || !!el.querySelector(':focus-visible'))
+    return !!el && !dismissedRef.current && !isInsideInert(el) && (el.matches(':hover') || !!el.querySelector(':focus-visible'))
       && (!tip || getComputedStyle(tip).visibility !== 'hidden');
   };
   const [pinned, setPinned] = usePin(shown, wrap, () => setDismissed(true));
   const pinnedRef = useRef(false);
   pinnedRef.current = pinned;
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || pinnedRef.current || !shown()) return;
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      setDismissed(true);
-    };
-    document.addEventListener('keydown', onKey, true);
-    return () => document.removeEventListener('keydown', onKey, true);
-  }, []);
+
+  useEscape(!dismissed && !pinned, () => {
+    if (!shown()) return false;
+    setDismissed(true);
+    return true;
+  }, ESCAPE_PRIORITY.TOOLTIP);
+
   return {
     pinned,
     setPinned,
@@ -210,18 +255,30 @@ export function RichTip({ tip, children, testId, clickPin = true, onOpen, classN
     box.style.right = 'auto';
     setSide(up ? ' above' : '');
   };
-  useEffect(() => {
-    place();
-  }, [tip]);
+  useLayoutEffect(() => {
+    const el = wrap.current;
+    if (!el) return;
+    if (pinned || el.matches(':hover') || el.querySelector(':focus-visible')) place();
+  }, [tip, pinned]);
   return (
     <span ref={wrap} class={'rab-n-tip-wrap' + state + side + (className ? ' ' + className : '')}
           onMouseEnter={() => { onOpen?.(); place(); onMouseEnter(); }}
           onFocusIn={(e) => { onOpen?.(); place(); onFocusIn(e); }}>
       <span
         class={'rab-n-tip-target' + (clickPin ? ' is-clickable' : '')}
+        role={clickPin ? 'button' : undefined}
+        aria-pressed={clickPin ? pinned : undefined}
         tabIndex={0}
         aria-describedby={id}
         onClick={onTargetClick ? (e) => { onOpen?.(); place(); onTargetClick(e); } : undefined}
+        onKeyDown={onTargetClick ? (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onOpen?.();
+            place();
+            onTargetClick(e as unknown as MouseEvent);
+          }
+        } : undefined}
       >
         {children}
       </span>
@@ -263,8 +320,18 @@ export function CheckMark({ check }: { check: Check }) {
   if (!check) return <span class="rab-n-check" aria-hidden="true" />;
   const ok = check.state === 'ok';
   return (
-    <span class={'rab-n-check ' + (ok ? 'is-ok' : 'is-warn')} title={check.message} role="img" aria-label={check.message}
-          data-testid="check" data-state={check.state}>
+    <span
+      class={'rab-n-check ' + (ok ? 'is-ok' : 'is-warn')}
+      role="img"
+      aria-label={check.message}
+      data-testid="check"
+      data-state={check.state}
+      {...tipProps({
+        title: ok ? 'Valid parameter' : 'Validation warning',
+        body: check.message,
+        tone: ok ? undefined : 'warn',
+      })}
+    >
       {ok ? (
         <svg class="rab-n-svg" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
           <path d="M3.4 8.6l2.9 2.9 6.3-6.6" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
@@ -287,7 +354,6 @@ export function Tabs<T extends string>({ tabs, value, onChange, label, panelId }
   panelId?: string;
 }) {
   const at = tabs.findIndex((t) => t.id === value);
-  // arrow keys move between tabs; only the selected tab (or the first, when none is) is in the Tab order
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const i = Math.max(0, at);
@@ -332,11 +398,15 @@ export async function copyText(value: string): Promise<boolean> {
     area.setAttribute('readonly', '');
     area.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none';
     document.body.appendChild(area);
-    area.select();
-    const ok = document.execCommand('copy');
-    area.remove();
-    focused?.focus();
-    return ok;
+    try {
+      area.select();
+      return document.execCommand('copy');
+    } catch {
+      return false;
+    } finally {
+      area.remove();
+      focused?.focus();
+    }
   }
 }
 

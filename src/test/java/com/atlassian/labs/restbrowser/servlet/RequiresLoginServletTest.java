@@ -42,7 +42,12 @@ public class RequiresLoginServletTest {
     }
 
     @Test
-    public void getUriAcceptsABraceInTheQuery() {
+    public void getUriAcceptsQueryBeforeSlashAndBraces() {
+        assertEquals("http://example.test?a=%7B%7D", RequiresLoginServlet.encodeIllegal("http://example.test?a={}"));
+        assertEquals("op=%7Ba%20b%7D&u=https://example.test/x",
+                RequiresLoginServlet.encodeQuery("op={a b}&u=https://example.test/x"));
+        assertEquals("not%20a%20scheme://host/path",
+                RequiresLoginServlet.encodeIllegal("not a scheme://host/path"));
         HttpServletRequest request = mock(HttpServletRequest.class);
         when(request.getRequestURL()).thenReturn(new StringBuffer("http://h/jira/plugins/servlet/restbrowser"));
         when(request.getQueryString()).thenReturn("op={}");

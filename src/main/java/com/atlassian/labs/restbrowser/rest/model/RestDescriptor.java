@@ -1,7 +1,5 @@
 package com.atlassian.labs.restbrowser.rest.model;
 
-import com.atlassian.labs.restbrowser.util.TextUtils;
-
 public class RestDescriptor {
     private final String basePath;
     private final String restPath;
@@ -23,33 +21,14 @@ public class RestDescriptor {
         this.pluginDescription = builder.pluginDescription;
     }
 
-    public String getBasePath() {
-        return basePath;
-    }
-
+    public String getBasePath() { return basePath; }
     public String getRestPath() { return restPath; }
-
     public String getDisplayPath() { return displayPath; }
-
-    public String getPluginCompleteKey() {
-        return pluginCompleteKey;
-    }
-
-    public String getPluginDescription() {
-        return pluginDescription;
-    }
-
-    public String getPluginKey() {
-        return pluginKey;
-    }
-
-    public String getPluginName() {
-        return pluginName;
-    }
-
-    public String getVersion() {
-        return version;
-    }
+    public String getPluginCompleteKey() { return pluginCompleteKey; }
+    public String getPluginDescription() { return pluginDescription; }
+    public String getPluginKey() { return pluginKey; }
+    public String getPluginName() { return pluginName; }
+    public String getVersion() { return version; }
 
     public static class Builder {
         private String basePath;
@@ -82,30 +61,40 @@ public class RestDescriptor {
         }
 
         public Builder pluginName(String pluginName) {
-            if (pluginName == null) {
-                this.pluginName = "";
-            } else {
-                this.pluginName = pluginName.replaceAll("\"", "");
-            }
+            this.pluginName = pluginName == null ? "" : pluginName.replace("\"", "");
             return this;
         }
 
         public Builder pluginDescription(String pluginDescription) {
-            if (pluginDescription == null) {
-                this.pluginDescription = "";
-            } else {
-                this.pluginDescription = pluginDescription.replaceAll("\"", "");
-            }
+            this.pluginDescription = pluginDescription == null ? "" : pluginDescription.replace("\"", "");
             return this;
         }
 
         public RestDescriptor build() {
-            this.restPath = TextUtils.htmlEncode(this.basePath);
-            if(!"none".equals(this.version)) {
-                this.restPath += "/" + TextUtils.htmlEncode(this.version);
+            String bp = stripSlashes(this.basePath);
+            String ver = stripSlashes(this.version);
+            String normalized = bp;
+            if (!ver.isEmpty() && !"none".equals(ver)) {
+                normalized = normalized.isEmpty() ? ver : normalized + "/" + ver;
             }
-            this.displayPath = this.restPath.substring(1);
+            this.displayPath = normalized;
+            this.restPath = normalized.isEmpty() ? "" : "/" + normalized;
             return new RestDescriptor(this);
+        }
+
+        private static String stripSlashes(String value) {
+            if (value == null || value.isEmpty()) {
+                return "";
+            }
+            int start = 0;
+            int end = value.length();
+            while (start < end && value.charAt(start) == '/') {
+                start++;
+            }
+            while (end > start && value.charAt(end - 1) == '/') {
+                end--;
+            }
+            return value.substring(start, end);
         }
     }
 }

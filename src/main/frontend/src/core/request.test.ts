@@ -229,9 +229,35 @@ describe('form and multipart requests', () => {
     expect(entries[1][0]).toBe('file');
     expect((entries[1][1] as File).name).toBe('note.txt');
     const curl = toCurl(r);
-    expect(curl).toContain(`-F 'comment=first'`);
+    expect(curl).toContain(`--form-string 'comment=first'`);
     expect(curl).toContain(`-F 'file=@note.txt'`);
     expect(curl).not.toContain('Content-Type');
+  });
+
+  it('strips user-supplied Content-Type on multipart FormData and hardens toCurl', () => {
+    const o = op('jira:api2', 'POST', 'upload', {
+      consumes: ['multipart/form-data'],
+      params: [
+        param('Content-Type', 'header'),
+        param('file', 'form', { type: 'File' }),
+        param('comment', 'form'),
+      ],
+    });
+    const badFile = new File(['x'], 'bad";type=text/html\r\n.txt');
+    const r = buildRequest(s, o, vals({
+      header: { 'Content-Type': 'multipart/form-data' },
+      form: { comment: ['@/etc/passwd'] },
+      files: { file: [badFile] },
+    }));
+    expect(r.headers['Content-Type']).toBeUndefined();
+    const curl = toCurl(r);
+    expect(curl).toContain(`--form-string 'comment=@/etc/passwd'`);
+    expect(curl).toContain(`-F 'file=@bad__type=text/html__.txt'`);
+    expect(curl).toContain(`-- '/jira/rest/api/2/upload'`);
+
+    const weird = toCurl({ method: 'POST;whoami', url: '--output=/tmp/pwn', headers: {}, body: undefined });
+    expect(weird).toContain(`-X 'POST;whoami'`);
+    expect(weird).toContain(`-- '--output=/tmp/pwn'`);
   });
 
   it('falls back to the raw body when form fields are empty', () => {

@@ -32,7 +32,7 @@ angular.module('RAB', ['ngRoute', 'ngSanitize', 'ui.codemirror','ui.unique'])
         // the filtered results url. The search query param is decoded in the mainCtrl.
         return function(input){
             if (!input) return;
-            return input.replace(/\//g,'::');
+            return encodeURIComponent(input.replace(/\//g,'::'));
         }
     })
     .filter('showPublicOnly', function($filter){
@@ -45,38 +45,39 @@ angular.module('RAB', ['ngRoute', 'ngSanitize', 'ui.codemirror','ui.unique'])
         };
     })
     .run(function($rootScope){
-        // Draggable divider
-        function initDivider(){
-            function sizeSearchInput(offset) {
-                offset = offset || 0;
-                jQuery('.rab-search').css({
-                    width: offset - 10,
-                    maxWidth: offset - 10
-                });
-            }
-            function sizeMainSection(offset) {
-                var $main = jQuery('.rab-main');
-                $main.width($main.parent().width() - offset);
-            }
-            function sizeSidebar(offset) {
-                jQuery('.rab-sidebar').width(offset);
-            }
-            function sizeSections(offset) {
-                sizeSearchInput(offset);
-                sizeMainSection(offset);
-                sizeSidebar(offset);
-            }
-            sizeSections(jQuery('.rab-divider').offset().left - 1);
-            jQuery('.rab-divider')
-                .draggable({
-                    helper: function() {return jQuery('<div/>')},
-                    axis: 'x',
-                    cursor: 'col-resize',
-                    drag: function(evt, ui){
-                        sizeSections(ui.offset.left - 1);
-                    }
-                });
+        function sizeSearchInput(offset) {
+            offset = offset || 0;
+            jQuery('.rab-search').css({
+                width: offset - 10,
+                maxWidth: offset - 10
+            });
         }
-        initDivider();
-        jQuery(window).on('resize', initDivider);
+        function sizeMainSection(offset) {
+            var $main = jQuery('.rab-main');
+            $main.width($main.parent().width() - offset);
+        }
+        function sizeSidebar(offset) {
+            jQuery('.rab-sidebar').width(offset);
+        }
+        function sizeSections(offset) {
+            sizeSearchInput(offset);
+            sizeMainSection(offset);
+            sizeSidebar(offset);
+        }
+        function syncLayoutToDivider() {
+            var $divider = jQuery('.rab-divider');
+            if (!$divider.length) return;
+            var pos = $divider.offset();
+            if (pos) sizeSections(pos.left - 1);
+        }
+        syncLayoutToDivider();
+        jQuery('.rab-divider').draggable({
+            helper: function() { return jQuery('<div/>'); },
+            axis: 'x',
+            cursor: 'col-resize',
+            drag: function(evt, ui){
+                sizeSections(ui.offset.left - 1);
+            }
+        });
+        jQuery(window).on('resize', syncLayoutToDivider);
     });

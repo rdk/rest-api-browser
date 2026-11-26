@@ -7,14 +7,10 @@ body {
 .rab-bubble-get-started {
     background:url(rab/images/getting-started.png) no-repeat;
 }
-.rab-bubble-documentation {
-    background:url(rab/images/docs.png) no-repeat;
-}
 .rab-bubble-code {
     background:url(rab/images/code.png) no-repeat;
 }
 .rab-bubble-get-started,
-.rab-bubble-documentation,
 .rab-bubble-code {
     width:150px;
     height:150px;
@@ -162,10 +158,10 @@ form.aui.rab-resource-url input {
 .rab-param-style {
     width:10%;
 }
-.rab-param-description {
+.rab-param-descr {
     width:40%;
 }
-.aui-tabs > .tabs-pane {
+#rab .aui-tabs > .tabs-pane {
     padding-top: 15px;
 }
 .rab-param-action {
@@ -175,7 +171,7 @@ form.aui.rab-resource-url input {
     color: var(--ds-text-danger, red);
     font-size:1.2em;
 }
-table.aui .rab-param-actions {
+table.aui .rab-param-action {
     text-align: right;
 }
 .rab-req-body {

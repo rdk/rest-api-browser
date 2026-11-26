@@ -20,6 +20,7 @@ import argparse
 import base64
 import glob
 import html
+import json
 import os
 import re
 import sys
@@ -74,7 +75,8 @@ class Instance:
     def __init__(self, url, user, password):
         self.url = url.rstrip('/')
         self.auth = 'Basic ' + base64.b64encode(('%s:%s' % (user, password)).encode()).decode()
-        self.opener = urllib.request.build_opener(NoRedirect)
+        self.opener = urllib.request.build_opener(NoRedirect, urllib.request.HTTPCookieProcessor())
+        self.anon_opener = urllib.request.build_opener(NoRedirect)
 
     def call(self, method, path, body=None, headers=None, auth=True, timeout=60):
         """(status, body text, headers dict with lower-case keys); never raises for an HTTP status."""
@@ -85,7 +87,7 @@ class Instance:
         h.update(headers or {})
         req = urllib.request.Request(url, data=body, headers=h, method=method)
         try:
-            with self.opener.open(req, timeout=timeout) as r:
+            with (self.opener if auth else self.anon_opener).open(req, timeout=timeout) as r:
                 return r.status, r.read().decode('utf-8', 'replace'), {k.lower(): v for k, v in r.headers.items()}
         except urllib.error.HTTPError as e:
             return e.code, e.read().decode('utf-8', 'replace'), {k.lower(): v for k, v in e.headers.items()}
@@ -95,7 +97,6 @@ class Instance:
             raise
 
     def json(self, path, accept='application/json', **kw):
-        import json
         s, text, h = self.call('GET', path, headers={'Accept': accept}, **kw)
         try:
             return s, json.loads(text) if text else None, h
@@ -295,6 +296,9 @@ def new_ui(j, a, P):
     # ---- complete
     t0 = time.time()
     summary, h = wait_complete(j)
+    if summary and any(m.get('state') != 'ok' and m.get('reason') == 'not-started' for m in summary.get('modules', [])):
+        j.call('POST', API + '/refresh', headers={'Accept': 'application/json', 'X-Atlassian-Token': 'no-check'})
+        summary, h = wait_complete(j)
     if not check('the catalog becomes complete', summary, 'not complete after 120 s'):
         return
     print('The catalog was complete after %.0f s' % (time.time() - t0))
@@ -469,10 +473,30 @@ def main():
           (s_llms, h_llms.get('content-type'), llms_body[:200]))
     check('the page is decorated by %s (header and the plugin\'s web resources)' % P['name'],
           'rest-api-browser' in page and re.search(r'download/(batch|resources|contextbatch)', page), page[:300])
-    m = re.search(r'RAB\.product = "([^"]*)"', page)
-    check('the page names the product as %s' % P['name'], m and re.search(a.product, m.group(1), re.I),
-          m and m.group(1))
-    services = [html.unescape(w) for w in re.findall(r'"wadl":"([^"]+)"', page)]
+    cfg = {}
+    m_cfg_tag = re.search(r'<[^>]*\bid=["\']rab-config["\'][^>]*>', page)
+    if m_cfg_tag:
+        tag = m_cfg_tag.group(0)
+        m_b64 = re.search(r'\bdata-config-b64=["\']([A-Za-z0-9+/=]+)["\']', tag)
+        if m_b64:
+            try:
+                cfg = json.loads(base64.b64decode(m_b64.group(1)).decode('utf-8'))
+            except ValueError:
+                cfg = {}
+        if not cfg:
+            m_cfg = re.search(r'\bdata-config=["\']([^"\']*)["\']', tag)
+            if m_cfg:
+                try:
+                    cfg = json.loads(html.unescape(m_cfg.group(1)))
+                except ValueError:
+                    cfg = {}
+    if not isinstance(cfg, dict):
+        cfg = {}
+    prod = cfg.get('product') or (lambda m: m and m.group(1))(re.search(r'RAB\.product = "([^"]*)"', page))
+    check('the page names the product as %s' % P['name'], prod and re.search(a.product, prod, re.I), prod)
+    services = [s['wadl'] for s in cfg.get('services', ()) if isinstance(s, dict) and s.get('wadl')]
+    if not services:
+        services = [html.unescape(w) for w in re.findall(r'"wadl":"([^"]+)"', page)]
     print('The page lists %d REST modules' % len(services))
     check('the page lists the REST modules of %s (at least 20)' % P['name'], len(services) >= 20, len(services))
     core_wadl = P['core'] + '/application.wadl'

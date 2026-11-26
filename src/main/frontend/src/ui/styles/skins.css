@@ -1,0 +1,186 @@
+/*
+ * Skins of the new UI, chosen in the header's menu (Theme) and kept per user: the root carries data-skin.
+ *   vivid     the base tokens (tokens.css): bold multi-colour gradients
+ *   balanced  the default: blue through indigo to violet, soft gradients of one hue family
+ *   navy      "Calm": flat and quiet, the product's surfaces and neutral borders, with a deep navy header
+ */
+
+/* ---------------- balanced (the default) ---------------- */
+
+.rab-n[data-skin="balanced"] {
+  --rab-indigo: color-mix(in srgb, var(--rab-brand) 62%, var(--rab-discovery-bold));
+  --rab-violet: color-mix(in srgb, var(--rab-brand) 42%, var(--rab-discovery-bold));
+  --rab-topbar-bg: linear-gradient(
+    115deg,
+    color-mix(in srgb, var(--rab-brand) 82%, #000) 30%,
+    color-mix(in srgb, var(--rab-indigo) 80%, #000) 69%,
+    color-mix(in srgb, var(--rab-violet) 90%, #000) 100%
+  );
+  --rab-grad-side: linear-gradient(180deg, color-mix(in srgb, var(--rab-bg-info) 34%, var(--rab-sunken)) 0%, var(--rab-sunken) 46%);
+  --rab-grad-brand: linear-gradient(180deg, var(--rab-brand), color-mix(in srgb, var(--rab-brand) 88%, #000));
+  --rab-grad-brand-hover: linear-gradient(180deg, var(--rab-brand-hover), color-mix(in srgb, var(--rab-brand-hover) 88%, #000));
+  --rab-grad-success: linear-gradient(180deg, var(--rab-success-bold), color-mix(in srgb, var(--rab-success-bold) 88%, #000));
+  --rab-grad-warn: linear-gradient(180deg, color-mix(in srgb, var(--rab-warning-bold) 80%, #fff), var(--rab-warning-bold));
+  --rab-grad-warn-hover: linear-gradient(180deg, var(--rab-warning-bold), var(--rab-warning-bold-hover));
+  --rab-grad-danger: linear-gradient(180deg, var(--rab-danger-bold), color-mix(in srgb, var(--rab-danger-bold) 88%, #000));
+  --rab-grad-danger-hover: linear-gradient(180deg, var(--rab-danger-bold-hover), color-mix(in srgb, var(--rab-danger-bold-hover) 88%, #000));
+  --rab-grad-discovery: linear-gradient(180deg, var(--rab-discovery-bold), color-mix(in srgb, var(--rab-discovery-bold) 88%, #000));
+  --rab-grad-selected: linear-gradient(90deg, color-mix(in srgb, var(--rab-brand) 13%, transparent), color-mix(in srgb, var(--rab-brand) 5%, transparent));
+  --rab-grad-bar-v: linear-gradient(180deg, var(--rab-brand), var(--rab-indigo));
+  --rab-grad-tab: linear-gradient(90deg, var(--rab-brand), var(--rab-indigo));
+  --rab-grad-accent: linear-gradient(90deg, var(--rab-brand), var(--rab-indigo));
+  --rab-grad-card-border: linear-gradient(135deg, color-mix(in srgb, var(--rab-brand) 24%, var(--rab-border)), color-mix(in srgb, var(--rab-indigo) 18%, var(--rab-border)));
+  --rab-grad-card-border-hover: linear-gradient(135deg, color-mix(in srgb, var(--rab-brand) 48%, var(--rab-border)), color-mix(in srgb, var(--rab-indigo) 42%, var(--rab-border)));
+  --rab-grad-ophead-bg: linear-gradient(180deg, color-mix(in srgb, var(--rab-bg-info) 30%, var(--rab-raised)), var(--rab-raised) 72%);
+  --rab-grad-welcome:
+    radial-gradient(ellipse 60% 45% at 16% 0%, color-mix(in srgb, var(--rab-brand) 9%, transparent), transparent 70%),
+    var(--rab-surface);
+  --rab-grad-hero-panel: linear-gradient(180deg, color-mix(in srgb, var(--rab-bg-info) 38%, var(--rab-raised)), var(--rab-raised));
+  --rab-grad-headline: linear-gradient(100deg, var(--rab-brand-hover), var(--rab-indigo));
+  --rab-code-bg: color-mix(in srgb, var(--rab-bg-info) 14%, var(--rab-sunken));
+  --rab-spinner-accent: var(--rab-indigo);
+  --rab-grad-side-head: linear-gradient(180deg, color-mix(in srgb, var(--rab-bg-info) 34%, var(--rab-surface)), color-mix(in srgb, var(--rab-bg-info) 10%, transparent));
+  --rab-welcome-icon-shadow: 0 1px 2px rgba(9, 30, 66, 0.22);
+  --rab-shadow-card: 0 1px 3px rgba(9, 30, 66, 0.1), 0 0 1px rgba(9, 30, 66, 0.2);
+  --rab-shadow-card-hover: 0 4px 12px rgba(9, 30, 66, 0.12), 0 0 1px rgba(9, 30, 66, 0.25);
+  --rab-shadow-hero: 0 2px 8px rgba(9, 30, 66, 0.08), 0 0 1px rgba(9, 30, 66, 0.2);
+  --rab-shadow-send: 0 1px 2px rgba(9, 30, 66, 0.22);
+  --rab-shadow-send-hover: 0 2px 6px rgba(9, 30, 66, 0.26);
+  --rab-shadow-send-warn: 0 1px 2px rgba(9, 30, 66, 0.22);
+  --rab-shadow-send-warn-hover: 0 2px 6px rgba(9, 30, 66, 0.26);
+  --rab-shadow-send-danger: 0 1px 2px rgba(9, 30, 66, 0.22);
+  --rab-shadow-send-danger-hover: 0 2px 6px rgba(9, 30, 66, 0.26);
+}
+
+[data-color-mode="dark"] .rab-n[data-skin="balanced"] {
+  --rab-indigo: color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 55%, var(--ds-background-accent-purple-subtle, #5e4db2));
+  --rab-violet: color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 40%, var(--ds-background-accent-purple-subtle, #5e4db2));
+  --rab-topbar-bg: linear-gradient(
+    115deg,
+    color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 56%, var(--rab-surface)) 30%,
+    color-mix(in srgb, var(--rab-indigo) 56%, var(--rab-surface)) 69%,
+    color-mix(in srgb, var(--rab-violet) 70%, var(--rab-surface)) 100%
+  );
+  --rab-grad-side: linear-gradient(180deg, color-mix(in srgb, var(--rab-bg-info) 40%, var(--rab-sunken)) 0%, var(--rab-sunken) 46%);
+  --rab-grad-brand: linear-gradient(180deg, var(--ds-background-accent-blue-subtle, #0055cc), color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 82%, #000));
+  --rab-grad-brand-hover: linear-gradient(180deg, color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 88%, #fff), var(--ds-background-accent-blue-subtle, #0055cc));
+  --rab-grad-success: linear-gradient(180deg, var(--ds-background-accent-green-subtle, #216e4e), color-mix(in srgb, var(--ds-background-accent-green-subtle, #216e4e) 82%, #000));
+  --rab-grad-danger: linear-gradient(180deg, var(--ds-background-accent-red-subtle, #ae2e24), color-mix(in srgb, var(--ds-background-accent-red-subtle, #ae2e24) 82%, #000));
+  --rab-grad-danger-hover: linear-gradient(180deg, color-mix(in srgb, var(--ds-background-accent-red-subtle, #ae2e24) 88%, #fff), var(--ds-background-accent-red-subtle, #ae2e24));
+  --rab-grad-discovery: linear-gradient(180deg, var(--ds-background-accent-purple-subtle, #5e4db2), color-mix(in srgb, var(--ds-background-accent-purple-subtle, #5e4db2) 82%, #000));
+  --rab-grad-selected: linear-gradient(90deg, color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 30%, transparent), color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 12%, transparent));
+  --rab-grad-bar-v: linear-gradient(180deg, var(--rab-brand), color-mix(in srgb, var(--rab-brand) 55%, var(--rab-discovery-bold)));
+  --rab-grad-tab: linear-gradient(90deg, var(--rab-brand), color-mix(in srgb, var(--rab-brand) 55%, var(--rab-discovery-bold)));
+  --rab-grad-accent: linear-gradient(90deg, var(--rab-brand), color-mix(in srgb, var(--rab-brand) 55%, var(--rab-discovery-bold)));
+  --rab-spinner-accent: color-mix(in srgb, var(--rab-brand) 55%, var(--rab-discovery-bold));
+  --rab-grad-card-border: linear-gradient(135deg, color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 36%, var(--rab-border)), color-mix(in srgb, var(--rab-indigo) 30%, var(--rab-border)));
+  --rab-grad-card-border-hover: linear-gradient(135deg, color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 62%, var(--rab-border)), color-mix(in srgb, var(--rab-indigo) 56%, var(--rab-border)));
+  --rab-grad-ophead-bg: linear-gradient(180deg, color-mix(in srgb, var(--rab-bg-info) 34%, var(--rab-raised)), var(--rab-raised) 72%);
+  --rab-grad-welcome:
+    radial-gradient(ellipse 60% 45% at 16% 0%, color-mix(in srgb, var(--ds-background-accent-blue-subtle, #0055cc) 22%, transparent), transparent 70%),
+    var(--rab-surface);
+  --rab-grad-hero-panel: linear-gradient(180deg, color-mix(in srgb, var(--rab-bg-info) 40%, var(--rab-raised)), var(--rab-raised));
+  --rab-grad-headline: linear-gradient(100deg, var(--ds-text-information, #85b8ff), color-mix(in srgb, var(--ds-text-information, #85b8ff) 45%, var(--ds-text-discovery, #b8acf6)));
+  --rab-grad-warn: linear-gradient(180deg, var(--rab-warning-bold), color-mix(in srgb, var(--rab-warning-bold) 88%, #000));
+  --rab-grad-warn-hover: linear-gradient(180deg, var(--rab-warning-bold-hover), color-mix(in srgb, var(--rab-warning-bold-hover) 88%, #000));
+  --rab-code-bg: color-mix(in srgb, var(--rab-bg-info) 22%, var(--rab-sunken));
+  --rab-grad-side-head: linear-gradient(180deg, color-mix(in srgb, var(--rab-bg-info) 40%, var(--rab-surface)), color-mix(in srgb, var(--rab-bg-info) 12%, transparent));
+  --rab-welcome-icon-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --rab-shadow-card: 0 1px 3px rgba(0, 0, 0, 0.35), 0 0 1px rgba(0, 0, 0, 0.5);
+  --rab-shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 1px rgba(0, 0, 0, 0.55);
+  --rab-shadow-hero: 0 2px 8px rgba(0, 0, 0, 0.35), 0 0 1px rgba(0, 0, 0, 0.5);
+  --rab-shadow-send: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --rab-shadow-send-hover: 0 2px 6px rgba(0, 0, 0, 0.45);
+  --rab-shadow-send-warn: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --rab-shadow-send-warn-hover: 0 2px 6px rgba(0, 0, 0, 0.45);
+  --rab-shadow-send-danger: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --rab-shadow-send-danger-hover: 0 2px 6px rgba(0, 0, 0, 0.45);
+}
+
+.rab-n[data-skin="balanced"] .rab-n-topbar { box-shadow: none; }
+.rab-n[data-skin="balanced"] .rab-n-pill.on,
+.rab-n[data-skin="balanced"] .rab-n-pill.on:hover { box-shadow: none; }
+.rab-n[data-skin="balanced"] .rab-n-status-code { box-shadow: none; }
+.rab-n[data-skin="balanced"] .rab-n-tab.on,
+.rab-n[data-skin="balanced"] .rab-n-tab[aria-selected="true"] { background: color-mix(in srgb, var(--rab-brand) 6%, transparent); }
+.rab-n[data-skin="balanced"] .rab-n-url-group:focus-within,
+.rab-n[data-skin="balanced"] .rab-n-search:focus {
+  background: var(--rab-input);
+  border-color: var(--rab-brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rab-brand) 18%, transparent);
+}
+
+/* ---------------- navy ("Calm"): flat, quiet, the product's own surfaces ---------------- */
+
+.rab-n[data-skin="navy"] {
+  --flat-brand: var(--rab-brand);
+  --flat-brand-hover: var(--rab-brand-hover);
+  --rab-on-brand: var(--rab-on-bold);
+  --rab-topbar-bg: linear-gradient(180deg, #22345e, #1b2a4c);
+  --rab-topbar-fg: #fff;
+  --rab-topbar-border: #16223d;
+  --rab-topbar-glass: color-mix(in srgb, #fff 10%, transparent);
+  --rab-topbar-glass-hover: color-mix(in srgb, #fff 18%, transparent);
+  --rab-topbar-glass-border: color-mix(in srgb, #fff 22%, transparent);
+  --rab-spinner-accent: var(--flat-brand);
+  --rab-welcome-icon-shadow: none;
+  --rab-shadow-send: none;
+  --rab-shadow-send-hover: none;
+  --rab-shadow-send-warn: none;
+  --rab-shadow-send-warn-hover: none;
+  --rab-shadow-send-danger: none;
+  --rab-shadow-send-danger-hover: none;
+  --rab-grad-side-head: var(--rab-sunken);
+  --rab-welcome-card-fill: linear-gradient(var(--rab-raised), var(--rab-raised));
+  --rab-welcome-card-fill-hover: linear-gradient(var(--rab-raised-hover), var(--rab-raised-hover));
+  --rab-grad-side: linear-gradient(var(--rab-sunken), var(--rab-sunken));
+  --rab-grad-brand: linear-gradient(var(--flat-brand), var(--flat-brand));
+  --rab-grad-brand-hover: linear-gradient(var(--flat-brand-hover), var(--flat-brand-hover));
+  --rab-grad-success: linear-gradient(var(--rab-success-bold), var(--rab-success-bold));
+  --rab-grad-warn: linear-gradient(var(--rab-warning-bold), var(--rab-warning-bold));
+  --rab-grad-warn-hover: linear-gradient(var(--rab-warning-bold-hover), var(--rab-warning-bold-hover));
+  --rab-grad-danger: linear-gradient(var(--rab-danger-bold), var(--rab-danger-bold));
+  --rab-grad-danger-hover: linear-gradient(var(--rab-danger-bold-hover), var(--rab-danger-bold-hover));
+  --rab-grad-discovery: linear-gradient(var(--rab-discovery-bold), var(--rab-discovery-bold));
+  --rab-grad-selected: linear-gradient(var(--rab-selected), var(--rab-selected));
+  --rab-grad-bar-v: linear-gradient(var(--rab-brand), var(--rab-brand));
+  --rab-grad-tab: linear-gradient(var(--rab-brand), var(--rab-brand));
+  --rab-grad-accent: linear-gradient(var(--rab-border), var(--rab-border));
+  --rab-grad-card-border: linear-gradient(var(--rab-border), var(--rab-border));
+  --rab-grad-card-border-hover: linear-gradient(var(--rab-border-bold), var(--rab-border-bold));
+  --rab-grad-ophead-bg: linear-gradient(var(--rab-raised), var(--rab-raised));
+  --rab-grad-welcome: linear-gradient(var(--rab-surface), var(--rab-surface));
+  --rab-grad-hero-panel: linear-gradient(var(--rab-raised), var(--rab-raised));
+  --rab-grad-headline: linear-gradient(var(--rab-text), var(--rab-text));
+  --rab-code-bg: var(--rab-sunken);
+  --rab-shadow-card: var(--rab-shadow-sm);
+  --rab-shadow-card-hover: var(--rab-shadow-overlay);
+  --rab-shadow-hero: var(--rab-shadow-sm);
+}
+[data-color-mode="dark"] .rab-n[data-skin="navy"] {
+  --rab-on-brand: var(--rab-on-bold);
+}
+.rab-n[data-skin="navy"] .rab-n-topbar { box-shadow: none; border-bottom: 1px solid var(--rab-topbar-border); }
+.rab-n[data-skin="navy"] .rab-n-brand-mark { background: var(--flat-brand); border-color: transparent; color: var(--rab-on-bold); }
+.rab-n[data-skin="navy"] :is(.rab-n-url-group:focus-within, .rab-n-search:focus) {
+  background: var(--rab-input);
+  border-color: var(--rab-focus);
+  box-shadow: 0 0 0 1px var(--rab-focus);
+}
+.rab-n[data-skin="navy"] .rab-n-status-code { box-shadow: none; border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }
+.rab-n[data-skin="navy"] .rab-n-status-code.ok { background: var(--rab-bg-success); color: var(--rab-success); }
+.rab-n[data-skin="navy"] .rab-n-status-code.info { background: var(--rab-bg-info); color: var(--rab-info); }
+.rab-n[data-skin="navy"] .rab-n-status-code.warn { background: var(--rab-bg-warning); color: var(--rab-warning); }
+.rab-n[data-skin="navy"] .rab-n-status-code.err { background: var(--rab-bg-danger); color: var(--rab-danger); }
+.rab-n[data-skin="navy"] :is(.rab-n-tab.on, .rab-n-tab[aria-selected="true"]) { background: none; }
+.rab-n[data-skin="navy"] :is(.rab-n-tab.on, .rab-n-tab[aria-selected="true"])::after { height: 2px; }
+.rab-n[data-skin="navy"] :is(.rab-n-tabs, .rab-n-tabbar):not(.rab-n-response *) { background: var(--rab-surface); }
+.rab-n[data-skin="navy"] .rab-n-op.selected::before { width: 2px; }
+.rab-n[data-skin="navy"] :is(.rab-n-pill.on, .rab-n-pill.on:hover) {
+  background: var(--rab-selected);
+  color: var(--rab-info);
+  border-color: var(--rab-brand);
+  box-shadow: none;
+}
+.rab-n[data-skin="navy"] .rab-n-banner { background: var(--rab-bg-warning); }
+.rab-n[data-skin="navy"] :is(.rab-n-welcome-card, .rab-n-welcome-card:hover) { transform: none; }

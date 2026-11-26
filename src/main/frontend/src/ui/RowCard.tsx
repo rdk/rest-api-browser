@@ -2,7 +2,7 @@ import { useLayoutEffect } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import type { Module, Operation } from '../core/types';
 import { MethodBadge, PathText, PinHint } from './bits';
-import { accessFact, moduleFact, originLabel, paramSummary, sourceLabel, stabilityLabel, type Fact } from './facts';
+import { accessFact, moduleFact, originLabel, paramSummary, sourceLabel, stabilityLabel, type Fact } from '../core/facts';
 import { KIND_TEXT, moduleReason } from '../core/explain';
 
 export type CardTarget = { kind: 'op'; op: Operation; module?: Module } | { kind: 'module'; module: Module; count: number };
@@ -16,26 +16,31 @@ export function RowCard({ id, target, left, top, rowHeight, pinned, boxRef, star
   boxRef: { current: HTMLDivElement | null }; startFailure?: string;
 }) {
   const ref = boxRef;
-  // keep the card inside the app: it moves up when it would overflow the bottom and left when it would overflow
-  // the right (a wide list), over the list then, without its arrow; the arrow stays at the row, within the card
   useLayoutEffect(() => {
     const el = ref.current;
     const root = el?.offsetParent as HTMLElement | null;
     if (!el || !root) return;
-    // taller than the app: its content scrolls inside (the card keeps 6 px from each edge, plus its own padding)
+    // Batch DOM reads before style writes to avoid layout thrashing.
+    const rootH = root.clientHeight;
+    const rootW = root.clientWidth;
     const body = el.firstElementChild as HTMLElement | null;
-    if (body) body.style.maxHeight = Math.max(80, root.clientHeight - 12 - (el.offsetHeight - body.offsetHeight)) + 'px';
-    const y = Math.max(6, Math.min(top - 8, root.clientHeight - el.offsetHeight - 6));
-    const x = Math.max(6, Math.min(left, root.clientWidth - el.offsetWidth - 6));
+    const extraH = body ? el.offsetHeight - body.offsetHeight : 0;
+    const maxBodyH = Math.max(80, rootH - 12 - extraH);
+    const elW = el.offsetWidth;
+    const elH = Math.min(el.offsetHeight, rootH - 12);
+    const y = Math.max(6, Math.min(top - 8, rootH - elH - 6));
+    const x = Math.max(6, Math.min(left, rootW - elW - 6));
+    const arrow = Math.round(Math.min(Math.max(top - y + rowHeight / 2, 12), Math.max(12, elH - 12)));
+
+    if (body) body.style.maxHeight = maxBodyH + 'px';
     el.style.top = y + 'px';
     el.style.left = x + 'px';
     el.classList.toggle('no-arrow', x < left);
-    el.style.setProperty('--arrow', Math.round(Math.min(Math.max(top - y + rowHeight / 2, 12), el.offsetHeight - 12)) + 'px');
-  });
+    el.style.setProperty('--arrow', arrow + 'px');
+  }, [target, left, top, rowHeight, pinned, startFailure]);
   return (
     <div ref={ref} id={id} class={'rab-n-card' + (pinned ? ' pinned' : '')} role="tooltip" data-testid="row-card"
          style={{ left: left + 'px', top: top + 'px' }}>
-      {/* the content scrolls when the card is taller than the app; the card itself keeps its arrow and accent */}
       <div class="rab-n-card-body">
         {target.kind === 'op' ? <OpFacts op={target.op} m={target.module} /> : <ModuleFacts m={target.module} count={target.count} startFailure={startFailure} />}
         <PinHint pinned={pinned} />

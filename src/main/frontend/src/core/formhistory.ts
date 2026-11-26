@@ -21,22 +21,57 @@ const TYPING_MS = 1000;
 
 export const NO_HISTORY: FormHistory = { undo: [], redo: [] };
 
-const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+const sameValue = (a: unknown, b: unknown): boolean => {
+  if (Object.is(a, b)) return true;
+  if (typeof a !== typeof b || a === null || b === null) return false;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (!sameValue(a[i], b[i])) return false;
+    return true;
+  }
+  if (typeof a === 'object' && typeof b === 'object') {
+    const ka = Object.keys(a as object);
+    const kb = Object.keys(b as object);
+    if (ka.length !== kb.length) return false;
+    for (const k of ka) {
+      if (!Object.hasOwn(b as object, k)) return false;
+      if (!sameValue((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k])) return false;
+    }
+    return true;
+  }
+  return false;
+};
+
+const sameCustom = (a: FormState['custom'], b: FormState['custom']): boolean => {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].name !== b[i].name || a[i].value !== b[i].value) return false;
+  }
+  return true;
+};
 
 // What the form shows the same: '' as no value, [] and [''] as no query value, rows of empty headers as none.
 const blankValue = (v: unknown) => v === undefined || v === '' || (Array.isArray(v) && (v.length === 0 || (v.length === 1 && v[0] === '')));
-const looks = (a: unknown, b: unknown) => (blankValue(a) && blankValue(b)) || same(a, b);
+const looks = (a: unknown, b: unknown) => (blankValue(a) && blankValue(b)) || sameValue(a, b);
 const noRows = (rows: FormState['custom']) => rows.every((h) => !h.name.trim() && !h.value.trim());
-const sameRows = (a: FormState['custom'], b: FormState['custom']) => (noRows(a) && noRows(b)) || same(a, b);
+const sameRows = (a: FormState['custom'], b: FormState['custom']) => (noRows(a) && noRows(b)) || sameCustom(a, b);
 
 // A name's own value: names come from links too, and "constructor" must not read Object.prototype's.
 const own = (map: Record<string, unknown>, name: string) => (Object.prototype.hasOwnProperty.call(map, name) ? map[name] : undefined);
 
-const fileKey = (list: File[] | undefined) => (list ?? []).map((f) => `${f.name}:${f.size}:${f.lastModified}`);
+const sameFiles = (a: File[] | undefined, b: File[] | undefined): boolean => {
+  const la = a ?? [];
+  const lb = b ?? [];
+  if (la.length !== lb.length) return false;
+  for (let i = 0; i < la.length; i++) {
+    if (la[i].name !== lb[i].name || la[i].size !== lb[i].size || la[i].lastModified !== lb[i].lastModified) return false;
+  }
+  return true;
+};
 
-// `blanks`: '' is no value and [] or [''] no query value; `rows`: rows of empty headers are none.
 function diff(a: FormState, b: FormState, blanks: boolean, rows: boolean): string | null {
-  const eq = blanks ? looks : same;
+  const eq = blanks ? looks : sameValue;
   const keys: string[] = [];
   for (const part of ['path', 'query', 'header', 'matrix', 'form'] as const) {
     const x = (a.values[part] ?? {}) as Record<string, unknown>, y = (b.values[part] ?? {}) as Record<string, unknown>;
@@ -46,35 +81,24 @@ function diff(a: FormState, b: FormState, blanks: boolean, rows: boolean): strin
   }
   const fx = a.values.files ?? {}, fy = b.values.files ?? {};
   for (const name of new Set([...Object.keys(fx), ...Object.keys(fy)])) {
-    const lx = fileKey(own(fx, name) as File[] | undefined), ly = fileKey(own(fy, name) as File[] | undefined);
-    if (!same(lx, ly)) keys.push('files.' + name);
+    if (!sameFiles(own(fx, name) as File[] | undefined, own(fy, name) as File[] | undefined)) keys.push('files.' + name);
   }
   for (const k of ['body', 'contentType', 'accept'] as const) if (!eq(a.values[k], b.values[k])) keys.push(k);
-  if (!(rows ? sameRows : same)(a.custom, b.custom)) keys.push('custom');
+  if (!(rows ? sameRows : sameCustom)(a.custom, b.custom)) keys.push('custom');
   if (a.noXsrfHeader !== b.noXsrfHeader) keys.push('xsrf');
   return keys.length ? keys.join(',') : null;
 }
 
-/**
- * Which fields differ ("path.issueIdOrKey", "body", …, joined by commas), or null when nothing does, as the form
- * shows them: a field typed into and cleared is the same as one never touched, so Reset does not stay on for it.
- */
+/** Which fields differ as displayed, or null when identical (treats cleared field as unchanged). */
 export function changedField(a: FormState, b: FormState): string | null {
   return diff(a, b, true, true);
 }
 
-/**
- * The history after the form changes from `cur` to `next`: a new undo step, unless the same field changed less than
- * a second ago (then the step before the typing stays the one to go back to, or goes when the typing is back at its
- * value: undoing to it would change nothing). A change clears the redo steps. `separate` makes a step in any case (a
- * restore from the history, a reset). Null when nothing changed.
- */
+/** Next undo history state after changing `cur` to `next`, coalescing rapid typing within the same field. */
 export function record(h: FormHistory, cur: FormState, next: FormState, now: number, separate = false): FormHistory | null {
-  // every change counts here, an added empty header row too: the form only shows what is recorded
   const field = diff(cur, next, false, false);
   if (field === null) return null;
   const typing = !separate && h.last?.field === field && now - h.last.at < TYPING_MS && h.undo.length > 0;
-  // back where the typing started (as the form shows it, an empty row still a row): the next key starts a new step
   if (typing && diff(next, h.undo[h.undo.length - 1], true, false) === null) return { undo: h.undo.slice(0, -1), redo: [] };
   return {
     undo: typing ? h.undo : [...h.undo, cur].slice(-UNDO_STEPS),

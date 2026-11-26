@@ -224,6 +224,22 @@ public class JerseyModelSourceTest {
         assertNull(none.summary());
         assertNull(none.description());
         assertFalse(none.deprecated());
+
+        // Empty @Operation(summary="", description="") falls back to handling/Swagger annotations
+        JerseyModelSource.OpDoc fallback = JerseyModelSource.opDoc(EmptyOperationInterface.class.getMethod("op"),
+                Documented.class.getMethod("swaggerV2", String.class));
+        assertEquals("Legacy summary", fallback.summary());
+        assertEquals("SystemAdminOnly", JerseyModelSource.access(
+                Methods.class.getMethod("plain"), Methods.class.getMethod("plain"), SubclassWithAccess.class));
+    }
+
+    public interface EmptyOperationInterface {
+        @io.swagger.v3.oas.annotations.Operation()
+        void op();
+    }
+
+    @com.atlassian.annotations.security.SystemAdminOnly
+    public static class SubclassWithAccess extends Methods {
     }
 
     @Test
@@ -353,5 +369,63 @@ public class JerseyModelSourceTest {
         assertEquals("java.util.List<" + dto + ">", JerseyModelSource.annotatedReturnJavaType(
                 AnnotatedReturns.class.getMethod("swaggerV2List"), null));
         assertTrue(OperationDetails.signatureTypes(AnnotatedReturns.class.getMethod("arraySchemaReturn")).contains(UsageDto.class));
+    }
+
+    @LicensedOnly
+    public static class LicensedBase {
+        public void handle() {}
+    }
+
+    public static class UnannotatedSub extends LicensedBase {
+        @Override
+        public void handle() {}
+    }
+
+    @AdminOnly
+    public interface AdminApi {
+        void call();
+    }
+
+    public static class ImplementsAdminApi implements AdminApi {
+        @Override
+        public void call() {}
+    }
+
+    @AdminOnly
+    @Deprecated
+    public static class AdminDeprecatedGrandBase {
+        public void action() {}
+    }
+
+    public static class MiddleBase extends AdminDeprecatedGrandBase {
+    }
+
+    public static class LeafSub extends MiddleBase {
+        @Override
+        public void action() {}
+    }
+
+    @Test
+    public void accessChecksHandlerClassAndInheritingDeclaringClass() throws Exception {
+        assertEquals("LicensedOnly", JerseyModelSource.access(
+                LicensedBase.class.getMethod("handle"),
+                UnannotatedSub.class.getMethod("handle"),
+                UnannotatedSub.class));
+        assertEquals("AdminOnly", JerseyModelSource.access(
+                AdminApi.class.getMethod("call"),
+                ImplementsAdminApi.class.getMethod("call"),
+                ImplementsAdminApi.class));
+        assertEquals("AdminOnly", JerseyModelSource.access(
+                LeafSub.class.getMethod("action"),
+                LeafSub.class.getMethod("action"),
+                LeafSub.class));
+        assertTrue(JerseyModelSource.isDeprecated(
+                LeafSub.class.getMethod("action"),
+                LeafSub.class.getMethod("action"),
+                LeafSub.class));
+        assertFalse(JerseyModelSource.isDeprecated(
+                UnannotatedSub.class.getMethod("handle"),
+                UnannotatedSub.class.getMethod("handle"),
+                UnannotatedSub.class));
     }
 }
