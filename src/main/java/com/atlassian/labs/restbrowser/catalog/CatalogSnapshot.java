@@ -34,18 +34,23 @@ public final class CatalogSnapshot {
     private final int total;
     private final List<ModuleEntry> modules;
     private final Map<String, ModuleEntry> moduleIndex;
+    private final List<Operation> operations;
+    private final Map<String, Operation> operationIndex;
     private final String operationsJson;
     private final byte[] index;
     private final String adminTag;
 
     private CatalogSnapshot(String hash, boolean complete, int done, int total, List<ModuleEntry> modules,
-                            Map<String, ModuleEntry> moduleIndex, String operationsJson, byte[] index) {
+                            Map<String, ModuleEntry> moduleIndex, List<Operation> operations,
+                            Map<String, Operation> operationIndex, String operationsJson, byte[] index) {
         this.hash = hash;
         this.complete = complete;
         this.done = done;
         this.total = total;
         this.modules = modules;
         this.moduleIndex = moduleIndex;
+        this.operations = operations;
+        this.operationIndex = operationIndex;
         this.operationsJson = operationsJson;
         this.index = index;
         StringBuilder errors = new StringBuilder(hash);
@@ -61,16 +66,16 @@ public final class CatalogSnapshot {
                               int total, String ownVersion) {
         List<Operation> sortedOps = new ArrayList<>(operations);
         sortedOps.sort(Comparator.comparing(Operation::key));
-        return fromSortedOperations(modules, operationsJson(sortedOps), complete, done, total, ownVersion);
+        return fromSortedOperations(modules, sortedOps, operationsJson(sortedOps), complete, done, total, ownVersion);
     }
 
     /**
      * Fast path for progressive catalog builds using pre-serialized per-operation JSON strings so incremental
      * snapshots do not re-serialize previously built modules repeatedly.
      */
-    static CatalogSnapshot ofPreserialized(List<ModuleEntry> modules, List<String> sortedOpJson,
-                                           boolean complete, int done, int total, String ownVersion) {
-        // Combine and verify deterministic key order using pre-serialized items
+    static CatalogSnapshot ofPreserialized(List<ModuleEntry> modules, List<Operation> sortedOps,
+                                           List<String> sortedOpJson, boolean complete, int done, int total,
+                                           String ownVersion) {
         StringBuilder arr = new StringBuilder(Math.max(16, sortedOpJson.size() * 192)).append('[');
         for (int i = 0; i < sortedOpJson.size(); i++) {
             if (i > 0) {
@@ -79,21 +84,31 @@ public final class CatalogSnapshot {
             arr.append(sortedOpJson.get(i));
         }
         arr.append(']');
-        return fromSortedOperations(modules, arr.toString(), complete, done, total, ownVersion);
+        return fromSortedOperations(modules, sortedOps, arr.toString(), complete, done, total, ownVersion);
     }
 
-    private static CatalogSnapshot fromSortedOperations(List<ModuleEntry> modules, String operationsJson,
-                                                      boolean complete, int done, int total, String ownVersion) {
+    static CatalogSnapshot ofPreserialized(List<ModuleEntry> modules, List<String> sortedOpJson,
+                                           boolean complete, int done, int total, String ownVersion) {
+        return ofPreserialized(modules, List.of(), sortedOpJson, complete, done, total, ownVersion);
+    }
+
+    private static CatalogSnapshot fromSortedOperations(List<ModuleEntry> modules, List<Operation> sortedOps,
+                                                      String operationsJson, boolean complete, int done, int total,
+                                                      String ownVersion) {
         List<ModuleEntry> sortedModules = new ArrayList<>(modules);
         sortedModules.sort(Comparator.comparing(ModuleEntry::id));
         Map<String, ModuleEntry> byId = new HashMap<>(sortedModules.size() * 2);
         for (ModuleEntry m : sortedModules) {
             byId.put(m.id(), m);
         }
+        Map<String, Operation> byOpKey = new HashMap<>(Math.max(16, sortedOps.size() * 2));
+        for (Operation op : sortedOps) {
+            byOpKey.put(op.key(), op);
+        }
         String hash = computeHash(sortedModules, operationsJson, complete, ownVersion);
         String index = "{\"format\":" + FORMAT + ",\"hash\":\"" + hash + "\",\"operations\":" + operationsJson + "}";
-        return new CatalogSnapshot(hash, complete, done, total, List.copyOf(sortedModules),
-                Map.copyOf(byId), operationsJson, index.getBytes(StandardCharsets.UTF_8));
+        return new CatalogSnapshot(hash, complete, done, total, List.copyOf(sortedModules), Map.copyOf(byId),
+                List.copyOf(sortedOps), Map.copyOf(byOpKey), operationsJson, index.getBytes(StandardCharsets.UTF_8));
     }
 
     private static String computeHash(List<ModuleEntry> sortedModules, String operationsJson,
@@ -121,7 +136,7 @@ public final class CatalogSnapshot {
         }
         String newHash = computeHash(modules, operationsJson, false, ownVersion);
         String newIndex = "{\"format\":" + FORMAT + ",\"hash\":\"" + newHash + "\",\"operations\":" + operationsJson + "}";
-        return new CatalogSnapshot(newHash, false, done, total, modules, moduleIndex,
+        return new CatalogSnapshot(newHash, false, done, total, modules, moduleIndex, operations, operationIndex,
                 operationsJson, newIndex.getBytes(StandardCharsets.UTF_8));
     }
 
@@ -152,6 +167,15 @@ public final class CatalogSnapshot {
 
     public List<ModuleEntry> modules() {
         return modules;
+    }
+
+    public List<Operation> operations() {
+        return operations;
+    }
+
+    /** O(1) lookup of an operation by key. */
+    public Optional<Operation> operation(String key) {
+        return key == null ? Optional.empty() : Optional.ofNullable(operationIndex.get(key));
     }
 
     /** The index document, UTF-8 JSON, the same for every user. */

@@ -118,6 +118,21 @@ public class NextServletTest {
         when(userManager.isSystemAdmin(admin)).thenReturn(true);
         String authed = llms.render(request);
         assertTrue(authed.contains("https://example.test/jira/rest/restbrowser/1/code/graph"));
+        assertTrue(authed.contains("/catalog/operations?"));
+        assertTrue(authed.contains("/catalog/resolve?"));
+        assertTrue(authed.contains("/catalog/index/current"));
+        assertTrue(authed.contains("/catalog/openapi?"));
+        assertTrue(authed.contains("/openapi.json"));
+        assertTrue(authed.contains("/code/context"));
+        assertTrue(authed.contains("/code/resource?"));
+        assertTrue(authed.contains("/mcp"));
+        assertTrue(authed.contains("/llms-full.txt"));
+        assertTrue(authed.contains("/code/schema?"));
+        assertTrue(authed.contains("/code/implementations?"));
+        assertTrue(authed.contains("/code/callers?"));
+        assertTrue(authed.contains("/code/grep?"));
+        assertTrue(authed.contains("preset=domain"));
+        assertTrue(authed.contains("format=json|markdown"));
         assertTrue(authed.contains("Jira 10.3.0"));
         assertTrue(authed.contains(snap.hash()));
         assertTrue(authed.contains("system administrator access"));
@@ -129,6 +144,17 @@ public class NextServletTest {
         verify(llmsResp).setContentType("text/plain; charset=utf-8");
         verify(llmsResp).setHeader("Cache-Control", "private, no-cache");
         assertTrue(llmsOut.toString().startsWith("# REST API Browser"));
+
+        // llms-full.txt serves extended examples & MCP configuration when path ends with /llms-full.txt
+        when(request.getServletPath()).thenReturn("/plugins/servlet/rest-api-browser/llms-full.txt");
+        HttpServletResponse fullResp = mock(HttpServletResponse.class);
+        StringWriter fullOut = new StringWriter();
+        when(fullResp.getWriter()).thenReturn(new PrintWriter(fullOut));
+        llms.doGet(request, fullResp);
+        String fullText = fullOut.toString();
+        assertTrue(fullText.contains("Full Agent Reference"));
+        assertTrue(fullText.contains("mcpServers"));
+        assertTrue(fullText.contains("Quick Curl Examples"));
     }
 
     @Test

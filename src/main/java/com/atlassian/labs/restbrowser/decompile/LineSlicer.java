@@ -31,6 +31,25 @@ public final class LineSlicer {
         return new Slice(sb.toString(), start, end, end < total || start > 1);
     }
 
+    /** Formats text with 1-based right-aligned line numbers starting at {@code startLine}. */
+    public static String formatWithLineNumbers(String text, int startLine) {
+        if (text == null) {
+            return "";
+        }
+        int base = Math.max(1, startLine);
+        String[] lines = text.split("\n", -1);
+        int width = String.valueOf(base + lines.length - 1).length();
+        String fmt = "%" + width + "d | %s";
+        StringBuilder sb = new StringBuilder(text.length() + lines.length * (width + 4));
+        for (int i = 0; i < lines.length; i++) {
+            if (i > 0) {
+                sb.append('\n');
+            }
+            sb.append(String.format(fmt, base + i, lines[i]));
+        }
+        return sb.toString();
+    }
+
     public static int countLines(String s) {
         if (s == null || s.isEmpty()) {
             return 1;

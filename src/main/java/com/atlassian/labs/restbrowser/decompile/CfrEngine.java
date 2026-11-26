@@ -35,6 +35,11 @@ public final class CfrEngine implements DecompilerEngine {
 
     @Override
     public String decompile(BytecodeInput input, DecompileOptions options) {
+        return decompileWithDiagnostics(input, options).source();
+    }
+
+    @Override
+    public DecompileOutput decompileWithDiagnostics(BytecodeInput input, DecompileOptions options) {
         String internalPath = input.className().replace('.', '/') + ".class";
         String methodName = options == null ? null : options.methodName();
         int overloadParams = options == null ? -1 : options.overloadParamCount();
@@ -47,11 +52,11 @@ public final class CfrEngine implements DecompilerEngine {
                 String fullRaw = invokeCfr(input.loader(), internalPath, input.primaryBytes(), null);
                 String fullClean = DecompilerEngine.cleanSource(fullRaw, DEFAULT_MAX_SOURCE);
                 if (fullClean != null) {
-                    return fullClean;
+                    return new DecompileOutput(fullClean, DecompilerEngine.detectSourceWarnings(fullClean));
                 }
             }
         }
-        return cleaned;
+        return new DecompileOutput(cleaned, DecompilerEngine.detectSourceWarnings(cleaned));
     }
 
     private static String invokeCfr(ClassLoader loader, String primaryPath, byte[] primaryBytes, String methodName) {

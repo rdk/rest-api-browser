@@ -1,5 +1,8 @@
 package com.atlassian.labs.restbrowser.rest;
 
+import com.atlassian.labs.restbrowser.catalog.CatalogQuery;
+import com.atlassian.labs.restbrowser.catalog.OpenApiExporter;
+
 import com.atlassian.annotations.security.LicensedOnly;
 import com.atlassian.annotations.security.SystemAdminOnly;
 import com.atlassian.labs.restbrowser.catalog.CatalogService;
@@ -89,6 +92,8 @@ public class CatalogResource {
         return Response.ok(body, JSON).header("ETag", etag).header("Cache-Control", "private, no-cache").build();
     }
 
+    private static final String MARKDOWN = "text/markdown;charset=UTF-8";
+
     @GET
     @Path("/index/{hash}")
     @Produces(MediaType.APPLICATION_JSON)
@@ -102,13 +107,136 @@ public class CatalogResource {
             String err = new Json().beginObject()
                     .field("error", "unknown-hash")
                     .field("hash", snapshot.hash())
+                    .field("hint", "Fetch /rest/restbrowser/1/catalog/index/current or search via /rest/restbrowser/1/catalog/operations.")
                     .endObject().toString();
             return Response.status(Response.Status.NOT_FOUND).header("Cache-Control", "no-store")
                     .type(JSON).entity(err).build();
         }
         StreamingOutput body = snapshot::writeIndex;
         return Response.ok(body, JSON).header("Content-Length", snapshot.indexLength())
+                .header("X-Catalog-Hash", snapshot.hash())
                 .header("Cache-Control", snapshot.complete() ? IMMUTABLE : "private, no-cache").build();
+    }
+
+    @GET
+    @Path("/index/current")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response indexCurrent(@Context HttpServletRequest request) {
+        Response denied = RestAuth.requireLicensed(userManager, request);
+        if (denied != null) {
+            return denied;
+        }
+        CatalogSnapshot snapshot = catalog.current(request.getServletContext());
+        String tag = snapshot.hash();
+        String etag = "\"" + tag + "\"";
+        if (matches(request.getHeader("If-None-Match"), tag)) {
+            return Response.notModified()
+                    .header("ETag", etag)
+                    .header("X-Catalog-Hash", tag)
+                    .header("Cache-Control", "private, no-cache")
+                    .build();
+        }
+        StreamingOutput body = snapshot::writeIndex;
+        return Response.ok(body, JSON)
+                .header("ETag", etag)
+                .header("X-Catalog-Hash", tag)
+                .header("Content-Length", snapshot.indexLength())
+                .header("Cache-Control", "private, no-cache")
+                .build();
+    }
+
+    @GET
+    @Path("/operations")
+    @Produces({MediaType.APPLICATION_JSON, MARKDOWN, MediaType.TEXT_PLAIN})
+    public Response searchOperations(@QueryParam("q") String q,
+                                     @QueryParam("method") String method,
+                                     @QueryParam("path") String path,
+                                     @QueryParam("module") String module,
+                                     @QueryParam("plugin") String plugin,
+                                     @QueryParam("access") String access,
+                                     @QueryParam("deprecated") Boolean deprecated,
+                                     @QueryParam("usesClass") String usesClass,
+                                     @QueryParam("limit") int limit,
+                                     @QueryParam("offset") int offset,
+                                     @QueryParam("fields") String fields,
+                                     @QueryParam("format") String format,
+                                     @Context HttpServletRequest request) {
+        Response denied = RestAuth.requireLicensed(userManager, request);
+        if (denied != null) {
+            return denied;
+        }
+        CatalogSnapshot snapshot = catalog.current(request.getServletContext());
+        CatalogQuery.OperationFilter filter = new CatalogQuery.OperationFilter(
+                q, method, path, module, plugin, access, deprecated, usesClass,
+                limit, offset, "full".equalsIgnoreCase(fields));
+        if (RestAuth.wantsMarkdown(format, request)) {
+            return Response.ok(CatalogQuery.searchMarkdown(snapshot, filter), MARKDOWN)
+                    .header("X-Catalog-Hash", snapshot.hash())
+                    .header("Cache-Control", "private, no-cache")
+                    .build();
+        }
+        return Response.ok(CatalogQuery.searchJson(snapshot, filter), JSON)
+                .header("X-Catalog-Hash", snapshot.hash())
+                .header("Cache-Control", "private, no-cache")
+                .build();
+    }
+
+    @GET
+    @Path("/resolve")
+    @Produces({MediaType.APPLICATION_JSON, MARKDOWN, MediaType.TEXT_PLAIN})
+    public Response resolveUrl(@QueryParam("url") String url,
+                               @QueryParam("method") String method,
+                               @QueryParam("limit") int limit,
+                               @QueryParam("format") String format,
+                               @Context HttpServletRequest request) {
+        Response denied = RestAuth.requireLicensed(userManager, request);
+        if (denied != null) {
+            return denied;
+        }
+        if (url == null || url.isBlank()) {
+            return RestAuth.error(Response.Status.BAD_REQUEST, "missing-url",
+                    "Pass ?url=/rest/... or a full endpoint URL.");
+        }
+        CatalogSnapshot snapshot = catalog.current(request.getServletContext());
+        if (RestAuth.wantsMarkdown(format, request)) {
+            return Response.ok(CatalogQuery.resolveUrlMarkdown(snapshot, method, url, limit), MARKDOWN)
+                    .header("X-Catalog-Hash", snapshot.hash())
+                    .header("Cache-Control", "private, no-cache")
+                    .build();
+        }
+        return Response.ok(CatalogQuery.resolveUrlJson(snapshot, method, url, limit), JSON)
+                .header("X-Catalog-Hash", snapshot.hash())
+                .header("Cache-Control", "private, no-cache")
+                .build();
+    }
+
+    @GET
+    @Path("/openapi")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response moduleOpenApi(@QueryParam("module") String module,
+                                  @QueryParam("includeSchemas") Boolean includeSchemas,
+                                  @QueryParam("schemaDepth") int schemaDepth,
+                                  @Context HttpServletRequest request) {
+        Response denied = RestAuth.requireLicensed(userManager, request);
+        if (denied != null) {
+            return denied;
+        }
+        if (module == null || module.isBlank()) {
+            return RestAuth.error(Response.Status.BAD_REQUEST, "missing-module",
+                    "Pass ?module={moduleId} from GET /rest/restbrowser/1/catalog.");
+        }
+        CatalogSnapshot snapshot = catalog.current(request.getServletContext());
+        UserKey user = RestAuth.remoteUser(userManager, request);
+        boolean sysadmin = RestAuth.isSystemAdmin(userManager, user);
+        boolean withSchemas = sysadmin && !Boolean.FALSE.equals(includeSchemas);
+        String baseUrl = applicationProperties.getBaseUrl(UrlMode.RELATIVE);
+        String spec = OpenApiExporter.moduleSpecJson(snapshot, module.trim(), baseUrl, withSchemas,
+                schemaDepth <= 0 ? 2 : schemaDepth, withSchemas ? source : null);
+        if (spec == null) {
+            return RestAuth.error(Response.Status.NOT_FOUND, "unknown-module",
+                    "Unknown module '" + module.trim() + "'. Inspect modules via GET /rest/restbrowser/1/catalog.");
+        }
+        return RestAuth.cacheableResponse(request, 200, JSON, spec, snapshot.hash());
     }
 
     @POST
@@ -120,7 +248,7 @@ public class CatalogResource {
             return denied;
         }
         if (!RestAuth.xsrfHeader(request)) {
-            return RestAuth.error(Response.Status.FORBIDDEN, "xsrf-check-failed");
+            return RestAuth.error(Response.Status.FORBIDDEN, "xsrf-check-failed", "Add header X-Atlassian-Token: no-check");
         }
         catalog.current(request.getServletContext());
         catalog.refresh(module == null || module.isBlank() ? null : module);
@@ -135,7 +263,7 @@ public class CatalogResource {
             return denied;
         }
         if (!RestAuth.xsrfHeader(request)) {
-            return RestAuth.error(Response.Status.FORBIDDEN, "xsrf-check-failed");
+            return RestAuth.error(Response.Status.FORBIDDEN, "xsrf-check-failed", "Add header X-Atlassian-Token: no-check");
         }
         ModuleEntry entry = catalog.current(request.getServletContext()).module(module).orElse(null);
         if (entry == null) {
@@ -239,22 +367,6 @@ public class CatalogResource {
     }
 
     static boolean matches(String ifNoneMatch, String tag) {
-        if (ifNoneMatch == null) {
-            return false;
-        }
-        for (String candidate : ifNoneMatch.split(",")) {
-            String c = candidate.trim();
-            if (c.startsWith("W/")) {
-                c = c.substring(2);
-            }
-            c = c.replace("\"", "");
-            if (c.endsWith("-gzip")) {
-                c = c.substring(0, c.length() - "-gzip".length());
-            }
-            if (c.equals(tag) || c.equals("*")) {
-                return true;
-            }
-        }
-        return false;
+        return RestAuth.matchesEtag(ifNoneMatch, tag);
     }
 }

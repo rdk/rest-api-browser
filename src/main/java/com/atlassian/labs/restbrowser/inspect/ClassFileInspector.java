@@ -7,6 +7,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
@@ -17,19 +18,79 @@ import java.util.regex.Pattern;
 /**
  * Pure-JDK classfile metadata and constant-pool reference analyzer.
  * <p>
- * Reads JVMS classfile headers, inspects referenced classes strictly from class constants, field/method/method-type
- * descriptors, and generic {@code Signature} strings (never scanning arbitrary {@code CONSTANT_String} literals), and
- * walks multi-level nested/anonymous inner classes recursively up to a bounded depth.
+ * Reads JVMS classfile headers, inspects referenced classes, type hierarchies, string/UTF-8 constants, and
+ * method call references strictly from compiled bytecode constant pools without loading target classes.
  */
 public final class ClassFileInspector {
 
     public static final Pattern SAFE_CLASS_NAME = Pattern.compile("^[A-Za-z0-9_.$]{1,300}$");
     private static final int MAX_RECURSIVE_INNERS = 64;
+    private static final int ACC_INTERFACE = 0x0200;
+    private static final int ACC_ABSTRACT = 0x0400;
+    private static final int ACC_ANNOTATION = 0x2000;
+    private static final int ACC_ENUM = 0x4000;
+    private static final Set<String> JVMS_ATTRIBUTES = Set.of(
+            "Code", "ConstantValue", "Deprecated", "Exceptions", "InnerClasses", "EnclosingMethod",
+            "Synthetic", "Signature", "SourceFile", "SourceDebugExtension", "LineNumberTable",
+            "LocalVariableTable", "LocalVariableTypeTable", "RuntimeVisibleAnnotations",
+            "RuntimeInvisibleAnnotations", "RuntimeVisibleParameterAnnotations",
+            "RuntimeInvisibleParameterAnnotations", "RuntimeVisibleTypeAnnotations",
+            "RuntimeInvisibleTypeAnnotations", "AnnotationDefault", "BootstrapMethods",
+            "MethodParameters", "Module", "ModulePackages", "ModuleMainClass", "NestHost",
+            "NestMembers", "Record", "PermittedSubclasses", "StackMapTable", "<init>", "<clinit>");
 
     public record BytecodeVersion(int major, int minor, String label) {
     }
 
+    public record ClassHierarchy(String name, String superName, List<String> interfaces, int accessFlags) {
+        public boolean isInterface() {
+            return (accessFlags & ACC_INTERFACE) != 0;
+        }
+
+        public boolean isAbstract() {
+            return (accessFlags & ACC_ABSTRACT) != 0;
+        }
+
+        public boolean isEnum() {
+            return (accessFlags & ACC_ENUM) != 0;
+        }
+
+        public boolean isAnnotation() {
+            return (accessFlags & ACC_ANNOTATION) != 0;
+        }
+    }
+
+    public record StringConstant(String value, String kind) {
+    }
+
+    public record MethodRef(String owner, String name, String descriptor, boolean interfaceMethod) {
+    }
+
+    public record MethodOutline(String name, String descriptor, String signature, int accessFlags,
+                                int startLine, int endLine) {
+    }
+
     private ClassFileInspector() {
+    }
+
+    /** Normalizes a bundle archive class entry path to a dotted FQCN, or returns {@code null} if non-class/unsafe. */
+    public static String bundlePathToClassName(String rawPath) {
+        if (rawPath == null || !rawPath.endsWith(".class")) {
+            return null;
+        }
+        String path = rawPath.startsWith("/") ? rawPath.substring(1) : rawPath;
+        if (path.startsWith("WEB-INF/classes/")) {
+            path = path.substring("WEB-INF/classes/".length());
+        }
+        if (path.startsWith("META-INF/")
+                || path.contains("..")
+                || path.endsWith("module-info.class")
+                || path.endsWith("package-info.class")) {
+            return null;
+        }
+        String fqcn = path.substring(0, path.length() - ".class".length()).replace('/', '.');
+        return !fqcn.contains("..") && !fqcn.startsWith(".") && !fqcn.endsWith(".")
+                && SAFE_CLASS_NAME.matcher(fqcn).matches() ? fqcn : null;
     }
 
     public static BytecodeVersion readBytecodeVersion(byte[] classBytes) {
@@ -122,6 +183,454 @@ public final class ClassFileInspector {
         return names;
     }
 
+    private record RawMethodRef(boolean iface, int classIdx, int ntIdx) {
+    }
+
+    private record ConstantPool(int count, String[] utf8, boolean[] isStringLiteral, int[] classNameIdx,
+                                int[] ntNameIdx, int[] ntDescIdx, List<Integer> classNameIndices,
+                                List<Integer> descriptorOrSigIndices, List<RawMethodRef> methodRefs) {
+        String utf8At(int idx) {
+            return idx > 0 && idx < count ? utf8[idx] : null;
+        }
+
+        String classInternalAt(int cpClassIdx) {
+            if (cpClassIdx <= 0 || cpClassIdx >= count) {
+                return null;
+            }
+            return utf8At(classNameIdx[cpClassIdx]);
+        }
+    }
+
+    private static ConstantPool readConstantPool(DataInputStream in) throws IOException {
+        if (in.readInt() != 0xCAFEBABE) {
+            return null;
+        }
+        in.readUnsignedShort(); // minor
+        in.readUnsignedShort(); // major
+        int count = in.readUnsignedShort();
+        if (count < 1 || count > 65535) {
+            return null;
+        }
+        String[] utf8 = new String[count];
+        boolean[] isStringLiteral = new boolean[count];
+        int[] classNameIdx = new int[count];
+        int[] ntNameIdx = new int[count];
+        int[] ntDescIdx = new int[count];
+        List<Integer> classNameIndices = new ArrayList<>();
+        List<Integer> descriptorOrSigIndices = new ArrayList<>();
+        List<RawMethodRef> methodRefs = new ArrayList<>();
+        for (int i = 1; i < count; i++) {
+            int tag = in.readUnsignedByte();
+            switch (tag) {
+                case 1 -> utf8[i] = in.readUTF(); // CONSTANT_Utf8
+                case 3, 4, 9, 17, 18 -> skipFully(in, 4); // Integer, Float, Fieldref, Dynamic, InvokeDynamic
+                case 5, 6 -> { // Long, Double take 2 slots
+                    skipFully(in, 8);
+                    i++;
+                }
+                case 7 -> { // CONSTANT_Class
+                    int idx = in.readUnsignedShort();
+                    classNameIdx[i] = idx;
+                    classNameIndices.add(idx);
+                }
+                case 8 -> { // CONSTANT_String
+                    int strUtf8Idx = in.readUnsignedShort();
+                    if (strUtf8Idx > 0 && strUtf8Idx < count) {
+                        isStringLiteral[strUtf8Idx] = true;
+                    }
+                }
+                case 10, 11 -> methodRefs.add(new RawMethodRef(tag == 11, in.readUnsignedShort(), in.readUnsignedShort()));
+                case 12 -> { // CONSTANT_NameAndType
+                    ntNameIdx[i] = in.readUnsignedShort();
+                    ntDescIdx[i] = in.readUnsignedShort();
+                    descriptorOrSigIndices.add(ntDescIdx[i]);
+                }
+                case 15 -> skipFully(in, 3); // CONSTANT_MethodHandle
+                case 16 -> descriptorOrSigIndices.add(in.readUnsignedShort()); // CONSTANT_MethodType
+                case 19, 20 -> skipFully(in, 2); // Module, Package
+                default -> {
+                    return null;
+                }
+            }
+        }
+        return new ConstantPool(count, utf8, isStringLiteral, classNameIdx, ntNameIdx, ntDescIdx,
+                classNameIndices, descriptorOrSigIndices, methodRefs);
+    }
+
+    /**
+     * Reads class access flags, superclass, and implemented interfaces from JVMS classfile headers without loading.
+     */
+    public static ClassHierarchy readHierarchy(byte[] classBytes) {
+        if (classBytes == null || classBytes.length < 24) {
+            return null;
+        }
+        try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(classBytes))) {
+            ConstantPool cp = readConstantPool(in);
+            if (cp == null) {
+                return null;
+            }
+            int accessFlags = in.readUnsignedShort();
+            String name = internalToFqcn(cp.classInternalAt(in.readUnsignedShort()));
+            if (name == null) {
+                return null;
+            }
+            int superIdx = in.readUnsignedShort();
+            String superName = superIdx == 0 ? null : internalToFqcn(cp.classInternalAt(superIdx));
+            int ifaceCount = in.readUnsignedShort();
+            List<String> ifaces = new ArrayList<>(Math.min(ifaceCount, 64));
+            for (int i = 0; i < ifaceCount; i++) {
+                String iface = internalToFqcn(cp.classInternalAt(in.readUnsignedShort()));
+                if (iface != null) {
+                    ifaces.add(iface);
+                }
+            }
+            return new ClassHierarchy(name, superName, List.copyOf(ifaces), accessFlags);
+        } catch (IOException | RuntimeException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Extracts {@code CONSTANT_String} literals and, optionally, non-descriptor {@code CONSTANT_Utf8} entries from
+     * bytecode (capturing annotations such as {@code @Path} and compile-time constants without decompiling).
+     */
+    public static List<StringConstant> extractStringConstants(byte[] classBytes, boolean includeUtf8) {
+        if (classBytes == null || classBytes.length < 10) {
+            return List.of();
+        }
+        try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(classBytes))) {
+            ConstantPool cp = readConstantPool(in);
+            if (cp == null) {
+                return List.of();
+            }
+            Map<String, String> found = new LinkedHashMap<>();
+            for (int i = 1; i < cp.count(); i++) {
+                if (cp.isStringLiteral()[i]) {
+                    String s = cp.utf8()[i];
+                    if (s != null && !s.isEmpty()) {
+                        found.putIfAbsent(s, "string");
+                    }
+                }
+            }
+            if (includeUtf8) {
+                for (int i = 1; i < cp.count(); i++) {
+                    if (cp.isStringLiteral()[i]) {
+                        continue;
+                    }
+                    String s = cp.utf8()[i];
+                    if (s == null || s.length() < 2 || s.isBlank() || s.indexOf('\u0000') >= 0
+                            || JVMS_ATTRIBUTES.contains(s) || looksLikeStrictJvmDescriptor(s)) {
+                        continue;
+                    }
+                    found.putIfAbsent(s, "utf8");
+                }
+            }
+            List<StringConstant> list = new ArrayList<>(found.size());
+            found.forEach((v, k) -> list.add(new StringConstant(v, k)));
+            return List.copyOf(list);
+        } catch (IOException | RuntimeException e) {
+            return List.of();
+        }
+    }
+
+    private static boolean looksLikeStrictJvmDescriptor(String s) {
+        if (s.indexOf(' ') >= 0 || s.indexOf('\n') >= 0 || s.indexOf('\t') >= 0) {
+            return false;
+        }
+        if (s.startsWith("(") && s.indexOf(')') > 0) {
+            return true;
+        }
+        if (s.startsWith("[")) {
+            return s.endsWith(";") || (s.length() == 2 && "ZBCSIJFD".indexOf(s.charAt(1)) >= 0);
+        }
+        return s.startsWith("L") && s.endsWith(";") && s.contains("/");
+    }
+
+    /** Extracts deduplicated {@code Methodref} and {@code InterfaceMethodref} constant-pool entries. */
+    public static List<MethodRef> extractMethodRefs(byte[] classBytes) {
+        if (classBytes == null || classBytes.length < 10) {
+            return List.of();
+        }
+        try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(classBytes))) {
+            ConstantPool cp = readConstantPool(in);
+            if (cp == null) {
+                return List.of();
+            }
+            Set<MethodRef> refs = new LinkedHashSet<>();
+            for (RawMethodRef raw : cp.methodRefs()) {
+                String owner = internalToFqcn(cp.classInternalAt(raw.classIdx()));
+                if (owner == null || raw.ntIdx() <= 0 || raw.ntIdx() >= cp.count()) {
+                    continue;
+                }
+                String name = cp.utf8At(cp.ntNameIdx()[raw.ntIdx()]);
+                String desc = cp.utf8At(cp.ntDescIdx()[raw.ntIdx()]);
+                if (name != null && !name.isEmpty() && desc != null) {
+                    refs.add(new MethodRef(owner, name, desc, raw.iface()));
+                }
+            }
+        return List.copyOf(refs);
+        } catch (IOException | RuntimeException e) {
+            return List.of();
+        }
+    }
+
+    /**
+     * Parses declared non-synthetic methods and bytecode {@code LineNumberTable} ranges without loading classes.
+     */
+    public static List<MethodOutline> readMethodOutlines(byte[] classBytes) {
+        ParsedMembers parsed = parseMembers(classBytes, false);
+        if (parsed == null) {
+            return List.of();
+        }
+        List<MethodOutline> list = new ArrayList<>(parsed.outlines);
+        list.sort((a, b) -> {
+            int la = a.startLine() > 0 ? a.startLine() : Integer.MAX_VALUE;
+            int lb = b.startLine() > 0 ? b.startLine() : Integer.MAX_VALUE;
+            int cmp = Integer.compare(la, lb);
+            if (cmp != 0) {
+                return cmp;
+            }
+            cmp = a.name().compareTo(b.name());
+            return cmp != 0 ? cmp : a.descriptor().compareTo(b.descriptor());
+        });
+        return List.copyOf(list);
+    }
+
+    /**
+     * Classifies direct classfile references into {@code extends}, {@code implements}, {@code field}, and
+     * {@code signature} roles from JVMS class, field, and method sections.
+     */
+    public static Map<String, Set<String>> readTypedReferences(byte[] classBytes) {
+        ParsedMembers parsed = parseMembers(classBytes, true);
+        if (parsed == null) {
+            return Map.of();
+        }
+        return parsed.typedRefs;
+    }
+
+    /**
+     * Returns each referenced class (including nested inner classes) mapped to its edge kinds
+     * ({@code extends}, {@code implements}, {@code field}, {@code signature}, {@code body}).
+     */
+    public static Map<String, List<String>> collectTypedReferences(ClassLoader loader, String className, byte[] classBytes) {
+        Map<String, Set<String>> structural = readTypedReferences(classBytes);
+        List<String> allRefs = collectReferencedClasses(loader, className, classBytes);
+        Map<String, List<String>> merged = new LinkedHashMap<>();
+        for (String ref : allRefs) {
+            Set<String> kinds = structural.get(ref);
+            merged.put(ref, kinds != null && !kinds.isEmpty() ? List.copyOf(kinds) : List.of("body"));
+        }
+        return merged;
+    }
+
+    private record ParsedMembers(List<MethodOutline> outlines, Map<String, Set<String>> typedRefs) {
+    }
+
+    private static ParsedMembers parseMembers(byte[] classBytes, boolean collectTyped) {
+        if (classBytes == null || classBytes.length < 24) {
+            return null;
+        }
+        try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(classBytes))) {
+            ConstantPool cp = readConstantPool(in);
+            if (cp == null) {
+                return null;
+            }
+            Map<String, Set<String>> typed = collectTyped ? new LinkedHashMap<>() : Map.of();
+            in.readUnsignedShort(); // access_flags
+            String selfFqcn = internalToFqcn(cp.classInternalAt(in.readUnsignedShort()));
+            int superIdx = in.readUnsignedShort();
+            if (collectTyped && superIdx > 0) {
+                String sup = internalToFqcn(cp.classInternalAt(superIdx));
+                if (sup != null && !"java.lang.Object".equals(sup)) {
+                    typed.computeIfAbsent(sup, k -> new LinkedHashSet<>()).add("extends");
+                }
+            }
+            int ifaceCount = in.readUnsignedShort();
+            for (int i = 0; i < ifaceCount; i++) {
+                String iface = internalToFqcn(cp.classInternalAt(in.readUnsignedShort()));
+                if (collectTyped && iface != null) {
+                    typed.computeIfAbsent(iface, k -> new LinkedHashSet<>()).add("implements");
+                }
+            }
+
+            // fields[]
+            int fieldCount = in.readUnsignedShort();
+            for (int i = 0; i < fieldCount; i++) {
+                in.readUnsignedShort(); // access_flags
+                in.readUnsignedShort(); // name_index
+                String fDesc = cp.utf8At(in.readUnsignedShort());
+                if (collectTyped && fDesc != null) {
+                    addTypedFromDescriptor(fDesc, "field", typed);
+                }
+                int fAttrCount = in.readUnsignedShort();
+                for (int a = 0; a < fAttrCount; a++) {
+                    String attrName = cp.utf8At(in.readUnsignedShort());
+                    int attrLen = in.readInt();
+                    if (attrLen < 0) {
+                        return null;
+                    }
+                    if (collectTyped && "Signature".equals(attrName) && attrLen == 2) {
+                        String sig = cp.utf8At(in.readUnsignedShort());
+                        if (sig != null) {
+                            addTypedFromDescriptor(sig, "field", typed);
+                        }
+                    } else {
+                        skipFully(in, attrLen);
+                    }
+                }
+            }
+
+            // methods[]
+            int methodCount = in.readUnsignedShort();
+            List<MethodOutline> outlines = new ArrayList<>(Math.min(methodCount, 128));
+            for (int i = 0; i < methodCount; i++) {
+                int mAccess = in.readUnsignedShort();
+                String mName = cp.utf8At(in.readUnsignedShort());
+                String mDesc = cp.utf8At(in.readUnsignedShort());
+                if (collectTyped && mDesc != null) {
+                    addTypedFromDescriptor(mDesc, "signature", typed);
+                }
+                int minLine = Integer.MAX_VALUE;
+                int maxLine = 0;
+                int mAttrCount = in.readUnsignedShort();
+                for (int a = 0; a < mAttrCount; a++) {
+                    String attrName = cp.utf8At(in.readUnsignedShort());
+                    int attrLen = in.readInt();
+                    if (attrLen < 0) {
+                        return null;
+                    }
+                    if ("Code".equals(attrName) && attrLen >= 10) {
+                        in.readUnsignedShort(); // max_stack
+                        in.readUnsignedShort(); // max_locals
+                        int codeLen = in.readInt();
+                        if (codeLen < 0 || codeLen > attrLen - 8) {
+                            return null;
+                        }
+                        skipFully(in, codeLen);
+                        int exCount = in.readUnsignedShort();
+                        skipFully(in, exCount * 8);
+                        int subCount = in.readUnsignedShort();
+                        for (int s = 0; s < subCount; s++) {
+                            String subName = cp.utf8At(in.readUnsignedShort());
+                            int subLen = in.readInt();
+                            if (subLen < 0) {
+                                return null;
+                            }
+                            if ("LineNumberTable".equals(subName) && subLen >= 2) {
+                                int lineEntries = in.readUnsignedShort();
+                                for (int le = 0; le < lineEntries; le++) {
+                                    in.readUnsignedShort(); // start_pc
+                                    int lineNo = in.readUnsignedShort();
+                                    if (lineNo > 0) {
+                                        minLine = Math.min(minLine, lineNo);
+                                        maxLine = Math.max(maxLine, lineNo);
+                                    }
+                                }
+                            } else {
+                                skipFully(in, subLen);
+                            }
+                        }
+                    } else if (collectTyped && "Signature".equals(attrName) && attrLen == 2) {
+                        String sig = cp.utf8At(in.readUnsignedShort());
+                        if (sig != null) {
+                            addTypedFromDescriptor(sig, "signature", typed);
+                        }
+                    } else if (collectTyped && "Exceptions".equals(attrName) && attrLen >= 2) {
+                        int exCount = in.readUnsignedShort();
+                        for (int e = 0; e < exCount; e++) {
+                            String ex = internalToFqcn(cp.classInternalAt(in.readUnsignedShort()));
+                            if (ex != null) {
+                                typed.computeIfAbsent(ex, k -> new LinkedHashSet<>()).add("signature");
+                            }
+                        }
+                    } else {
+                        skipFully(in, attrLen);
+                    }
+                }
+                boolean synthetic = (mAccess & 0x1000) != 0 || (mAccess & 0x0040) != 0;
+                if (!synthetic && mName != null && !"<clinit>".equals(mName) && mDesc != null) {
+                    int start = minLine == Integer.MAX_VALUE ? 0 : minLine;
+                    outlines.add(new MethodOutline(mName, mDesc, formatMethodSignature(mName, mDesc, selfFqcn),
+                            mAccess, start, start == 0 ? 0 : maxLine));
+                }
+            }
+            return new ParsedMembers(outlines, typed);
+        } catch (IOException | RuntimeException e) {
+            return null;
+        }
+    }
+
+    private static void addTypedFromDescriptor(String descriptor, String kind, Map<String, Set<String>> out) {
+        Set<String> classes = new LinkedHashSet<>();
+        extractSignatureOrDescriptorClasses(descriptor, classes);
+        for (String cls : classes) {
+            out.computeIfAbsent(cls, k -> new LinkedHashSet<>()).add(kind);
+        }
+    }
+
+    static String formatMethodSignature(String name, String descriptor, String ownerFqcn) {
+        int open = descriptor.indexOf('(');
+        int close = descriptor.indexOf(')');
+        if (open < 0 || close < open) {
+            return name + descriptor;
+        }
+        String display = "<init>".equals(name) && ownerFqcn != null
+                ? ownerFqcn.substring(ownerFqcn.lastIndexOf('.') + 1)
+                : name;
+        StringBuilder sb = new StringBuilder(display).append('(');
+        int[] idx = {open + 1};
+        boolean first = true;
+        while (idx[0] < close) {
+            if (!first) {
+                sb.append(", ");
+            }
+            first = false;
+            sb.append(parseDescriptorType(descriptor, idx));
+        }
+        sb.append(')');
+        if (!"<init>".equals(name)) {
+            int[] rIdx = {close + 1};
+            sb.append(": ").append(parseDescriptorType(descriptor, rIdx));
+        }
+        return sb.toString();
+    }
+
+    private static String parseDescriptorType(String desc, int[] idx) {
+        int dims = 0;
+        while (idx[0] < desc.length() && desc.charAt(idx[0]) == '[') {
+            dims++;
+            idx[0]++;
+        }
+        if (idx[0] >= desc.length()) {
+            return "?";
+        }
+        char c = desc.charAt(idx[0]++);
+        String base = switch (c) {
+            case 'V' -> "void";
+            case 'Z' -> "boolean";
+            case 'B' -> "byte";
+            case 'S' -> "short";
+            case 'C' -> "char";
+            case 'I' -> "int";
+            case 'J' -> "long";
+            case 'F' -> "float";
+            case 'D' -> "double";
+            case 'L' -> {
+                int semi = desc.indexOf(';', idx[0]);
+                if (semi < 0) {
+                    idx[0] = desc.length();
+                    yield "?";
+                }
+                String internal = desc.substring(idx[0], semi);
+                idx[0] = semi + 1;
+                int slash = internal.lastIndexOf('/');
+                yield (slash >= 0 ? internal.substring(slash + 1) : internal).replace('$', '.');
+            }
+            default -> String.valueOf(c);
+        };
+        return dims == 0 ? base : base + "[]".repeat(dims);
+    }
+
     /**
      * Parses a class file's constant pool and extracts class names referenced by {@code CONSTANT_Class},
      * {@code CONSTANT_NameAndType} descriptors, {@code CONSTANT_MethodType} descriptors, and {@code Signature}
@@ -133,61 +642,29 @@ public final class ClassFileInspector {
             return out;
         }
         try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(classBytes))) {
-            if (in.readInt() != 0xCAFEBABE) {
+            ConstantPool cp = readConstantPool(in);
+            if (cp == null) {
                 return out;
             }
-            in.readUnsignedShort(); // minor
-            in.readUnsignedShort(); // major
-            int count = in.readUnsignedShort();
-            String[] utf8 = new String[count];
-            boolean[] isStringLiteral = new boolean[count];
-            List<Integer> classIndices = new ArrayList<>();
-            List<Integer> descriptorOrSigIndices = new ArrayList<>();
-            for (int i = 1; i < count; i++) {
-                int tag = in.readUnsignedByte();
-                switch (tag) {
-                    case 1 -> utf8[i] = in.readUTF(); // CONSTANT_Utf8
-                    case 3, 4, 9, 10, 11, 17, 18 -> skipFully(in, 4); // Integer, Float, Field/Method/InterfaceMethodref, Dynamic, InvokeDynamic
-                    case 5, 6 -> { // Long, Double take 2 slots
-                        skipFully(in, 8);
-                        i++;
-                    }
-                    case 7 -> classIndices.add(in.readUnsignedShort()); // CONSTANT_Class
-                    case 8 -> { // CONSTANT_String
-                        int strUtf8Idx = in.readUnsignedShort();
-                        if (strUtf8Idx > 0 && strUtf8Idx < count) {
-                            isStringLiteral[strUtf8Idx] = true;
-                        }
-                    }
-                    case 12 -> { // CONSTANT_NameAndType (name_index, descriptor_index)
-                        in.readUnsignedShort();
-                        descriptorOrSigIndices.add(in.readUnsignedShort());
-                    }
-                    case 15 -> skipFully(in, 3); // CONSTANT_MethodHandle
-                    case 16 -> descriptorOrSigIndices.add(in.readUnsignedShort()); // CONSTANT_MethodType
-                    case 19, 20 -> skipFully(in, 2); // Module, Package
-                    default -> {
-                        return out;
-                    }
+            for (int idx : cp.classNameIndices()) {
+                String internal = cp.utf8At(idx);
+                if (internal != null) {
+                    addInternalClassName(internal, out);
                 }
             }
-            for (int idx : classIndices) {
-                if (idx > 0 && idx < count && utf8[idx] != null) {
-                    addInternalClassName(utf8[idx], out);
-                }
-            }
-            for (int idx : descriptorOrSigIndices) {
-                if (idx > 0 && idx < count && utf8[idx] != null) {
-                    extractSignatureOrDescriptorClasses(utf8[idx], out);
+            for (int idx : cp.descriptorOrSigIndices()) {
+                String desc = cp.utf8At(idx);
+                if (desc != null) {
+                    extractSignatureOrDescriptorClasses(desc, out);
                 }
             }
             // Scan remaining non-String Utf8 entries that look like field/class descriptors or generic Signatures
             // (covers Signature attributes, LocalVariableTypeTable, RuntimeVisibleAnnotations, Record components).
-            for (int i = 1; i < count; i++) {
-                if (isStringLiteral[i]) {
+            for (int i = 1; i < cp.count(); i++) {
+                if (cp.isStringLiteral()[i]) {
                     continue;
                 }
-                String s = utf8[i];
+                String s = cp.utf8()[i];
                 if (s != null && s.indexOf('L') >= 0 && s.indexOf(';') >= 0 && s.indexOf('/') >= 0
                         && looksLikeJvmTypeOrSignature(s)) {
                     extractSignatureOrDescriptorClasses(s, out);
@@ -197,6 +674,14 @@ public final class ClassFileInspector {
             // malformed or partial class file
         }
         return out;
+    }
+
+    private static String internalToFqcn(String internal) {
+        if (internal == null || internal.isEmpty() || internal.startsWith("[")) {
+            return null;
+        }
+        String fqcn = internal.replace('/', '.');
+        return SAFE_CLASS_NAME.matcher(fqcn).matches() ? fqcn : null;
     }
 
     /** Rejects arbitrary prose / SQL / JSON Utf8 strings that happen to contain L.../...; fragments. */

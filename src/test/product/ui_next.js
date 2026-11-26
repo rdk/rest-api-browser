@@ -501,20 +501,78 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         const agentApi = await b.evaluate(`(async () => {
             const llms = await fetch(${q(CONTEXT)} + '/plugins/servlet/rest-api-browser/llms.txt', { credentials: 'same-origin' });
             const llmsText = await llms.text();
+            const llmsFull = await fetch(${q(CONTEXT)} + '/plugins/servlet/rest-api-browser/llms-full.txt', { credentials: 'same-origin' });
+            const llmsFullText = await llmsFull.text();
+            const selfOpenApi = await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/openapi', { credentials: 'same-origin' })).json();
+            const selfOpenApiJson = await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/openapi.json', { credentials: 'same-origin' })).json();
+            const opsSearch = await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/catalog/operations?limit=5', { credentials: 'same-origin' })).json();
+            const firstOp = (opsSearch.operations && opsSearch.operations[0]) || {};
+            const modOpenApi = firstOp.module
+                ? await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/catalog/openapi?module=' + encodeURIComponent(firstOp.module) + '&includeSchemas=false', { credentials: 'same-origin' })).json()
+                : {};
+            const curIdx = await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/catalog/index/current', { credentials: 'same-origin' });
             const cls = encodeURIComponent(${q(dlgClass1)});
-            const meta = await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/code/class?class=' + cls, { credentials: 'same-origin' })).json();
-            const graph = await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/code/graph?class=' + cls + '&depth=1&maxNodes=10', { credentials: 'same-origin' })).json();
+            const metaResp = await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/code/class?class=' + cls + '&view=compact&outline=true', { credentials: 'same-origin' });
+            const metaEtag = metaResp.headers.get('ETag');
+            const meta304 = metaEtag
+                ? await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/code/class?class=' + cls + '&view=compact&outline=true', { credentials: 'same-origin', headers: { 'If-None-Match': metaEtag } })
+                : { status: 0 };
+            const meta = await metaResp.json();
+            const schema = await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/code/schema?class=' + cls, { credentials: 'same-origin' })).json();
+            const graph = await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/code/graph?class=' + cls + '&preset=domain&depth=1&maxNodes=10', { credentials: 'same-origin' })).json();
+            const grep = await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/code/grep?q=restbrowser&limit=5', { credentials: 'same-origin' })).json();
+            const resList = meta.bundleId >= 0
+                ? await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/code/resource?bundleId=' + meta.bundleId + '&limit=5', { credentials: 'same-origin' })).json()
+                : { entries: [] };
+            const ctx = firstOp.key
+                ? await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/code/context', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json', 'X-Atlassian-Token': 'no-check' },
+                    body: JSON.stringify({ op: firstOp.key, maxLines: 40, includeImplementations: false }),
+                })).json()
+                : {};
+            const mcpHeaders = { 'Content-Type': 'application/json', 'X-Atlassian-Token': 'no-check' };
+            const mcpInit = await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/mcp', {
+                method: 'POST', credentials: 'same-origin', headers: mcpHeaders,
+                body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' }),
+            })).json();
+            const mcpList = await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/mcp', {
+                method: 'POST', credentials: 'same-origin', headers: mcpHeaders,
+                body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }),
+            })).json();
+            const mcpCall = await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/mcp', {
+                method: 'POST', credentials: 'same-origin', headers: mcpHeaders,
+                body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'search_operations', arguments: { limit: 2 } } }),
+            })).json();
             const plain = await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/code/source?class=' + cls + '&startLine=1&maxLines=10&format=text', { credentials: 'same-origin' });
             const plainText = await plain.text();
+            const md = await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/code/source?class=' + cls + '&startLine=1&maxLines=5&lineNumbers=true&format=markdown', { credentials: 'same-origin' });
+            const mdText = await md.text();
             return {
-                llmsOk: llms.status === 200 && llmsText.startsWith('# REST API Browser'),
-                metaOk: meta.name === ${q(dlgClass1)} && meta.bytecodeBytes > 0,
+                llmsOk: llms.status === 200 && llmsText.startsWith('# REST API Browser') && llmsText.includes('/catalog/operations') && llmsText.includes('/code/context') && llmsText.includes('/mcp'),
+                llmsFullOk: llmsFull.status === 200 && llmsFullText.includes('Full Agent Reference') && llmsFullText.includes('mcpServers'),
+                openApiOk: selfOpenApi.openapi === '3.1.0' && !!selfOpenApi.paths && selfOpenApiJson.openapi === '3.1.0' && !!selfOpenApiJson.paths && modOpenApi.openapi === '3.1.0',
+                opsOk: Array.isArray(opsSearch.operations) && opsSearch.operations.length > 0,
+                curIdxOk: curIdx.status === 200 && Boolean(curIdx.headers.get('X-Catalog-Hash')),
+                metaOk: meta.name === ${q(dlgClass1)} && meta.bytecodeBytes > 0 && Array.isArray(meta.fields) && Array.isArray(meta.outline) && meta.refs === undefined && meta304.status === 304,
+                schemaOk: schema.schema && schema.schema.$schema && schema.schema.$schema.includes('2020-12'),
                 graphOk: graph.root === ${q(dlgClass1)} && Array.isArray(graph.nodes) && graph.nodes.length >= 1,
+                grepOk: Array.isArray(grep.results) && grep.scannedClasses >= 0,
+                resourceOk: Array.isArray(resList.entries),
+                contextOk: ctx.key === firstOp.key && !!ctx.details && !!ctx.source,
+                mcpOk: mcpInit.result && mcpInit.result.protocolVersion === '2025-03-26'
+                    && mcpList.result && Array.isArray(mcpList.result.tools) && mcpList.result.tools.length >= 10
+                    && mcpCall.result && mcpCall.result.isError === false,
                 plainOk: plain.status === 200 && plainText.length > 10,
+                mdOk: md.status === 200 && (md.headers.get('content-type') || '').includes('text/markdown') && mdText.includes('1 |'),
             };
         })()`);
-        c.check('agent-friendly code API (/code/class, /code/graph, /code/source) and /llms.txt respond cleanly',
-            agentApi.llmsOk && agentApi.metaOk && agentApi.graphOk && agentApi.plainOk, agentApi);
+        c.check('agent-friendly REST, OpenAPI 3.1, MCP, and llms.txt/llms-full.txt endpoints respond cleanly',
+            agentApi.llmsOk && agentApi.llmsFullOk && agentApi.openApiOk && agentApi.opsOk && agentApi.curIdxOk
+            && agentApi.metaOk && agentApi.schemaOk && agentApi.graphOk && agentApi.grepOk && agentApi.resourceOk
+            && agentApi.contextOk && agentApi.mcpOk && agentApi.plainOk && agentApi.mdOk,
+            agentApi);
         await b.shot(path.join(SHOTS, `${PRODUCT}-next-7-java.png`));
 
         // the request and the response each take the whole screen with their button, and give it back

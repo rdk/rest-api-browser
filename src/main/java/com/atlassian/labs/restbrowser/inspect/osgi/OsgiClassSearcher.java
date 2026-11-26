@@ -82,23 +82,8 @@ public final class OsgiClassSearcher {
                                     truncated = true;
                                     break outer;
                                 }
-                                String path = entries.nextElement().getPath();
-                                if (path == null || !path.endsWith(".class")) {
-                                    continue;
-                                }
-                                if (path.startsWith("/")) {
-                                    path = path.substring(1);
-                                }
-                                if (path.startsWith("WEB-INF/classes/")) {
-                                    path = path.substring("WEB-INF/classes/".length());
-                                }
-                                if (path.startsWith("META-INF/")
-                                        || path.endsWith("module-info.class")
-                                        || path.endsWith("package-info.class")) {
-                                    continue;
-                                }
-                                String fqcn = path.substring(0, path.length() - ".class".length()).replace('/', '.');
-                                if (!ClassFileInspector.SAFE_CLASS_NAME.matcher(fqcn).matches()) {
+                                String fqcn = ClassFileInspector.bundlePathToClassName(entries.nextElement().getPath());
+                                if (fqcn == null) {
                                     continue;
                                 }
                                 if (!includeAnonymous && ANON_INNER.matcher(fqcn).find()) {

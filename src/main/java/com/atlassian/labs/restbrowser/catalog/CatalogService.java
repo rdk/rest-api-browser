@@ -97,7 +97,7 @@ public class CatalogService implements InitializingBean, DisposableBean {
         this.pauseBetweenModulesMs = Math.max(0L, pauseBetweenModulesMs);
     }
 
-    private record BuiltOp(String key, String json) {
+    private record BuiltOp(Operation op, String json) {
     }
 
     private record Built(ModuleEntry entry, List<BuiltOp> operations) {
@@ -498,7 +498,7 @@ public class CatalogService implements InitializingBean, DisposableBean {
                     List<Operation> ops = OperationKeys.assign(module.id(), spec.get().operations());
                     List<BuiltOp> serialized = new ArrayList<>(ops.size());
                     for (Operation op : ops) {
-                        serialized.add(new BuiltOp(op.key(), CatalogSnapshot.serializeOperation(op)));
+                        serialized.add(new BuiltOp(op, CatalogSnapshot.serializeOperation(op)));
                     }
                     return new Built(entry(module, origin, State.ok, null, null, ops.size())
                             .withSource(source.id()), serialized);
@@ -556,12 +556,14 @@ public class CatalogService implements InitializingBean, DisposableBean {
                 allOps.addAll(b.operations());
             }
         }
-        allOps.sort(Comparator.comparing(BuiltOp::key));
+        allOps.sort(Comparator.comparing(bo -> bo.op().key()));
+        List<Operation> opsList = new ArrayList<>(allOps.size());
         List<String> jsonList = new ArrayList<>(allOps.size());
         for (BuiltOp bo : allOps) {
+            opsList.add(bo.op());
             jsonList.add(bo.json());
         }
-        return CatalogSnapshot.ofPreserialized(entries, jsonList, complete, done, modules.size(), ownVersion.get());
+        return CatalogSnapshot.ofPreserialized(entries, opsList, jsonList, complete, done, modules.size(), ownVersion.get());
     }
 
     private void pause() {

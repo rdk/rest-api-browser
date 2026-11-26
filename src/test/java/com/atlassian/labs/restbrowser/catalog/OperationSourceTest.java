@@ -1,5 +1,7 @@
 package com.atlassian.labs.restbrowser.catalog;
 
+import static org.mockito.Mockito.when;
+
 import com.atlassian.labs.restbrowser.catalog.OperationDetails.Result;
 import com.atlassian.labs.restbrowser.catalog.OperationSource.Engine;
 import org.junit.Test;
@@ -275,5 +277,110 @@ public class OperationSourceTest {
         assertEquals(200, search.status());
         Map<String, Object> srBody = (Map<String, Object>) parseJson(search.json());
         assertEquals(1L, srBody.get("count"));
+
+        // Wave 1 & 2: inspectClass includes fields & enumConstants; compact omits refs/annotations; lineNumbers works
+        Result dtoInfo = source.inspectClass(null, Greeting.class.getName(), -1, false);
+        assertEquals(200, dtoInfo.status());
+        Map<String, Object> dtoMap = (Map<String, Object>) parseJson(dtoInfo.json());
+        assertTrue(dtoMap.get("fields") instanceof List);
+        assertFalse(((List<?>) dtoMap.get("fields")).isEmpty());
+
+        Result enumInfo = source.inspectClass(null, SampleEnum.class.getName(), -1, true);
+        assertEquals(200, enumInfo.status());
+        Map<String, Object> enumMap = (Map<String, Object>) parseJson(enumInfo.json());
+        assertEquals(List.of("ALPHA", "BETA"), enumMap.get("enumConstants"));
+        assertFalse(enumMap.containsKey("refs"));
+        assertFalse(enumMap.containsKey("annotations"));
+
+        Result numbered = source.decompile(null, SampleResource.class.getName(), -1, "class", "cfr", null, 1, 5, false, true);
+        assertEquals(200, numbered.status());
+        Map<String, Object> numMap = (Map<String, Object>) parseJson(numbered.json());
+        assertEquals(Boolean.TRUE, numMap.get("lineNumbers"));
+        assertTrue(String.valueOf(numMap.get("source")).startsWith("1 | "));
+
+        Result schema = source.inspectSchema(null, Greeting.class.getName(), -1, 3, true);
+        assertEquals(200, schema.status());
+        Map<String, Object> schemaMap = (Map<String, Object>) parseJson(schema.json());
+        assertTrue(schemaMap.get("schema") instanceof Map);
+        assertTrue(schemaMap.get("example") instanceof Map);
+
+        // class-not-found provides an actionable hint referencing the simple class name
+        Result notFound = source.inspectClass(null, "com.wrong.pkg.Greeting", -1);
+        assertEquals(404, notFound.status());
+        Map<String, Object> nfMap = (Map<String, Object>) parseJson(notFound.json());
+        assertEquals("class-not-found", nfMap.get("error"));
+        assertTrue(String.valueOf(nfMap.get("hint")).contains("Greeting"));
+
+        // Wave 3: unknown-operation suggestions, not-started probe hint, outline, and rankSimilarKeys
+        assertEquals(
+                List.of("m:POST:issue/{id}/comment", "m:GET:issue/{id}", "m:GET:project"),
+                OperationSource.rankSimilarKeys("m:POST:issue/comment",
+                        List.of("m:GET:project", "m:GET:issue/{id}", "m:POST:issue/{id}/comment"), 3));
+
+        Result outlined = source.inspectClass(null, SampleResource.class.getName(), -1, true, true, false);
+        assertEquals(200, outlined.status());
+        Map<String, Object> outlineMap = (Map<String, Object>) parseJson(outlined.json());
+        assertTrue(outlineMap.get("outline") instanceof List && !((List<?>) outlineMap.get("outline")).isEmpty());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void notStartedHintUnknownOperationSuggestionsAndContextWorkWithMockJersey() throws Exception {
+        ModuleDiscovery discovery = mock(ModuleDiscovery.class);
+        JerseyModelSource jersey = mock(JerseyModelSource.class);
+        ModuleDiscovery.RestModule mod = new ModuleDiscovery.RestModule(
+                "p:mod", "demo/1", "/demo", "1", true,
+                "p", "Plugin P", "1.0", "Demo module",
+                mock(com.atlassian.plugin.Plugin.class), null);
+        when(discovery.discover()).thenReturn(List.of(mod));
+
+        OperationSource source = new OperationSource(discovery, () -> jersey, () -> true);
+
+        // not-started SpecException includes probe hint
+        when(jersey.handler(mod, "p:mod:GET:x")).thenThrow(new SpecSource.SpecException("not-started", "cold", null));
+        Result notStarted = source.decompile("p:mod:GET:x", null, -1, "method", "vineflower");
+        assertEquals(503, notStarted.status());
+        Map<String, Object> nsMap = (Map<String, Object>) parseJson(notStarted.json());
+        assertEquals("not-started", nsMap.get("error"));
+        assertTrue(String.valueOf(nsMap.get("hint")).contains("/rest/demo/1"));
+
+        // unknown-operation returns fuzzy suggestions from module keys
+        when(jersey.handler(mod, "p:mod:GET:greetings")).thenReturn(java.util.Optional.empty());
+        when(jersey.operationKeys(mod)).thenReturn(List.of("p:mod:GET:greet", "p:mod:POST:other"));
+        Result unknownOp = source.decompile("p:mod:GET:greetings", null, -1, "method", "vineflower");
+        assertEquals(404, unknownOp.status());
+        Map<String, Object> uoMap = (Map<String, Object>) parseJson(unknownOp.json());
+        assertEquals("unknown-operation", uoMap.get("error"));
+        assertTrue(((List<?>) uoMap.get("suggestions")).contains("p:mod:GET:greet"));
+
+        // investigationContext + moduleOperationSchemas
+        java.lang.reflect.Method greetMethod = SampleResource.class.getDeclaredMethod("greet", String.class);
+        JerseyModelSource.Handler handler = new JerseyModelSource.Handler(
+                greetMethod, greetMethod, SampleResource.class, List.of());
+        when(jersey.handler(mod, "p:mod:GET:greet")).thenReturn(java.util.Optional.of(handler));
+        when(jersey.handlers(mod)).thenReturn(Map.of("p:mod:GET:greet", handler));
+
+        Model.ModuleEntry entry = CatalogTestSupport.module("p:mod", "demo/1", Model.State.ok, "1.0");
+        Model.Operation opModel = new Model.Operation("p:mod:GET:greet", "p:mod",
+                CatalogTestSupport.spec("GET", "greet"));
+        CatalogSnapshot snap = CatalogTestSupport.snapshot(List.of(entry), List.of(opModel), true, "4.3.3-SNAPSHOT");
+
+        OperationDetails details = new OperationDetails(discovery, () -> jersey,
+                new ProductAdapter(mock(com.atlassian.sal.api.ApplicationProperties.class), () -> null));
+        Result ctx = source.investigationContext(snap, null, "/rest/demo/1/greet", "GET",
+                120, 2, true, true, true, true, "cfr", details);
+        assertEquals(200, ctx.status());
+        Map<String, Object> ctxMap = (Map<String, Object>) parseJson(ctx.json());
+        assertEquals("p:mod:GET:greet", ctxMap.get("key"));
+        assertTrue(ctxMap.get("responseBody") instanceof Map);
+        assertTrue(ctxMap.get("source") instanceof Map);
+        assertTrue(ctxMap.get("dependencies") instanceof List);
+
+        Map<String, OperationSource.OperationSchemas> modSchemas = source.moduleOperationSchemas("p:mod", 2, 10);
+        assertTrue(modSchemas.containsKey("p:mod:GET:greet"));
+    }
+
+    public enum SampleEnum {
+        ALPHA, BETA
     }
 }

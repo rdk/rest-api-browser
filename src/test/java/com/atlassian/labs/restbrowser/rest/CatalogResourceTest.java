@@ -446,4 +446,108 @@ public class CatalogResourceTest {
         assertEquals(204, resource.refresh("a:b", request).getStatus());
         verify(catalog).refresh("a:b");
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void indexCurrentSearchAndResolveWorkAndEnforceAuth() throws Exception {
+        // Requires login
+        assertEquals(401, resource.indexCurrent(request).getStatus());
+        assertEquals(401, resource.searchOperations(null, null, null, null, null, null, null, null, 10, 0, null, null, request).getStatus());
+        assertEquals(401, resource.resolveUrl("/rest/api/1/x", null, 5, null, request).getStatus());
+
+        login(false, false);
+
+        // indexCurrent returns ETag, X-Catalog-Hash, and index bytes; matching If-None-Match returns 304
+        Response cur = resource.indexCurrent(request);
+        assertEquals(200, cur.getStatus());
+        assertEquals("\"" + snapshot.hash() + "\"", cur.getHeaderString("ETag"));
+        assertEquals(snapshot.hash(), cur.getHeaderString("X-Catalog-Hash"));
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        ((StreamingOutput) cur.getEntity()).write(baos);
+        assertTrue(baos.toString(StandardCharsets.UTF_8).contains("a:GET:x"));
+
+        when(request.getHeader("If-None-Match")).thenReturn("\"" + snapshot.hash() + "\"");
+        Response notMod = resource.indexCurrent(request);
+        assertEquals(304, notMod.getStatus());
+        assertEquals(snapshot.hash(), notMod.getHeaderString("X-Catalog-Hash"));
+        when(request.getHeader("If-None-Match")).thenReturn(null);
+
+        // searchOperations JSON + markdown + Accept negotiation
+        Response searched = resource.searchOperations("x", "GET", null, null, null, null, null, null, 10, 0, "compact", null, request);
+        assertEquals(200, searched.getStatus());
+        assertEquals(snapshot.hash(), searched.getHeaderString("X-Catalog-Hash"));
+        java.util.Map<String, Object> searchJson = (java.util.Map<String, Object>) CatalogTestSupport.parseJson((String) searched.getEntity());
+        assertEquals(1L, searchJson.get("totalMatches"));
+
+        Response searchedMd = resource.searchOperations("x", null, null, null, null, null, null, null, 10, 0, "compact", "markdown", request);
+        assertEquals(200, searchedMd.getStatus());
+        assertTrue(searchedMd.getMediaType().toString().contains("text/markdown"));
+        assertTrue(((String) searchedMd.getEntity()).contains("# Catalog Operations"));
+
+        when(request.getHeader("Accept")).thenReturn("text/markdown");
+        Response acceptMd = resource.resolveUrl("/rest/api/1/x", "GET", 5, null, request);
+        assertEquals(200, acceptMd.getStatus());
+        assertTrue(acceptMd.getMediaType().toString().contains("text/markdown"));
+        assertTrue(((String) acceptMd.getEntity()).contains("a:GET:x"));
+        when(request.getHeader("Accept")).thenReturn(null);
+
+        // resolveUrl JSON & missing-url error hint
+        Response resolved = resource.resolveUrl("https://example.test/jira/rest/api/1/x", "GET", 5, "json", request);
+        assertEquals(200, resolved.getStatus());
+        java.util.Map<String, Object> resJson = (java.util.Map<String, Object>) CatalogTestSupport.parseJson((String) resolved.getEntity());
+        assertEquals(1L, resJson.get("matchCount"));
+
+        Response missingUrl = resource.resolveUrl("", "GET", 5, null, request);
+        assertEquals(400, missingUrl.getStatus());
+        assertTrue(((String) missingUrl.getEntity()).contains("\"hint\""));
+    }
+
+    @Test
+    public void unknownHashAndXsrfErrorsIncludeHints() {
+        login(false, false);
+        Response nf = resource.index("nonexistent-hash", request);
+        assertEquals(404, nf.getStatus());
+        String nfBody = (String) nf.getEntity();
+        assertTrue(nfBody.contains("\"unknown-hash\""));
+        assertTrue(nfBody.contains("\"hint\""));
+
+        when(request.getHeader("X-Atlassian-Token")).thenReturn(null);
+        Response xsrf = resource.started("a", request);
+        assertEquals(403, xsrf.getStatus());
+        assertTrue(((String) xsrf.getEntity()).contains("\"hint\""));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void openApiModuleAndSelfEndpointsWorkAndEnforceAuth() {
+        assertEquals(401, resource.moduleOpenApi("a", false, 2, request).getStatus());
+
+        com.atlassian.plugin.PluginAccessor pluginAccessor = mock(com.atlassian.plugin.PluginAccessor.class);
+        OpenApiResource selfApi = new OpenApiResource(props, pluginAccessor, userManager);
+        assertEquals(401, selfApi.spec(request).getStatus());
+
+        login(false, false);
+        assertEquals(400, resource.moduleOpenApi("", false, 2, request).getStatus());
+        assertEquals(404, resource.moduleOpenApi("missing", false, 2, request).getStatus());
+
+        Response modSpec = resource.moduleOpenApi("a", false, 2, request);
+        assertEquals(200, modSpec.getStatus());
+        String etag = modSpec.getHeaderString("ETag");
+        assertEquals(snapshot.hash(), modSpec.getHeaderString("X-Catalog-Hash"));
+        java.util.Map<String, Object> modJson = (java.util.Map<String, Object>) CatalogTestSupport.parseJson((String) modSpec.getEntity());
+        assertEquals("3.1.0", modJson.get("openapi"));
+
+        when(request.getHeader("If-None-Match")).thenReturn(etag);
+        assertEquals(304, resource.moduleOpenApi("a", false, 2, request).getStatus());
+        when(request.getHeader("If-None-Match")).thenReturn(null);
+
+        Response licensedSelf = selfApi.spec(request);
+        assertEquals(200, licensedSelf.getStatus());
+        assertFalse(((String) licensedSelf.getEntity()).contains("\"/code/context\""));
+
+        login(true, true);
+        Response adminSelf = selfApi.spec(request);
+        assertEquals(200, adminSelf.getStatus());
+        assertTrue(((String) adminSelf.getEntity()).contains("\"/code/context\""));
+    }
 }

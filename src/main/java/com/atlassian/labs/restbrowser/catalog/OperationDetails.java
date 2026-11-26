@@ -78,10 +78,14 @@ public class OperationDetails {
 
     /** Overload allowing {@link OperationSource#operationBundle} to reuse an already resolved module + handler. */
     Result describeHandler(String key, RestModule module, Handler handler) {
+        return describeHandler(key, module, handler, false);
+    }
+
+    Result describeHandler(String key, RestModule module, Handler handler, boolean compact) {
         if (handler == null || handler.handling() == null) {
             return error(404, "unknown-operation");
         }
-        return new Result(200, json(key, module, handler));
+        return new Result(200, json(key, module, handler, compact));
     }
 
     static RestModule moduleOf(List<RestModule> modules, String key) {
@@ -95,6 +99,10 @@ public class OperationDetails {
     }
 
     String json(String key, RestModule module, Handler h) {
+        return json(key, module, h, false);
+    }
+
+    String json(String key, RestModule module, Handler h, boolean compact) {
         Method m = h.handling();
         Class<?> rawType = h.handlerClass() != null ? h.handlerClass() : m.getDeclaringClass();
         Class<?> type = TypeProxyUnwrapper.targetClass(rawType);
@@ -103,31 +111,52 @@ public class OperationDetails {
         if (h.definition() != null && !h.definition().equals(m)) {
             section(j, "definition", s -> method(s, h.definition()));
         }
-        section(j, "locators", s -> {
-            s.beginArray();
-            for (Method l : h.locators()) {
-                method(s, l);
-            }
-            s.endArray();
-        });
+        if (!compact || !h.locators().isEmpty()) {
+            section(j, "locators", s -> {
+                s.beginArray();
+                for (Method l : h.locators()) {
+                    method(s, l);
+                }
+                s.endArray();
+            });
+        }
         section(j, "resourceClass", s -> type(s, type));
         Class<?> declaring = TypeProxyUnwrapper.targetClass(m.getDeclaringClass());
         if (declaring != type) {
             section(j, "declaringClass", s -> type(s, declaring));
         }
-        section(j, "types", s -> {
-            LinkedHashSet<Class<?>> allTypes = new LinkedHashSet<>(signatureTypes(m));
-            if (h.definition() != null && !h.definition().equals(m)) {
-                allTypes.addAll(signatureTypes(h.definition()));
+        if (!compact) {
+            section(j, "types", s -> {
+                LinkedHashSet<Class<?>> allTypes = new LinkedHashSet<>(signatureTypes(m));
+                if (h.definition() != null && !h.definition().equals(m)) {
+                    allTypes.addAll(signatureTypes(h.definition()));
+                }
+                s.beginArray();
+                for (Class<?> c : allTypes) {
+                    s.beginObject().field("name", c.getName()).field("from", origin(c)).endObject();
+                }
+                s.endArray();
+            });
+        }
+        section(j, "bundle", s -> {
+            if (compact) {
+                org.osgi.framework.Bundle b = OsgiBundleInspector.bundleOf(type);
+                if (b == null) {
+                    s.beginObject().field("none", origin(type)).endObject();
+                } else {
+                    OsgiBundleInspector.writeBundleSummary(s, b, type.getPackageName());
+                }
+            } else {
+                bundle(s, type);
             }
-            s.beginArray();
-            for (Class<?> c : allTypes) {
-                s.beginObject().field("name", c.getName()).field("from", origin(c)).endObject();
-            }
-            s.endArray();
         });
-        section(j, "bundle", s -> bundle(s, type));
-        section(j, "plugin", s -> plugin(s, module.plugin()));
+        section(j, "plugin", s -> {
+            if (compact) {
+                AtlassianPluginInspector.writePluginSummary(s, module.plugin(), product);
+            } else {
+                plugin(s, module.plugin());
+            }
+        });
         section(j, "module", s -> AtlassianPluginInspector.writeRestModule(s, module));
         return j.endObject().toString();
     }

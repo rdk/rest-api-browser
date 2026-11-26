@@ -16,8 +16,11 @@ import java.util.Comparator;
 import java.util.Dictionary;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
 
 /**
  * Shared OSGi bundle inspection and JSON serializer. Uses unlocalized {@link Bundle#getHeaders(String) b.getHeaders("")}
@@ -70,6 +73,111 @@ public final class OsgiBundleInspector {
             // outside OSGi
         }
         return null;
+    }
+
+    /** Returns true when {@code b} is active, resolved, or starting. */
+    public static boolean isScannableState(Bundle b) {
+        if (b == null) {
+            return false;
+        }
+        int st = b.getState();
+        return st == Bundle.ACTIVE || st == Bundle.RESOLVED || st == Bundle.STARTING;
+    }
+
+    /** Returns a compact label {@code symbolicName version} for a bundle. */
+    public static String bundleLabel(Bundle b) {
+        return b == null ? null : b.getSymbolicName() + " " + b.getVersion();
+    }
+
+    /** Resolves plugin key from {@code pluginKeyForBundle} or the {@code Atlassian-Plugin-Key} manifest header. */
+    public static String pluginKey(Bundle b, Function<Bundle, String> pluginKeyForBundle) {
+        if (b == null) {
+            return null;
+        }
+        if (pluginKeyForBundle != null) {
+            String key = pluginKeyForBundle.apply(b);
+            if (key != null && !key.isBlank()) {
+                return key;
+            }
+        }
+        Dictionary<String, String> headers = rawHeaders(b);
+        String headerKey = headers == null ? null : headers.get("Atlassian-Plugin-Key");
+        return headerKey != null && !headerKey.isBlank() ? headerKey.trim() : null;
+    }
+
+    /** Resolves OSGi candidate bundles matching {@code bundleIdFilter} or {@code pluginKeyFilter}, else all scannable. */
+    public static List<Bundle> selectBundles(Long bundleIdFilter, String pluginKeyFilter,
+                                             Function<Bundle, String> pluginKeyForBundle) {
+        try {
+            Bundle self = FrameworkUtil.getBundle(OsgiBundleInspector.class);
+            BundleContext ctx = self == null ? null : self.getBundleContext();
+            if (ctx == null) {
+                return List.of();
+            }
+            if (bundleIdFilter != null && bundleIdFilter >= 0) {
+                Bundle b = ctx.getBundle(bundleIdFilter);
+                return isScannableState(b) ? List.of(b) : List.of();
+            }
+            Bundle[] all = ctx.getBundles();
+            if (all == null) {
+                return List.of();
+            }
+            String wantedPlugin = pluginKeyFilter == null ? null : pluginKeyFilter.trim();
+            List<Bundle> out = new ArrayList<>();
+            for (Bundle b : all) {
+                try {
+                    if (!isScannableState(b)) {
+                        continue;
+                    }
+                    if (wantedPlugin != null && !wantedPlugin.isEmpty()) {
+                        String key = pluginKey(b, pluginKeyForBundle);
+                        if (!wantedPlugin.equalsIgnoreCase(key)
+                                && !wantedPlugin.equalsIgnoreCase(b.getSymbolicName())) {
+                            continue;
+                        }
+                    }
+                    out.add(b);
+                } catch (RuntimeException | LinkageError ignored) {
+                    // bundle transitioned concurrently
+                }
+            }
+            return out;
+        } catch (RuntimeException | LinkageError ignored) {
+            return List.of();
+        }
+    }
+
+    /** Returns active/resolved bundles wired to import {@code pkg} from {@code provider} (plus {@code provider}). */
+    public static List<Bundle> bundlesUsingPackage(Bundle provider, String pkg) {
+        Set<Bundle> result = new LinkedHashSet<>();
+        if (isScannableState(provider)) {
+            result.add(provider);
+        }
+        if (provider == null || pkg == null || pkg.isEmpty()) {
+            return new ArrayList<>(result);
+        }
+        try {
+            BundleWiring wiring = provider.adapt(BundleWiring.class);
+            if (wiring == null) {
+                return new ArrayList<>(result);
+            }
+            List<BundleWire> wires = wiring.getProvidedWires(BundleRevision.PACKAGE_NAMESPACE);
+            if (wires != null) {
+                for (BundleWire w : wires) {
+                    Object capPkg = w.getCapability().getAttributes().get(BundleRevision.PACKAGE_NAMESPACE);
+                    if (pkg.equals(capPkg)) {
+                        BundleWiring req = w.getRequirerWiring();
+                        Bundle consumer = req == null ? null : req.getBundle();
+                        if (isScannableState(consumer)) {
+                            result.add(consumer);
+                        }
+                    }
+                }
+            }
+        } catch (RuntimeException | LinkageError ignored) {
+            // outside OSGi or uninstalled
+        }
+        return new ArrayList<>(result);
     }
 
     /** Raw headers without localization overhead (falls back safely if mocked {@code getHeaders("")} returns null). */

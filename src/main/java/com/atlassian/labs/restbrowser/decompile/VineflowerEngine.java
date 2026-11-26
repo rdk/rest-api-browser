@@ -60,11 +60,17 @@ public final class VineflowerEngine implements DecompilerEngine {
 
     @Override
     public String decompile(BytecodeInput input, DecompileOptions options) {
+        return decompileWithDiagnostics(input, options).source();
+    }
+
+    @Override
+    public DecompileOutput decompileWithDiagnostics(BytecodeInput input, DecompileOptions options) {
         String className = input.className();
         ClassLoader loader = input.loader();
         byte[] classBytes = input.primaryBytes();
         String methodName = options == null ? null : options.methodName();
         int overloadParams = options == null ? -1 : options.overloadParamCount();
+        List<String> capturedWarnings = new ArrayList<>();
 
         String internalBase = className.replace('.', '/');
         Map<String, byte[]> inputClasses = new LinkedHashMap<>();
@@ -163,12 +169,29 @@ public final class VineflowerEngine implements DecompilerEngine {
             @Override public void closeArchive(String path, String archiveName) {}
         };
 
+        IFernflowerLogger warningLogger = new IFernflowerLogger() {
+            @Override
+            public boolean accepts(Severity severity) {
+                return severity == Severity.WARN || severity == Severity.ERROR;
+            }
+
+            @Override
+            public void writeMessage(String message, Severity severity) {
+                recordWarning(capturedWarnings, severity, message, null);
+            }
+
+            @Override
+            public void writeMessage(String message, Severity severity, Throwable t) {
+                recordWarning(capturedWarnings, severity, message, t);
+            }
+        };
+
         try {
             Decompiler.builder()
                     .inputs(sourceInput)
                     .libraries(libs)
                     .output(noOpSaver)
-                    .logger(IFernflowerLogger.NO_OP)
+                    .logger(warningLogger)
                     .option(IFernflowerPreferences.DECOMPILE_GENERIC_SIGNATURES, "1")
                     .option(IFernflowerPreferences.INDENT_STRING, "    ")
                     .option(IFernflowerPreferences.INCLUDE_JAVA_RUNTIME, "0")
@@ -182,14 +205,39 @@ public final class VineflowerEngine implements DecompilerEngine {
 
         String normalized = DecompilerEngine.cleanSource(out.get(), Integer.MAX_VALUE);
         if (normalized == null) {
-            return null;
+            return new DecompileOutput(null, List.copyOf(capturedWarnings));
         }
+        String result = normalized;
         if (methodName != null && !methodName.isBlank()) {
             String extracted = SourceMethodExtractor.extractMethod(normalized, methodName, overloadParams);
             if (extracted != null) {
-                return DecompilerEngine.cleanSource(extracted, DEFAULT_MAX_SOURCE);
+                result = extracted;
             }
         }
-        return DecompilerEngine.cleanSource(normalized, DEFAULT_MAX_SOURCE);
+        String clean = DecompilerEngine.cleanSource(result, DEFAULT_MAX_SOURCE);
+        for (String w : DecompilerEngine.detectSourceWarnings(clean)) {
+            if (capturedWarnings.size() < 10 && !capturedWarnings.contains(w)) {
+                capturedWarnings.add(w);
+            }
+        }
+        return new DecompileOutput(clean, List.copyOf(capturedWarnings));
+    }
+
+    private static void recordWarning(List<String> out, IFernflowerLogger.Severity severity,
+                                      String message, Throwable t) {
+        if ((severity != IFernflowerLogger.Severity.WARN && severity != IFernflowerLogger.Severity.ERROR)
+                || out.size() >= 10 || message == null || message.isBlank()) {
+            return;
+        }
+        String line = message.trim();
+        if (t != null && t.getClass() != null) {
+            line = line + " (" + t.getClass().getSimpleName() + ")";
+        }
+        if (line.length() > 240) {
+            line = line.substring(0, 240) + "…";
+        }
+        if (!out.contains(line)) {
+            out.add(line);
+        }
     }
 }

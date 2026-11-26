@@ -118,6 +118,34 @@ public class JerseyModelSource implements SpecSource {
         return Optional.empty();
     }
 
+    /** Returns all assigned operation keys in {@code module} in a single resource walk. */
+    public List<String> operationKeys(RestModule module) throws SpecException {
+        if (module == null || !module.restV2()) {
+            return List.of();
+        }
+        List<OperationSpec> operations = new ArrayList<>();
+        walk(module, operations, null);
+        return OperationKeys.assign(module.id(), operations).stream().map(Operation::key).toList();
+    }
+
+    /** Returns every assigned operation key mapped to its Jersey {@link Handler} in a single resource walk. */
+    public Map<String, Handler> handlers(RestModule module) throws SpecException {
+        if (module == null || !module.restV2()) {
+            return Map.of();
+        }
+        List<OperationSpec> operations = new ArrayList<>();
+        Map<OperationSpec, Handler> raw = new IdentityHashMap<>();
+        walk(module, operations, raw);
+        Map<String, Handler> byKey = new LinkedHashMap<>();
+        for (Operation op : OperationKeys.assign(module.id(), operations)) {
+            Handler h = raw.get(op.spec());
+            if (h != null) {
+                byKey.put(op.key(), h);
+            }
+        }
+        return byKey;
+    }
+
     private void walk(RestModule module, List<OperationSpec> operations, Map<OperationSpec, Handler> handlers)
             throws SpecException {
         Object handler = applicationHandler(module);

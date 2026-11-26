@@ -134,6 +134,11 @@ final class AtlassianPluginInspector {
     }
 
     static void writeStandalonePluginInspection(Json j, Plugin p, ProductAdapter product, long startNanos) {
+        writeStandalonePluginInspection(j, p, product, startNanos, false);
+    }
+
+    static void writeStandalonePluginInspection(Json j, Plugin p, ProductAdapter product,
+                                                long startNanos, boolean compact) {
         PluginInformation info = p.getPluginInformation();
         j.beginObject()
                 .field("format", 1)
@@ -141,29 +146,33 @@ final class AtlassianPluginInspector {
                 .field("name", p.getName())
                 .optional("version", info == null ? null : info.getVersion())
                 .optional("vendor", info == null ? null : info.getVendorName())
-                .optional("vendorUrl", info == null ? null : info.getVendorUrl())
-                .optional("description", info == null ? null : OsgiBundleInspector.clip(info.getDescription()))
-                .optional("origin", product == null ? null : product.origin(p))
+                .optional("vendorUrl", info == null ? null : info.getVendorUrl());
+        if (!compact) {
+            j.optional("description", info == null ? null : OsgiBundleInspector.clip(info.getDescription()));
+        }
+        j.optional("origin", product == null ? null : product.origin(p))
                 .field("state", String.valueOf(p.getPluginState()))
                 .field("pluginsVersion", p.getPluginsVersion())
                 .optional("artifact", p.getPluginArtifact() == null ? null : p.getPluginArtifact().getName())
                 .optional("installed", iso(p.getDateInstalled()))
                 .optional("loaded", iso(p.getDateLoaded()))
                 .optional("enabled", iso(p.getDateEnabled()));
-        Set<String> mandatory = new TreeSet<>();
-        Set<String> optional = new TreeSet<>();
-        try {
-            PluginDependencies deps = p.getDependencies();
-            if (deps != null) {
-                mandatory.addAll(deps.getMandatory());
-                optional.addAll(deps.getOptional());
-                optional.addAll(deps.getDynamic());
+        if (!compact) {
+            Set<String> mandatory = new TreeSet<>();
+            Set<String> optional = new TreeSet<>();
+            try {
+                PluginDependencies deps = p.getDependencies();
+                if (deps != null) {
+                    mandatory.addAll(deps.getMandatory());
+                    optional.addAll(deps.getOptional());
+                    optional.addAll(deps.getDynamic());
+                }
+            } catch (RuntimeException | LinkageError ignored) {
+                // older plugin types
             }
-        } catch (RuntimeException | LinkageError ignored) {
-            // older plugin types
+            optional.removeAll(mandatory);
+            j.strings("dependsOn", mandatory).strings("optionallyDependsOn", optional);
         }
-        optional.removeAll(mandatory);
-        j.strings("dependsOn", mandatory).strings("optionallyDependsOn", optional);
         Collection<ModuleDescriptor<?>> mods = p.getModuleDescriptors();
         int totalMods = mods == null ? 0 : mods.size();
         int enabledMods = 0;
@@ -178,7 +187,16 @@ final class AtlassianPluginInspector {
         Bundle b = OsgiBundleInspector.bundleForPluginKey(p.getKey(), p.getKey());
         if (b != null) {
             j.name("bundle");
-            OsgiBundleInspector.writeBundleSummary(j, b, null);
+            if (compact) {
+                j.beginObject()
+                        .field("id", b.getBundleId())
+                        .field("symbolicName", b.getSymbolicName())
+                        .field("version", String.valueOf(b.getVersion()))
+                        .field("state", OsgiBundleInspector.state(b.getState()))
+                        .endObject();
+            } else {
+                OsgiBundleInspector.writeBundleSummary(j, b, null);
+            }
         }
         long inspectMs = Math.max(1L, (System.nanoTime() - startNanos) / 1_000_000L);
         j.field("inspectMs", inspectMs).endObject();

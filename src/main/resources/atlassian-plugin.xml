@@ -27,8 +27,9 @@
 
     <servlet name="REST API Browser llms.txt" key="rest-browser-llms-servlet"
            class="com.atlassian.labs.restbrowser.servlet.LlmsTxtServlet">
-        <description>Serves the llmstxt.org agent guide for the REST API Browser and its catalog/decompiler APIs.</description>
+        <description>Serves the llmstxt.org agent guides for the REST API Browser and its catalog/decompiler APIs.</description>
         <url-pattern>/rest-api-browser/llms.txt</url-pattern>
+        <url-pattern>/rest-api-browser/llms-full.txt</url-pattern>
     </servlet>
 
     <rest-migration key="rest-migration-key">
