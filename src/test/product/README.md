@@ -11,9 +11,11 @@ install).
 | `product.sh` | Starts, waits for, shows and stops a throwaway Jira or Confluence (`atlas-run-standalone`) in its own work directory and port. |
 | `smoke.py` | Installs the plugin jar through UPM and checks it over HTTP: all modules enabled, the page as admin (search field, checkbox, the product's decorator, product name), the decorated admin intro page `/plugins/servlet/rest-api-browser/admin` (launch CTA, agent links, prompt blocks, anonymous redirect), the list of REST modules on the page and **every WADL on it** (falling back to `#rab-wadl-fallback` on Confluence 10 when `txw2` is absent), the plugin's web resources and Angular views, the pretty URL `/restbrowser`, the redirect of an anonymous user to the login page, and no error or stack trace of the plugin in the product's log since the run started. It also checks **the new UI and its catalog API**: the page (`/plugins/servlet/rest-api-browser` and `/next` redirect), the summary (format, hash, ETag, `no-cache`, 304, 401 for anonymous), a complete catalog with at least 95% of the modules ok and the product's core module supported, the index (`immutable`, 404 with `no-store` for a wrong hash), the catalog's operations equal to every loadable WADL's methods, `refresh`, and MCP `resources/*` & `prompts/*`. |
 | `mcp_pat_check.py` | Verifies `POST /rest/restbrowser/1/mcp` using **only** `Authorization: Bearer <PAT>` (no cookies, no Basic Auth, no `X-Atlassian-Token`), testing `initialize`, `notifications/initialized`, `ping`, `tools/*`, `resources/*`, `prompts/*`. Creates a temporary 1-day PAT via `/rest/pat/latest/tokens` and revokes it on exit when `--pat` is omitted. |
-| `ui.js` | The page in headless Edge/Chrome: Angular starts, the public APIs load into the sidebar with the product's core REST API among them (Jira's `api/2`), the "Show only public APIs" checkbox is on by default and can be turned off (what `RestApiBrowserSmokeTest` checks on the refapp), or shows the Confluence 10 WADL fallback list when public WADLs fail, search narrows the list, a core resource (Jira's `api/2/serverInfo`) shows its `GET` method and **Send** shows the product's answer, the view shows a resource's description (when no WADL documents one, as on Jira 11, the check sets one in the page), a path parameter's value is URL-encoded in the request (a `GET` of an issue or page that cannot exist); no JavaScript exception from the plugin, no failed request for its own resources, and (when `txw2` is present) at least 95% of the WADLs load. Screenshots in `shots/` (git-ignored). |
-| `ui_next.js` | The new UI (`/plugins/servlet/rest-api-browser`) in headless Edge/Chrome: the catalog loads, the header's base URL (in a new tab) and links (GitHub, releases, the classic UI), its tooltip and pinning it with Alt+P, no product header or footer and nothing to scroll, search, an operation's form (including enabled form-parameter inputs that drive the Body tab and **Generate example** DTO synthesis), **OpenAPI** module export, **Send** and the response viewer (no line numbers in Pretty, **Wrap** toggle, **View full** modal support, the find box at the right of its tab bar, Copy and Download taking what the open tab shows, the response's and the request's headers in a tab each, the browser's headers through the echo resource with cookie values hidden), history, the Java tab and floating tabbed decompiler dialog (method/class/bundle/plugin pages, coloured annotations, Vineflower/CFR switching, resizable method outline, **Impls**/**Callers**/**Grep**/**Files** panels with bundle resource preview, type tooltips, cross-class drill-down, ZIP export, maximize/minimize/close/undo; 404 for an unknown operation), the agent & MCP endpoints (`llms.txt`, `llms-full.txt`, OpenAPI 3.1 `/openapi`, `/openapi.json`, `/catalog/openapi`, `/catalog/operations`, `/catalog/index/current`, `/code/class` + `ETag` `304`, `/code/schema`, `/code/graph`, `/code/grep`, `/code/resource`, `POST /code/context`, `POST /mcp` tools/resources/prompts, `/code/source` text/markdown), the request and the response on the whole screen and back (what they cover inert meanwhile), URL encoding of a path parameter, the keyboard (`/`, arrows, Enter), the hover card, the menu (its skins, which leave it open and are kept after a reload, and light, dark and system; Send's text at 4.5:1 or more in each skin and mode; the tabs' panels), whole paths in a wide list, the form's marks (a warning sign, then a check), the URL's colors (a value keeps its template's), undo, redo and reset of the form, every row's ticks against the catalog, the module headers as tree nodes (a chevron that turns, a kind icon, no fill), the wheel reaching the list's end inside the window, the button that folds and unfolds all modules, "Supported only", a deep link that prefills without sending (and one with parameters named `toString` or `__proto__`), Copy curl disabled like Send while a value is missing, the status code's tooltip (outside the live region, Escape hides it), starting a module that has not started (or settling as *needs its own login*) with a click, the decorated admin intro page `/plugins/servlet/rest-api-browser/admin` (product chrome, full-screen CTA link, MCP config, stuck-endpoint prompt), and no error of the plugin. Screenshots in `shots/`. |
-| `cdp.js` | Shared helper of `ui.js` and `ui_next.js`: launches headless Edge/Chrome and drives it over the DevTools protocol; not run on its own. |
+| `package.json` / `playwright.config.ts` | Playwright Test (`@playwright/test`) runner configured for system Chrome/Edge (`PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` friendly, `RAB_URL`, `RAB_PRODUCT`, `RAB_HEADED=1`, `RAB_BROWSER`, `RAB_BROWSER_ARGS`), HTML report, and trace-on-failure. |
+| `e2e/*.spec.ts` | Modular Playwright specs sharing `e2e/fixtures.ts` (`admin-intro-and-classic.spec.ts`, `agent-api-and-mcp.spec.ts`, `catalog-and-request.spec.ts`, `decompiler-and-intel.spec.ts`) covering Jira and Confluence with per-test JS/HTTP error gating. |
+| `ui.js` | Zero-dependency Classic UI check in Edge/Chrome (`cdp.js`, no npm packages): Angular starts, the public APIs load into the sidebar with the product's core REST API among them (Jira's `api/2`), the "Show only public APIs" checkbox is on by default and can be turned off (what `RestApiBrowserSmokeTest` checks on the refapp), or shows the Confluence 10 WADL fallback list when public WADLs fail, search narrows the list, a core resource (Jira's `api/2/serverInfo`) shows its `GET` method and **Send** shows the product's answer, the view shows a resource's description (when no WADL documents one, as on Jira 11, the check sets one in the page), a path parameter's value is URL-encoded in the request (a `GET` of an issue or page that cannot exist); no JavaScript exception from the plugin, no failed request for its own resources, and (when `txw2` is present) at least 95% of the WADLs load. Screenshots in `shots/` (git-ignored). |
+| `ui_next.js` | Zero-dependency new UI check (`/plugins/servlet/rest-api-browser`) in Edge/Chrome (`cdp.js`, no npm packages): the catalog loads, the header's base URL (in a new tab) and links (GitHub, releases, the classic UI), its tooltip and pinning it with Alt+P, no product header or footer and nothing to scroll, search, an operation's form (including enabled form-parameter inputs that drive the Body tab and **Generate example** DTO synthesis), **OpenAPI** module export, **Send** and the response viewer (no line numbers in Pretty, **Wrap** toggle, **View full** modal support, the find box at the right of its tab bar, Copy and Download taking what the open tab shows, the response's and the request's headers in a tab each, the browser's headers through the echo resource with cookie values hidden), history, the Java tab and floating tabbed decompiler dialog (method/class/bundle/plugin pages, coloured annotations, Vineflower/CFR switching, resizable method outline, **Impls**/**Callers**/**Grep**/**Files** panels with bundle resource preview, type tooltips, cross-class drill-down, ZIP export, maximize/minimize/close/undo; 404 for an unknown operation), the agent & MCP endpoints (`llms.txt`, `llms-full.txt`, OpenAPI 3.1 `/openapi`, `/openapi.json`, `/catalog/openapi`, `/catalog/operations`, `/catalog/index/current`, `/code/class` + `ETag` `304`, `/code/schema`, `/code/graph`, `/code/grep`, `/code/resource`, `POST /code/context`, `POST /mcp` tools/resources/prompts, `/code/source` text/markdown), the request and the response on the whole screen and back (what they cover inert meanwhile), URL encoding of a path parameter, the keyboard (`/`, arrows, Enter), the hover card, the menu (its skins, which leave it open and are kept after a reload, and light, dark and system; Send's text at 4.5:1 or more in each skin and mode; the tabs' panels), whole paths in a wide list, the form's marks (a warning sign, then a check), the URL's colors (a value keeps its template's), undo, redo and reset of the form, every row's ticks against the catalog, the module headers as tree nodes (a chevron that turns, a kind icon, no fill), the wheel reaching the list's end inside the window, the button that folds and unfolds all modules, "Supported only", a deep link that prefills without sending (and one with parameters named `toString` or `__proto__`), Copy curl disabled like Send while a value is missing, the status code's tooltip (outside the live region, Escape hides it), starting a module that has not started (or settling as *needs its own login*) with a click, the decorated admin intro page `/plugins/servlet/rest-api-browser/admin` (product chrome, full-screen CTA link, MCP config, stuck-endpoint prompt), and no error of the plugin. Screenshots in `shots/`. |
+| `cdp.js` | Shared zero-dependency helper of `ui.js` and `ui_next.js`: launches Edge/Chrome (headless by default, or headed with `RAB_HEADED=1`), exposes `evalFn` and explicit CDP error reporting over Node's built-in WebSocket; not run on its own. |
 
 ## Prerequisites
 
@@ -29,7 +31,10 @@ install).
   RAB_SDK_HOME="/path/to/atlassian-plugin-sdk-9.11.2"
   RAB_JAVA_HOME="/path/to/jdk-21"
   ```
-- Python 3.9+ (standard library only), Node 22+ and Edge or Chrome for `ui.js` and `ui_next.js`.
+- Python 3.9+ (standard library only), Node 22+ and Edge or Chrome for Playwright (`e2e/*.spec.ts`) as well as the
+  zero-dependency CDP fallback scripts (`ui.js`, `ui_next.js`). For Playwright on offline hosts or to reuse the
+  installed system Chrome/Edge without downloading browsers, install npm dependencies once with
+  `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install` inside `src/test/product`.
 - Git Bash on Windows (or any bash on Linux/macOS).
 - Network access to `maven.atlassian.com` on the first start (Jira's WAR is about 500 MB, Confluence's 1 GB, then
   cached in the local Maven repository).
@@ -42,10 +47,16 @@ From the project root:
 mvn -B clean package -DskipTests                   # target/rest-api-browser-<version>.jar
 src/test/product/product.sh start                  # Jira 11.3.13 at http://localhost:2992/jira, admin/admin
 python src/test/product/smoke.py --expect-version 11.3.13
-node src/test/product/ui.js
-node src/test/product/ui_next.js                   # the new UI
+python src/test/product/mcp_pat_check.py             # MCP tools, resources, prompts over PAT auth
+(cd src/test/product && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install && npm test)
+node src/test/product/ui.js                        # zero-dependency CDP fallback (no npm packages)
+node src/test/product/ui_next.js                   # zero-dependency CDP full suite (no npm packages)
 src/test/product/product.sh stop                   # or keep it running for the next build
 ```
+
+For the Playwright suite (`src/test/product`), use `npm run test:headed` (or `RAB_HEADED=1 npm test`) to watch a real
+Chrome/Edge window, `npm run test:ui` for the interactive Playwright UI, `npm run typecheck` to check TypeScript specs,
+and `npm run report` to open the HTML report (failures also retain a Playwright trace in `test-results/`).
 
 The SDK starts the product in dev mode, where the page loads its scripts one by one. To check what a production
 instance serves, the bundle `rest-api-browser.min.js`, run the same outside dev mode:
@@ -76,10 +87,10 @@ RAB_URL=http://localhost:2993/jira node src/test/product/ui.js
 ```
 
 The checks take `RAB_URL` (default `http://localhost:2992/jira`, for Confluence `http://localhost:1992/confluence`),
-`RAB_USER` and `RAB_PASSWORD` (default `admin`/`admin`, the SDK instance's account, no secret). `ui.js` also takes
-`RAB_BROWSER` (the Edge or Chrome executable) and `RAB_BROWSER_ARGS` (extra browser flags, for example
-`--ignore-certificate-errors` for an instance whose certificate authority the browser does not trust). `smoke.py`
-options:
+`RAB_USER` and `RAB_PASSWORD` (default `admin`/`admin`, the SDK instance's account, no secret). Playwright and the CDP
+scripts (`ui.js`, `ui_next.js`) also take `RAB_HEADED=1` (visible browser window instead of headless), `RAB_BROWSER`
+(the Edge or Chrome executable), and `RAB_BROWSER_ARGS` (extra browser flags, for example `--ignore-certificate-errors`
+for an instance whose certificate authority the browser does not trust). `smoke.py` options:
 
 - `--product jira|confluence`: the product (default `RAB_PRODUCT`, else `jira`);
 - `--jar PATH`: the jar to install (default: the newest `target/rest-api-browser-*.jar`);
@@ -107,6 +118,7 @@ the other `RAB_*` settings apply to it too:
 RAB_PRODUCT=confluence src/test/product/product.sh start
 RAB_PRODUCT=confluence python src/test/product/smoke.py --expect-version 10.2.20
 RAB_PRODUCT=confluence python src/test/product/mcp_pat_check.py
+(cd src/test/product && RAB_PRODUCT=confluence npm test)
 RAB_PRODUCT=confluence node src/test/product/ui.js
 RAB_PRODUCT=confluence node src/test/product/ui_next.js
 RAB_PRODUCT=confluence src/test/product/product.sh stop
@@ -180,6 +192,15 @@ Jira `11.3.13` (`build 11030014`; `smoke.py` and `ui.js` also passed in full) an
 23584`; `smoke.py` and `ui.js` failed only on the known missing-`txw2` WADL 500s / empty Classic public list above).
 `4.4.0` adds `mcp_pat_check.py`, Classic Confluence 10 fallback UI verification, `not-startable` / Pretty `Wrap` /
 **Generate example** / **OpenAPI** / **SourceDialog** code-intel UI checks, and MCP `resources/*` & `prompts/*`.
+
+As of 2026-11-27 (`4.4.0` with the Playwright `e2e/*.spec.ts` suite and improved `cdp.js`):
+
+- multi-node Jira `11.3.13` (`build 11030014`, `208/208` modules, `8,264` ops, hash `823d591a1568224b7ee6781a`):
+  Playwright `8 passed` (`19.4s`, system Chrome), `smoke.py` `47/47` (`1 skipped` log, `3` warnings),
+  `mcp_pat_check.py` `13/13`, `ui.js` `16/16`, `ui_next.js` `72/72` (`1 skipped` lazy-start module);
+- multi-node Confluence `10.2.20` (`build 23584`, `171/171` modules, `2,577` ops): Playwright `8 passed` (`23.4s`,
+  system Chrome), `smoke.py` `47/47` (`1 skipped` log, `37` warnings), `mcp_pat_check.py` `13/13`, `ui.js` `14/14`
+  (Classic `#rab-wadl-fallback`), `ui_next.js` `71/71`.
 
 ## Things to know
 

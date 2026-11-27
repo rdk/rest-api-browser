@@ -196,15 +196,16 @@ creates a draft release with it.
 
 ## Testing
 
-`mvn verify` runs the integration test against the refapp. To check the plugin on a real Jira Data Center (Jira 11.3.13 by default), see [src/test/product/README.md](src/test/product/README.md); with `RAB_PRODUCT=confluence` the same scripts check it on Confluence 10.2.20:
+`mvn verify` runs the integration test against the refapp. To check the plugin on a real Jira Data Center (Jira 11.3.13 by default), see [src/test/product/README.md](src/test/product/README.md); with `RAB_PRODUCT=confluence` the same scripts and Playwright E2E suite check it on Confluence 10.2.20:
 
 ```bash
 mvn -B clean package -DskipTests
 src/test/product/product.sh start
 python src/test/product/smoke.py --expect-version 11.3.13
 python src/test/product/mcp_pat_check.py             # MCP tools, resources, prompts over PAT auth
-node src/test/product/ui.js
-node src/test/product/ui_next.js                   # the new UI, OpenAPI 3.1, MCP & /code/* API
+(cd src/test/product && npm test)                  # Playwright E2E suite (Jira & Confluence)
+node src/test/product/ui.js                        # zero-dependency CDP fallback (no npm packages)
+node src/test/product/ui_next.js                   # zero-dependency CDP full suite (no npm packages)
 src/test/product/product.sh stop
 ```
 

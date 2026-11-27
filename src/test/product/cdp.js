@@ -10,19 +10,24 @@ const BROWSERS = [
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
 ].filter(Boolean);
 const EXTRA_ARGS = (process.env.RAB_BROWSER_ARGS || '').split(/\s+/).filter(Boolean);
+const HEADED = /^(1|true|yes)$/i.test(process.env.RAB_HEADED || '');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 /**
- * Starts a headless browser that sends Basic credentials with the page and its XHR/fetch requests (static web
- * resources are public; Basic auth on all of them makes some decorators drop the session).
+ * Starts a headless (or headed when RAB_HEADED=1) browser that sends Basic credentials with the page and its
+ * XHR/fetch requests (static web resources are public; Basic auth on all of them makes some decorators drop the session).
  */
 async function launch({ user, password, width = 1500, height = 1000 }) {
     const exe = BROWSERS.find(p => fs.existsSync(p));
     if (!exe) throw new Error('no Edge or Chrome found (set RAB_BROWSER)');
     const port = 9400 + Math.floor(Math.random() * 500);
     const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'rab-cdp-'));
-    const proc = spawn(exe, ['--headless=new', '--disable-gpu', '--no-first-run', '--user-data-dir=' + profile,
-        '--remote-debugging-port=' + port, `--window-size=${width},${height}`, ...EXTRA_ARGS, 'about:blank'], { stdio: 'ignore' });
+    const spawnArgs = [
+        ...(HEADED ? [] : ['--headless=new', '--disable-gpu']),
+        '--no-first-run', '--user-data-dir=' + profile, '--remote-debugging-port=' + port,
+        `--window-size=${width},${height}`, ...EXTRA_ARGS, 'about:blank',
+    ];
+    const proc = spawn(exe, spawnArgs, { stdio: 'ignore' });
     let target;
     for (let i = 0; i < 80 && !target; i++) {
         try { target = (await (await fetch(`http://127.0.0.1:${port}/json`)).json()).find(t => t.type === 'page'); } catch (e) { /* starting */ }
@@ -100,11 +105,22 @@ async function launch({ user, password, width = 1500, height = 1000 }) {
     });
     b.evaluate = async expr => {
         const r = await b.send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true });
+        if (r.result && r.result.exceptionDetails) {
+            const d = r.result.exceptionDetails;
+            const msg = (d.exception && (d.exception.description || d.exception.value)) || d.text || 'evaluate failed';
+            throw new Error('CDP evaluate failed: ' + msg);
+        }
         return r.result && r.result.result ? r.result.result.value : undefined;
     };
+    b.evalFn = (fn, ...args) => b.evaluate('(' + fn.toString() + ')(' + args.map(a => JSON.stringify(a)).join(',') + ')');
     b.waitFor = async (expr, ms = 30000) => {
         const end = Date.now() + ms;
-        while (Date.now() < end) { if (await b.evaluate(expr)) return true; await sleep(200); }
+        while (Date.now() < end) {
+            try {
+                if (await b.evaluate(expr)) return true;
+            } catch (e) { /* retry transient DOM/mount errors while polling */ }
+            await sleep(200);
+        }
         return false;
     };
     b.shot = async file => {

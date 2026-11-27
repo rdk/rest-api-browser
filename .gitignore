@@ -11,6 +11,8 @@ node_modules
 src/test/product/shots/
 src/test/product/__pycache__/
 src/test/product/local.env
+src/test/product/test-results/
+src/test/product/playwright-report/
 src/main/resources/assets/rab/package-lock.json
 
 # agent worktrees of Claude Code
