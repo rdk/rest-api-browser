@@ -283,6 +283,24 @@ public class CodeResourceTest {
         assertTrue(ctxMd.getMediaType().toString().contains("text/markdown"));
         assertTrue(((String) ctxMd.getEntity()).contains("# Investigation Context `demo:GET:ping`"));
 
+        // maxChars truncates large context Markdown cleanly
+        OperationSource bigSource = mock(OperationSource.class);
+        when(bigSource.investigationContext(any(), eq("demo:GET:ping"), eq(null), eq(null),
+                eq(200), eq(2), eq(true), eq(true), eq(true), eq(true), eq("vineflower"), eq(details)))
+                .thenReturn(new OperationDetails.Result(200,
+                        "{\"format\":1,\"key\":\"demo:GET:ping\",\"catalog\":{\"method\":\"GET\",\"fullPath\":\"demo/1/ping\"},"
+                                + "\"source\":{\"class\":\"x.Res\",\"scope\":\"method\",\"decompiler\":\"Vineflower\","
+                                + "\"startLine\":1,\"endLine\":50,\"totalLines\":50,\"source\":\""
+                                + ("int x = 1;\\n".repeat(45)) + "\"}}"));
+        CodeResource wiredCap = new CodeResource(catalog, userManager, details, bigSource);
+        Response cappedMd = wiredCap.context(
+                bytes("{\"op\":\"demo:GET:ping\",\"maxLines\":200,\"schemaDepth\":2,\"format\":\"markdown\",\"maxChars\":250}"),
+                null, request);
+        assertEquals(200, cappedMd.getStatus());
+        String cappedBody = (String) cappedMd.getEntity();
+        assertTrue(cappedBody.length() <= 250);
+        assertTrue(cappedBody.contains("truncated to 250 chars"));
+
         when(userManager.getRemoteUserKey(request)).thenReturn(null);
         assertEquals(401, resource.inspectResource(1L, null, null, null, null, null, false, 10, null, request).getStatus());
         assertEquals(401, resource.context(bytes("{\"op\":\"m:GET:x\"}"), null, request).getStatus());

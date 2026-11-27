@@ -80,11 +80,14 @@ public class AdminIntroServlet extends RequiresLoginServlet {
         final String canonicalRaw = stripTrailingSlashes(nonNull(applicationProperties.getBaseUrl(UrlMode.CANONICAL)));
         final String canonicalBaseUrl = canonicalRaw.isEmpty() ? baseUrl : canonicalRaw;
         final String apiBase = canonicalBaseUrl + "/rest/restbrowser/1";
+        final String scalpelApiBase = canonicalBaseUrl + "/rest/scalpel/1";
         final String uiBase = canonicalBaseUrl + "/plugins/servlet/rest-api-browser";
 
         final String productName = nonNull(applicationProperties.getDisplayName());
         final String productVersion = nonNull(applicationProperties.getVersion());
         final String pluginVersion = LocalBeans.pluginVersion(pluginAccessor);
+        final boolean hasLiveScalpel = LocalBeans.isLiveScalpelEnabled(pluginAccessor);
+        final String nodeId = nonNull(LocalBeans.clusterNodeId());
         final UserKey user = RestAuth.remoteUser(userManager, request);
         final boolean isSysadmin = RestAuth.isSystemAdmin(userManager, user);
 
@@ -100,6 +103,9 @@ public class AdminIntroServlet extends RequiresLoginServlet {
         ctx.put("productVersion", productVersion);
         ctx.put("pluginVersion", pluginVersion);
         ctx.put("isSysadmin", isSysadmin);
+        ctx.put("hasLiveScalpel", hasLiveScalpel);
+        ctx.put("nodeId", nodeId);
+        ctx.put("liveScalpelUrl", baseUrl + "/plugins/servlet/live-scalpel");
         ctx.put("activeSection", meta.activeSection());
         ctx.put("activeTab", meta.activeTab());
         ctx.put("selectedWebItem", meta.selectedWebItem());
@@ -109,9 +115,11 @@ public class AdminIntroServlet extends RequiresLoginServlet {
         ctx.put("catalogOpCountText", String.format(Locale.US, "%,d", opCount));
         ctx.put("catalogModuleCount", snap == null ? 0 : snap.modules().size());
         ctx.put("mcpConfigJson", buildMcpConfigJson(apiBase));
+        ctx.put("dualMcpConfigJson", buildDualMcpConfigJson(apiBase, scalpelApiBase));
         ctx.put("promptDebugStuck", buildPromptDebugStuck(apiBase, uiBase));
         ctx.put("promptExplorePayload", buildPromptExplorePayload(apiBase));
         ctx.put("promptTraceError", buildPromptTraceError(apiBase));
+        ctx.put("promptDualWorkflow", buildPromptDualWorkflow(apiBase, scalpelApiBase));
         return ctx;
     }
 
@@ -200,6 +208,37 @@ public class AdminIntroServlet extends RequiresLoginServlet {
                 + "2. Inspect matching classes and their owning plugin via `inspect_class` (`/code/class?outline=true`) and `inspect_plugin` (`/code/plugin?view=compact`).\n"
                 + "3. Find upstream REST handlers calling the helper with `find_callers` (`/code/callers`) and cross-reference via `search_operations` (`usesClass=...`).\n"
                 + "4. Explain the exact condition triggering the error and which REST endpoints can reach it.";
+    }
+
+    static String buildDualMcpConfigJson(final String rabApiBase, final String scalpelApiBase) {
+        return "{\n"
+                + "  \"mcpServers\": {\n"
+                + "    \"rest-api-browser\": {\n"
+                + "      \"type\": \"http\",\n"
+                + "      \"url\": \"" + escapeJsonString(rabApiBase + "/mcp") + "\",\n"
+                + "      \"headers\": {\n"
+                + "        \"Authorization\": \"Bearer <PERSONAL_ACCESS_TOKEN>\"\n"
+                + "      }\n"
+                + "    },\n"
+                + "    \"live-scalpel\": {\n"
+                + "      \"type\": \"http\",\n"
+                + "      \"url\": \"" + escapeJsonString(scalpelApiBase + "/mcp") + "\",\n"
+                + "      \"headers\": {\n"
+                + "        \"Authorization\": \"Bearer <PERSONAL_ACCESS_TOKEN>\"\n"
+                + "      }\n"
+                + "    }\n"
+                + "  }\n"
+                + "}";
+    }
+
+    public static String buildPromptDualWorkflow(final String rabApiBase, final String scalpelApiBase) {
+        return "Diagnose a slow or failing REST endpoint end-to-end across runtime traces and Java bytecode.\n"
+                + "Target path: <PASTE /rest/... URL HERE>\n"
+                + "REST API Browser: " + rabApiBase + " | Live Scalpel: " + scalpelApiBase + "\n\n"
+                + "1. Resolve the REST operation and check its access/parameters via REST API Browser (`resolve_url`, `investigate_operation_context`).\n"
+                + "2. Capture a live request stack trace on the same sticky node with Live Scalpel (`scalpel_trace` or `POST " + scalpelApiBase + "/traces/arm`) to see actual wall/CPU time, wait reasons, and hot stack frames.\n"
+                + "3. Pass the hottest non-JDK frame (`class`, `method`) back to REST API Browser `decompile_source` (`/code/source`) and inspect OSGi descriptors via `read_bundle_resource`.\n"
+                + "4. After applying a fix or configuration tuning, re-run `scalpel_trace` and compare before/after with `traces/diff/{idA}/{idB}?format=brief`.";
     }
 
     private static String escapeJsonString(final String value) {

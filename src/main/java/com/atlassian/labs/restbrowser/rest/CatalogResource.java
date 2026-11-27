@@ -13,6 +13,8 @@ import com.atlassian.labs.restbrowser.catalog.Model.State;
 import com.atlassian.labs.restbrowser.catalog.OperationDetails;
 import com.atlassian.labs.restbrowser.catalog.OperationSource;
 import com.atlassian.labs.restbrowser.json.Json;
+import com.atlassian.labs.restbrowser.spring.LocalBeans;
+import com.atlassian.plugin.PluginAccessor;
 import com.atlassian.sal.api.ApplicationProperties;
 import com.atlassian.sal.api.UrlMode;
 import com.atlassian.sal.api.user.UserKey;
@@ -51,26 +53,36 @@ public class CatalogResource {
     private final ApplicationProperties applicationProperties;
     private final OperationDetails details;
     private final OperationSource source;
+    private final PluginAccessor pluginAccessor;
 
     @Inject
     public CatalogResource(CatalogService catalog, UserManager userManager,
                            ApplicationProperties applicationProperties, OperationDetails details,
-                           OperationSource source) {
+                           OperationSource source, PluginAccessor pluginAccessor) {
         this.catalog = catalog;
         this.userManager = userManager;
         this.applicationProperties = applicationProperties;
         this.details = details;
         this.source = source;
+        this.pluginAccessor = pluginAccessor;
+    }
+
+    CatalogResource(CatalogService catalog, UserManager userManager,
+                    ApplicationProperties applicationProperties, OperationDetails details,
+                    OperationSource source) {
+        this(catalog, userManager, applicationProperties, details, source, null);
     }
 
     CatalogResource(CatalogService catalog, UserManager userManager,
                     ApplicationProperties applicationProperties, OperationDetails details) {
-        this(catalog, userManager, applicationProperties, details, null);
+        this(catalog, userManager, applicationProperties, details, null, null);
     }
 
     @GET
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response summary(@Context HttpServletRequest request) {
+    @Produces({MediaType.APPLICATION_JSON, MediaType.TEXT_PLAIN})
+    public Response summary(@QueryParam("format") String format,
+                            @QueryParam("top") Integer top,
+                            @Context HttpServletRequest request) {
         Response denied = RestAuth.requireLicensed(userManager, request);
         if (denied != null) {
             return denied;
@@ -83,13 +95,43 @@ public class CatalogResource {
         String productVersion = applicationProperties.getVersion();
         String productBuild = applicationProperties.getBuildNumber();
         String baseUrl = applicationProperties.getBaseUrl(UrlMode.RELATIVE);
-        String tag = tag(snapshot, envTag(productName, productVersion, productBuild, baseUrl), admin, sysadmin);
+        String nodeId = LocalBeans.clusterNodeId();
+        boolean liveScalpel = sysadmin && LocalBeans.isLiveScalpelEnabled(pluginAccessor);
+        if ("brief".equalsIgnoreCase(format) || "text".equalsIgnoreCase(format)) {
+            String brief = CatalogQuery.briefText(snapshot, productName, productVersion, nodeId, sysadmin,
+                    liveScalpel, top == null ? 12 : top);
+            return RestAuth.cacheableResponse(request, 200, MediaType.TEXT_PLAIN + ";charset=UTF-8", brief, snapshot.hash());
+        }
+        String env = envTag(productName, productVersion, productBuild, baseUrl, nodeId, liveScalpel);
+        String tag = tag(snapshot, env, admin, sysadmin);
         String etag = "\"" + tag + "\"";
         if (matches(request.getHeader("If-None-Match"), tag)) {
             return Response.notModified().header("ETag", etag).header("Cache-Control", "private, no-cache").build();
         }
-        String body = snapshot.summary(productName, productVersion, productBuild, baseUrl, admin, sysadmin);
+        String body = snapshot.summary(productName, productVersion, productBuild, baseUrl, admin, sysadmin,
+                nodeId, liveScalpel);
         return Response.ok(body, JSON).header("ETag", etag).header("Cache-Control", "private, no-cache").build();
+    }
+
+    Response summary(HttpServletRequest request) {
+        return summary(null, null, request);
+    }
+
+    @GET
+    @Path("/brief")
+    @Produces(MediaType.TEXT_PLAIN)
+    public Response brief(@QueryParam("top") Integer top, @Context HttpServletRequest request) {
+        return summary("brief", top, request);
+    }
+
+    static String envTag(String productName, String productVersion, String productBuild, String baseUrl,
+                         String nodeId, boolean liveScalpel) {
+        String base = envTag(productName, productVersion, productBuild, baseUrl);
+        boolean hasNode = nodeId != null && !nodeId.isBlank();
+        if (!hasNode && !liveScalpel) {
+            return base;
+        }
+        return base + (hasNode ? "-" + RestAuth.shortEtag(nodeId.trim()) : "") + (liveScalpel ? "-ls" : "");
     }
 
     private static final String MARKDOWN = "text/markdown;charset=UTF-8";

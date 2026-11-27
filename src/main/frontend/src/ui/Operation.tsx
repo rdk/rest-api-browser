@@ -239,6 +239,7 @@ export function OperationView({
       <OperationHeader
         baseUrl={summary.baseUrl}
         sysadmin={summary.sysadmin}
+        liveScalpel={summary.liveScalpel}
         op={op}
         module={module}
         draft={draft}

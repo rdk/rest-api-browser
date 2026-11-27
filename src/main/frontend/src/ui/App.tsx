@@ -100,9 +100,10 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
   const opsByKey = useMemo(() => new Map((index?.operations ?? []).map((o) => [o.key, o])), [index]);
   const modulesById = useMemo(() => new Map((summary?.modules ?? []).map((m) => [m.id, m])), [summary]);
 
+  const routeState = useRef<RouteState>(parseState(location.search));
   const stored = useMemo(() => userStore.prefsNow(), [userStore]);
   const [query, setQuery] = useState('');
-  const [supportedOnly, setSupportedOnly] = useState(!!stored.supportedOnly);
+  const [supportedOnly, setSupportedOnly] = useState(routeState.current.supportedOnly ?? !!stored.supportedOnly);
   const [collapsed, setCollapsed] = useState<Set<string> | null>(stored.collapsed ? new Set(stored.collapsed) : null);
   const [sidebarWidth, setSidebarWidth] = useState(stored.sidebarWidth || SIDEBAR_WIDTH);
   const [liveSidebarWidth, setLiveSidebarWidth] = useState<number | null>(null);
@@ -176,8 +177,20 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
     [],
   );
 
-  const routeState = useRef<RouteState>(parseState(location.search));
   const [selectedKey, setSelectedKey] = useState<string | undefined>(routeState.current.op);
+  const deepLinkedClass = useRef(false);
+  useEffect(() => {
+    const st = routeState.current;
+    if (!summary?.sysadmin || !st.className || deepLinkedClass.current) return;
+    deepLinkedClass.current = true;
+    onOpenClass({
+      target: st.className,
+      candidates: [st.className],
+      focusMethod: st.method,
+      focusLine: st.line,
+      fromBundle: st.fromBundle,
+    });
+  }, [summary?.sysadmin, onOpenClass]);
   const drafts = useRef(new Map<string, Draft>());
   const [revision, setRevision] = useState(0);
   useEffect(() => {
@@ -323,6 +336,7 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
         product={product}
         productLabel={productLabel}
         version={version}
+        nodeId={summary?.nodeId}
         siteUrl={siteUrl}
         classicUrl={classicUrl}
         sysadmin={!!summary?.sysadmin}

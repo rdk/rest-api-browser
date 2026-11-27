@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en" data-color-mode="light" data-theme="light:light dark:dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>REST API Browser — Offline Dev Harness</title>
+    <link rel="stylesheet" href="../../../target/classes/assets/next/next.css" />
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: var(--ds-surface, #ffffff);
+        color: var(--ds-text, #172b4d);
+      }
+      html[data-color-mode="dark"] body {
+        background: var(--ds-surface, #1d2125);
+        color: var(--ds-text, #b6c2cf);
+      }
+      body.rab-next-page {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        overflow: hidden;
+      }
+      .harness-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 12px;
+        font-size: 12px;
+        background: #f4f5f7;
+        border-bottom: 1px solid #dfe1e6;
+        color: #42526e;
+        flex-shrink: 0;
+      }
+      html[data-color-mode="dark"] .harness-bar {
+        background: #161a1d;
+        border-color: #2c333a;
+        color: #9fadbc;
+      }
+      .harness-bar strong {
+        color: inherit;
+      }
+      .harness-bar button, .harness-bar a {
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 3px;
+        border: 1px solid rgba(9, 30, 66, 0.2);
+        background: transparent;
+        color: inherit;
+        text-decoration: none;
+        cursor: pointer;
+      }
+      .harness-bar a.active {
+        font-weight: 600;
+        border-color: #0c66e4;
+      }
+      .harness-spacer {
+        flex: 1 1 auto;
+      }
+      .harness-stage {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: flex;
+        justify-content: center;
+        overflow: hidden;
+      }
+      #rab-next {
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+      }
+      .harness-stage.narrow #rab-next {
+        width: 360px;
+        border-left: 1px solid rgba(9, 30, 66, 0.2);
+        border-right: 1px solid rgba(9, 30, 66, 0.2);
+      }
+    </style>
+  </head>
+  <body class="page-type-admin rab-next-page">
+    <div class="harness-bar" data-testid="harness-bar">
+      <strong>RAB Offline Harness</strong>
+      <button type="button" id="harness-theme" data-testid="harness-toggle-theme">Dark mode</button>
+      <button type="button" id="harness-narrow" data-testid="harness-toggle-narrow">360px</button>
+      <span>Scenarios:</span>
+      <a href="?">Normal</a>
+      <a href="?class=com.example.ServerInfoResource&amp;method=getServerInfo&amp;line=11&amp;fromBundle=42">Deep-link class</a>
+      <a href="?supportedOnly=1">Supported only</a>
+      <a href="?scalpel=0">Scalpel off</a>
+      <a href="?fail=login-required">401</a>
+      <a href="?fail=system-admin-only">403 sysadmin</a>
+      <a href="?fail=network">Network error</a>
+      <span class="harness-spacer"></span>
+      <span>Mount: <code>#rab-next</code> at <code>/ctx</code></span>
+    </div>
+    <div class="harness-stage" id="harness-stage">
+      <div id="rab-next"
+           data-base-url="/ctx"
+           data-product="Jira"
+           data-classic-url="/ctx/plugins/servlet/restbrowser"
+           data-version="4.4.1-SNAPSHOT"
+           data-site-url="http://127.0.0.1"
+           data-user="admin"></div>
+    </div>
+    <script src="./mock.js"></script>
+    <script type="module" src="../../../target/classes/assets/next/next.js"></script>
+    <script>
+      (function () {
+        var html = document.documentElement;
+        var themeBtn = document.getElementById('harness-theme');
+        var narrowBtn = document.getElementById('harness-narrow');
+        var stage = document.getElementById('harness-stage');
+        function syncThemeLabel() {
+          var dark = html.getAttribute('data-color-mode') === 'dark';
+          themeBtn.textContent = dark ? 'Light mode' : 'Dark mode';
+        }
+        themeBtn.addEventListener('click', function () {
+          var dark = html.getAttribute('data-color-mode') === 'dark';
+          html.setAttribute('data-color-mode', dark ? 'light' : 'dark');
+          syncThemeLabel();
+        });
+        narrowBtn.addEventListener('click', function () {
+          var on = stage.classList.toggle('narrow');
+          narrowBtn.textContent = on ? 'Full width' : '360px';
+        });
+        syncThemeLabel();
+      })();
+    </script>
+  </body>
+</html>

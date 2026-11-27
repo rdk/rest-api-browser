@@ -98,6 +98,8 @@ public class LlmsTxtServlet extends HttpServlet {
 
         md.append("## Quick Curl Examples\n\n");
         md.append("```bash\n");
+        md.append("# 0. Compact ~200-token node & catalog triage brief (or client/rab.py brief)\n");
+        md.append("curl -H \"Authorization: Bearer $PAT\" \"").append(api).append("/catalog/brief\"\n\n");
         md.append("# 1. Search endpoints cleanly (Markdown)\n");
         md.append("curl -H \"Authorization: Bearer $PAT\" -H \"Accept: text/markdown\" \\\n");
         md.append("  \"").append(api).append("/catalog/operations?q=issue&method=GET&limit=10\"\n\n");
@@ -107,12 +109,17 @@ public class LlmsTxtServlet extends HttpServlet {
         md.append("# 3. Export OpenAPI 3.1.0 for one module\n");
         md.append("curl -H \"Authorization: Bearer $PAT\" \\\n");
         md.append("  \"").append(api).append("/catalog/openapi?module=com.atlassian.rest:api&includeSchemas=true\"\n\n");
-        md.append("# 4. One-call investigation context (metadata + schemas + decompiled method + impls)\n");
+        md.append("# 4. One-call investigation context (metadata + schemas + decompiled method + impls, capped with maxChars)\n");
         md.append("curl -X POST -H \"Authorization: Bearer $PAT\" -H \"X-Atlassian-Token: no-check\" \\\n");
         md.append("  -H \"Content-Type: application/json\" \\\n");
-        md.append("  -d '{\"url\":\"/rest/api/2/issue/PROJ-123\",\"maxLines\":250,\"format\":\"markdown\"}' \\\n");
+        md.append("  -d '{\"url\":\"/rest/api/2/issue/PROJ-123\",\"maxLines\":250,\"maxChars\":6000,\"format\":\"markdown\"}' \\\n");
         md.append("  \"").append(api).append("/code/context\"\n");
         md.append("```\n\n");
+
+        md.append("## Deep Links & Companion Live Scalpel Workflow\n\n");
+        md.append("- **Direct decompiler deep-link**: Open `").append(ui).append("?class=<fqcn>&method=<name>&line=<1-based>` (or `?supportedOnly=1`) to launch the floating tabbed decompiler straight on a stack-trace frame.\n");
+        md.append("- **Zero-dependency Python CLI**: Run `python3 client/rab.py brief`, `search`, `resolve`, `context`, or `source` with `RAB_URL` + `RAB_TOKEN` (defaults to `--max-chars 6000`).\n");
+        md.append("- **Dual-MCP loop with Live Scalpel**: Pair `/rest/scalpel/1/mcp` (runtime traces, JFR, jobs, caches) with `").append(api).append("/mcp` (`decompile_source`, `read_bundle_resource`) to move straight from hot stack frames to exact decompiled lines and before/after trace diffs.\n\n");
 
         md.append("## MCP Streamable HTTP Configuration\n\n");
         md.append("Connect any MCP-capable client (Claude Code, Cursor, Antigravity) using Bearer PAT authentication:\n\n");
@@ -145,13 +152,14 @@ public class LlmsTxtServlet extends HttpServlet {
         appendHeader(md, appProps, pluginAccessor, catalog, licensed, sysadmin);
 
         md.append("Recommended agent workflow:\n");
-        md.append("1. Call `GET ").append(api).append("/catalog/operations?q={keyword}&limit=20` or resolve a live endpoint URL via `GET ").append(api).append("/catalog/resolve?url=/rest/...`. Add `&format=markdown` (or `Accept: text/markdown`) for concise Markdown.\n");
-        md.append("2. For one-call deep understanding (metadata, DTO schemas, handler source, and injected OSGi service implementations), call `POST ").append(api).append("/code/context` with `{\"op\":\"{key}\"}` or `{\"url\":\"/rest/...\"}` (sysadmin only).\n");
-        md.append("3. Connect MCP-compatible agents directly via Streamable HTTP `POST ").append(api).append("/mcp` using `Authorization: Bearer <PAT>`.\n");
-        md.append("4. Read complete examples, parameters, and error codes in [llms-full.txt](").append(ui).append("/llms-full.txt) or fetch machine-readable [openapi.json](").append(api).append("/openapi.json) (`/openapi`).\n\n");
+        md.append("1. Call `GET ").append(api).append("/catalog/brief` (or `/catalog?format=brief`) for a ~200-token node overview, then `GET ").append(api).append("/catalog/operations?q={keyword}&limit=20` or `GET ").append(api).append("/catalog/resolve?url=/rest/...`. Add `&format=markdown` (or `Accept: text/markdown`) for concise Markdown.\n");
+        md.append("2. For one-call deep understanding (metadata, DTO schemas, handler source, and injected OSGi service implementations), call `POST ").append(api).append("/code/context` with `{\"op\":\"{key}\"}` or `{\"url\":\"/rest/...\"}` (sysadmin only; add `\"maxChars\":6000` to cap output).\n");
+        md.append("3. Connect MCP-compatible agents directly via Streamable HTTP `POST ").append(api).append("/mcp` using `Authorization: Bearer <PAT>` (all tools support `maxChars`).\n");
+        md.append("4. Read complete examples, parameters, deep links (`?class=...&method=...&line=...`), and error codes in [llms-full.txt](").append(ui).append("/llms-full.txt) or fetch machine-readable [openapi.json](").append(api).append("/openapi.json) (`/openapi`).\n\n");
 
         md.append("## Catalog API\n\n");
-        md.append("- [Catalog summary](").append(api).append("/catalog): Current catalog `hash`, product info, `sysadmin` flag, and all REST modules with state (`ok`, `pending`, `failed`). Supports `ETag` / `If-None-Match`.\n");
+        md.append("- [Catalog brief](").append(api).append("/catalog/brief): Compact ~200-token plain-text triage brief of product, cluster `nodeId`, catalog hash, top modules, and waiting/failed modules (also `/catalog?format=brief&top=12`, supports `ETag`).\n");
+        md.append("- [Catalog summary](").append(api).append("/catalog): Current catalog `hash`, product info, `nodeId`, `liveScalpel` companion flag, `sysadmin` flag, and all REST modules with state (`ok`, `pending`, `failed`). Supports `ETag` / `If-None-Match`.\n");
         md.append("- [Search operations](").append(api).append("/catalog/operations?q={text}&method={GET}&path={substr}&module={key}&plugin={key}&access={admin|sysadmin|licensed|anonymous}&deprecated={true|false}&usesClass={substr}&limit=50&offset=0&fields=compact|full&format=json|markdown): Server-side scored search & pagination over all indexed operations.\n");
         md.append("- [Resolve endpoint URL](").append(api).append("/catalog/resolve?url={pathOrUrl}&method={optional}&limit=10&format=json|markdown): Matches a URL against JAX-RS URI templates, returning ranked candidate operations and extracted `pathParams`/`queryParams`.\n");
         md.append("- [Export module OpenAPI 3.1](").append(api).append("/catalog/openapi?module={moduleId}&includeSchemas=true&schemaDepth=2): Generates an OpenAPI 3.1.0 specification for one indexed REST module (supports `ETag`).\n");

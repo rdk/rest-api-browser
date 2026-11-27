@@ -269,6 +269,28 @@ describe('ui/OperationView', () => {
       const bodyArea = document.querySelector('[data-testid=body]') as HTMLTextAreaElement;
       expect(bodyArea.value).toBe('{\n  "summary": "Example issue",\n  "priority": 1\n}');
       expect(document.body.textContent).toContain('Generated example from IssueCreateInput');
+      expect(document.querySelector('[data-testid=trace-in-scalpel]')).toBeNull();
+
+      // Companion Live Scalpel link appears only for sysadmin when summary.liveScalpel is true
+      render(
+        <div class="rab-n">
+          <OperationView
+            summary={{ ...sm, liveScalpel: true }}
+            op={postOp}
+            module={mod}
+            onDraft={onDraft}
+            runner={runner}
+            userStore={userStore}
+            split={0.45}
+            onSplit={() => undefined}
+          />
+        </div>,
+        document.body,
+      );
+      await waitUntil(() => !!document.querySelector('[data-testid=trace-in-scalpel]'));
+      const traceLink = document.querySelector('[data-testid=trace-in-scalpel]') as HTMLAnchorElement;
+      expect(traceLink).not.toBeNull();
+      expect(traceLink.getAttribute('href')).toBe('/jira/plugins/servlet/live-scalpel#traces');
     } finally {
       URL.createObjectURL = origCreate;
       URL.revokeObjectURL = origRevoke;

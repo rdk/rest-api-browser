@@ -110,6 +110,19 @@
   border-color: color-mix(in srgb, var(--rab-topbar-fg) 40%, transparent);
   text-decoration: none;
 }
+.rab-n-node {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  line-height: 16px;
+  border-radius: 4px;
+  font: 11px/16px var(--rab-mono);
+  color: var(--rab-topbar-fg);
+  background: var(--rab-topbar-glass);
+  border: 1px solid var(--rab-topbar-glass-border);
+  white-space: nowrap;
+  flex: none;
+}
 .rab-n a.rab-n-top-link, .rab-n a.rab-n-top-link:link, .rab-n a.rab-n-top-link:visited,
 .rab-n button.rab-n-top-link {
   display: inline-flex;

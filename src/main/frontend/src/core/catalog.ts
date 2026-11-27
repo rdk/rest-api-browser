@@ -60,7 +60,7 @@ export function isLoginAnswer(res: Response, jsonExpected = false, ownCredential
 // What the UI shows of a summary besides its operations: progress, completion and each module's state and count.
 function sameView(a: Summary, b: Summary): boolean {
   if (a.complete !== b.complete || a.progress.done !== b.progress.done || a.progress.total !== b.progress.total) return false;
-  if (a.admin !== b.admin || a.sysadmin !== b.sysadmin || a.modules.length !== b.modules.length) return false;
+  if (a.admin !== b.admin || a.sysadmin !== b.sysadmin || a.nodeId !== b.nodeId || a.liveScalpel !== b.liveScalpel || a.modules.length !== b.modules.length) return false;
   return a.modules.every((m, i) => {
     const n = b.modules[i];
     return m.id === n.id && m.path === n.path && m.state === n.state && m.opCount === n.opCount && m.reason === n.reason

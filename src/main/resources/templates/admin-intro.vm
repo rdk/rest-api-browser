@@ -7,6 +7,9 @@
 #* @vtlvariable name="productVersion" type="java.lang.String" *#
 #* @vtlvariable name="pluginVersion" type="java.lang.String" *#
 #* @vtlvariable name="isSysadmin" type="java.lang.Boolean" *#
+#* @vtlvariable name="hasLiveScalpel" type="java.lang.Boolean" *#
+#* @vtlvariable name="nodeId" type="java.lang.String" *#
+#* @vtlvariable name="liveScalpelUrl" type="java.lang.String" *#
 #* @vtlvariable name="activeSection" type="java.lang.String" *#
 #* @vtlvariable name="activeTab" type="java.lang.String" *#
 #* @vtlvariable name="selectedWebItem" type="java.lang.String" *#
@@ -15,9 +18,11 @@
 #* @vtlvariable name="catalogOpCountText" type="java.lang.String" *#
 #* @vtlvariable name="catalogModuleCount" type="java.lang.Integer" *#
 #* @vtlvariable name="mcpConfigJson" type="java.lang.String" *#
+#* @vtlvariable name="dualMcpConfigJson" type="java.lang.String" *#
 #* @vtlvariable name="promptDebugStuck" type="java.lang.String" *#
 #* @vtlvariable name="promptExplorePayload" type="java.lang.String" *#
 #* @vtlvariable name="promptTraceError" type="java.lang.String" *#
+#* @vtlvariable name="promptDualWorkflow" type="java.lang.String" *#
 <html>
   <head>
     <title>REST API Browser</title>
@@ -48,12 +53,24 @@
             #else
             <span class="aui-lozenge" data-rab-catalog-pill="cold">Catalog builds on first open</span>
             #end
+            #if($nodeId != "")
+            <span class="aui-lozenge aui-lozenge-subtle" id="rab-node-pill">Node: $nodeId</span>
+            #end
           </div>
           <p class="rab-admin-lead">
             Inspect every REST endpoint on #if($productName != "")$productName#if($productVersion != "") $productVersion#end#else this instance#end,
             test requests live in your browser session, export OpenAPI 3.1.0 specs, connect AI coding agents via the
             built-in read-only MCP server, and decompile backing Java handlers on demand.
           </p>
+          <nav class="rab-admin-jumps" aria-label="Quick links">
+            <a class="rab-admin-pill" href="$baseUrl/plugins/servlet/rest-api-browser?supportedOnly=1" target="_blank" rel="noopener noreferrer">Supported APIs only</a>
+            <a class="rab-admin-pill" href="$baseUrl/rest/restbrowser/1/catalog/brief" target="_blank" rel="noopener noreferrer">Catalog Brief (~200 tokens)</a>
+            <a class="rab-admin-pill" href="$baseUrl/plugins/servlet/rest-api-browser/llms.txt" target="_blank" rel="noopener noreferrer">llms.txt</a>
+            <a class="rab-admin-pill" href="$baseUrl/rest/restbrowser/1/openapi.json" target="_blank" rel="noopener noreferrer">OpenAPI 3.1 JSON</a>
+            #if($hasLiveScalpel)
+            <a class="rab-admin-pill rab-admin-pill-companion" id="rab-live-scalpel-link" href="$liveScalpelUrl" target="_blank" rel="noopener noreferrer">Live Scalpel JVM Profiler</a>
+            #end
+          </nav>
         </div>
         <div class="rab-admin-actions">
           <a id="rab-open-fullscreen"
@@ -72,10 +89,10 @@
       <section class="rab-admin-card">
         <h2>AI Agents, OpenAPI 3.1 &amp; Automation</h2>
         <p class="rab-admin-muted">
-          Point coding agents or scripts at the instance using a Personal Access Token
-          (<code>Authorization: Bearer &lt;token&gt;</code>) or HTTP Basic auth. Catalog endpoints work for any
-          licensed user; Java/OSGi inspection and decompilation under <code>/code/*</code> require System
-          Administrator privileges.
+          Point coding agents, MCP clients, or scripts (including zero-dependency <code>client/rab.py</code>) at the
+          instance using a Personal Access Token (<code>Authorization: Bearer &lt;token&gt;</code>) or HTTP Basic auth.
+          Catalog endpoints work for any licensed user; Java/OSGi inspection and decompilation under
+          <code>/code/*</code> require System Administrator privileges.
         </p>
         <table class="aui rab-admin-table">
           <thead>
@@ -87,55 +104,99 @@
           </thead>
           <tbody>
             <tr>
-              <td><strong>llms.txt</strong><br/><span class="rab-admin-muted">Compact bootstrap guide</span></td>
+              <td><span class="rab-method rab-method-get">GET</span> <strong>llms.txt</strong><br/><span class="rab-admin-muted">Compact bootstrap guide</span></td>
               <td><a href="$baseUrl/plugins/servlet/rest-api-browser/llms.txt" target="_blank" rel="noopener noreferrer"><code>$uiBase/llms.txt</code></a></td>
-              <td><button type="button" class="aui-button rab-copy-btn" data-copy-text="$uiBase/llms.txt">Copy</button></td>
+              <td><button type="button" class="aui-button rab-copy-btn" data-copy-text="$uiBase/llms.txt" aria-label="Copy llms.txt URL">Copy</button></td>
             </tr>
             <tr>
-              <td><strong>llms-full.txt</strong><br/><span class="rab-admin-muted">Curl, MCP &amp; error recovery</span></td>
+              <td><span class="rab-method rab-method-get">GET</span> <strong>llms-full.txt</strong><br/><span class="rab-admin-muted">Curl, deep links &amp; error recovery</span></td>
               <td><a href="$baseUrl/plugins/servlet/rest-api-browser/llms-full.txt" target="_blank" rel="noopener noreferrer"><code>$uiBase/llms-full.txt</code></a></td>
-              <td><button type="button" class="aui-button rab-copy-btn" data-copy-text="$uiBase/llms-full.txt">Copy</button></td>
+              <td><button type="button" class="aui-button rab-copy-btn" data-copy-text="$uiBase/llms-full.txt" aria-label="Copy llms-full.txt URL">Copy</button></td>
             </tr>
             <tr>
-              <td><strong>Self OpenAPI 3.1.0</strong><br/><span class="rab-admin-muted">Plugin API specification</span></td>
+              <td><span class="rab-method rab-method-get">GET</span> <strong>Catalog Brief</strong><br/><span class="rab-admin-muted">~200-token node &amp; module summary</span></td>
+              <td><a href="$baseUrl/rest/restbrowser/1/catalog/brief" target="_blank" rel="noopener noreferrer"><code>$apiBase/catalog/brief</code></a></td>
+              <td><button type="button" class="aui-button rab-copy-btn" data-copy-text="$apiBase/catalog/brief" aria-label="Copy Catalog Brief URL">Copy</button></td>
+            </tr>
+            <tr>
+              <td><span class="rab-method rab-method-get">GET</span> <strong>Self OpenAPI 3.1.0</strong><br/><span class="rab-admin-muted">Plugin API specification</span></td>
               <td><a href="$baseUrl/rest/restbrowser/1/openapi.json" target="_blank" rel="noopener noreferrer"><code>$apiBase/openapi.json</code></a></td>
-              <td><button type="button" class="aui-button rab-copy-btn" data-copy-text="$apiBase/openapi.json">Copy</button></td>
+              <td><button type="button" class="aui-button rab-copy-btn" data-copy-text="$apiBase/openapi.json" aria-label="Copy Self OpenAPI URL">Copy</button></td>
             </tr>
             <tr>
-              <td><strong>Module OpenAPI 3.1.0</strong><br/><span class="rab-admin-muted">On-demand spec per REST module</span></td>
+              <td><span class="rab-method rab-method-get">GET</span> <strong>Module OpenAPI 3.1.0</strong><br/><span class="rab-admin-muted">On-demand spec per REST module</span></td>
               <td><code>$apiBase/catalog/openapi?module={moduleId}</code></td>
-              <td><button type="button" class="aui-button rab-copy-btn" data-copy-text="$apiBase/catalog/openapi?module={moduleId}">Copy</button></td>
+              <td><button type="button" class="aui-button rab-copy-btn" data-copy-text="$apiBase/catalog/openapi?module={moduleId}" aria-label="Copy Module OpenAPI URL">Copy</button></td>
             </tr>
             <tr>
-              <td><strong>MCP Endpoint (POST)</strong><br/><span class="rab-admin-muted">4 licensed + 12 sysadmin tools</span></td>
+              <td><span class="rab-method rab-method-post">POST</span> <strong>MCP Endpoint</strong><br/><span class="rab-admin-muted">4 licensed + 12 sysadmin tools (with <code>maxChars</code>)</span></td>
               <td><code>$apiBase/mcp</code></td>
-              <td><button type="button" class="aui-button rab-copy-btn" data-copy-text="$apiBase/mcp">Copy</button></td>
+              <td><button type="button" class="aui-button rab-copy-btn" data-copy-text="$apiBase/mcp" aria-label="Copy MCP endpoint URL">Copy</button></td>
             </tr>
             <tr>
-              <td><strong>One-Shot Context (POST)</strong><br/><span class="rab-admin-muted">Meta + schema + code + OSGi impls</span></td>
+              <td><span class="rab-method rab-method-post">POST</span> <strong>One-Shot Context</strong><br/><span class="rab-admin-muted">Meta + schema + code + OSGi impls</span></td>
               <td><code>$apiBase/code/context</code></td>
-              <td><button type="button" class="aui-button rab-copy-btn" data-copy-text="$apiBase/code/context">Copy</button></td>
+              <td><button type="button" class="aui-button rab-copy-btn" data-copy-text="$apiBase/code/context" aria-label="Copy One-Shot Context URL">Copy</button></td>
             </tr>
           </tbody>
         </table>
       </section>
 
-      <section class="rab-admin-card">
+      <div class="rab-admin-grid">
+        <section class="rab-admin-card">
+          <div class="rab-admin-card-head">
+            <h2>MCP Client Configuration</h2>
+            <button type="button" class="aui-button rab-copy-btn" data-copy-target="rab-mcp-config" aria-label="Copy MCP client configuration">Copy config</button>
+          </div>
+          <p class="rab-admin-muted">
+            Built-in strictly read-only Streamable HTTP JSON-RPC 2.0 server (no sidecar adapter needed). Use a System
+            Administrator PAT to unlock all 16 tools including bytecode grep, callers, DTO schemas, bundle resources,
+            and Vineflower/CFR source decompilation.
+          </p>
+          <pre id="rab-mcp-config" class="rab-admin-code">$mcpConfigJson</pre>
+          <p class="rab-admin-note rab-admin-muted">
+            Note: <code>POST</code> requests to <code>/catalog/*</code> and <code>/code/*</code> require header
+            <code>X-Atlassian-Token: no-check</code>; <code>POST /mcp</code> accepts standard
+            <code>Authorization: Bearer &lt;token&gt;</code> directly.
+          </p>
+        </section>
+
+        <section id="rab-safety-card" class="rab-admin-card rab-admin-safety">
+          <h2>Safety &amp; Privacy Guardrails</h2>
+          <ul class="rab-safety-list">
+            <li><strong>Read-only MCP &amp; introspection:</strong> MCP exposes catalog, OpenAPI, bytecode, and decompiler tools only — no write/admin mutations.</li>
+            <li><strong>Secret redaction:</strong> <code>/echo</code> and Request History strip credential headers (<code>Authorization</code>, <code>Cookie</code>, API keys) and redact secret form/JSON values per user.</li>
+            <li><strong>Cross-origin &amp; XSRF protection:</strong> browser cookie <code>POST</code>s enforce <code>X-Atlassian-Token: no-check</code>; cross-origin cookie calls to <code>/mcp</code> are rejected.</li>
+            <li><strong>Kill switch:</strong> disable Java/OSGi inspection and decompilation at any time with <code>-Drest.api.browser.decompile=false</code>.</li>
+            <li><strong>Direct decompiler links:</strong> jump straight into a class/method/line from traces or tickets via <code>?class=&lt;fqcn&gt;&amp;method=&lt;name&gt;&amp;line=&lt;n&gt;</code>.</li>
+          </ul>
+        </section>
+      </div>
+
+      <section id="rab-companion-card" class="rab-admin-card">
         <div class="rab-admin-card-head">
-          <h2>MCP Client Configuration</h2>
-          <button type="button" class="aui-button rab-copy-btn" data-copy-target="rab-mcp-config">Copy config</button>
+          <div class="rab-admin-eyebrow" style="margin-bottom:0">
+            <h2>Companion Workflow: Live Scalpel + REST API Browser (Dual-MCP)</h2>
+            #if($hasLiveScalpel)
+            <span class="aui-lozenge aui-lozenge-success" data-rab-companion-pill="detected">Live Scalpel detected on this instance</span>
+            #else
+            <span class="aui-lozenge aui-lozenge-subtle" data-rab-companion-pill="optional">Optional sibling app</span>
+            #end
+          </div>
+          <button type="button" class="aui-button rab-copy-btn" data-copy-target="rab-dual-mcp-config" aria-label="Copy Dual-MCP configuration">Copy Dual-MCP config</button>
         </div>
         <p class="rab-admin-muted">
-          Built-in strictly read-only Streamable HTTP JSON-RPC 2.0 server (no sidecar adapter needed). Use a System
-          Administrator PAT to unlock all 16 tools including bytecode grep, callers, DTO schemas, bundle resources,
-          and Vineflower/CFR source decompilation.
+          Pair runtime profiling from <strong>Live Scalpel</strong> (URL request stack traces, JFR micro-profiles, Caesium jobs, cache thrash)
+          with live Java decompilation and OSGi resource inspection from <strong>REST API Browser</strong>:
         </p>
-        <pre id="rab-mcp-config" class="rab-admin-code">$mcpConfigJson</pre>
-        <p class="rab-admin-note rab-admin-muted">
-          Note: <code>POST</code> requests to <code>/catalog/*</code> and <code>/code/*</code> require header
-          <code>X-Atlassian-Token: no-check</code>; <code>POST /mcp</code> accepts standard
-          <code>Authorization: Bearer &lt;token&gt;</code> directly.
-        </p>
+        <pre id="rab-dual-mcp-config" class="rab-admin-code">$dualMcpConfigJson</pre>
+        <article class="rab-prompt-box" style="margin-top:12px">
+          <div class="rab-admin-card-head">
+            <h3>Combined Runtime &rarr; Bytecode &rarr; Verify Prompt</h3>
+            <button type="button" class="aui-button rab-copy-btn" data-copy-target="rab-prompt-dual" aria-label="Copy combined workflow prompt">Copy prompt</button>
+          </div>
+          <pre id="rab-prompt-dual" class="rab-admin-prompt">$promptDualWorkflow</pre>
+        </article>
       </section>
 
       <section class="rab-admin-card rab-admin-prompts">
@@ -151,7 +212,7 @@
         <article class="rab-prompt-box rab-prompt-featured">
           <div class="rab-admin-card-head">
             <h3>Debug a Slow or Stuck REST Endpoint (Read-Only)</h3>
-            <button type="button" class="aui-button rab-copy-btn" data-copy-target="rab-prompt-stuck">Copy prompt</button>
+            <button type="button" class="aui-button rab-copy-btn" data-copy-target="rab-prompt-stuck" aria-label="Copy stuck-endpoint prompt">Copy prompt</button>
           </div>
           <pre id="rab-prompt-stuck" class="rab-admin-prompt">$promptDebugStuck</pre>
         </article>
@@ -160,7 +221,7 @@
           <article class="rab-prompt-box">
             <div class="rab-admin-card-head">
               <h3>Explore an Undocumented Endpoint &amp; Payload</h3>
-              <button type="button" class="aui-button rab-copy-btn" data-copy-target="rab-prompt-payload">Copy prompt</button>
+              <button type="button" class="aui-button rab-copy-btn" data-copy-target="rab-prompt-payload" aria-label="Copy payload exploration prompt">Copy prompt</button>
             </div>
             <pre id="rab-prompt-payload" class="rab-admin-prompt">$promptExplorePayload</pre>
           </article>
@@ -168,7 +229,7 @@
           <article class="rab-prompt-box">
             <div class="rab-admin-card-head">
               <h3>Trace an Error Message to Its Plugin &amp; Handler</h3>
-              <button type="button" class="aui-button rab-copy-btn" data-copy-target="rab-prompt-trace">Copy prompt</button>
+              <button type="button" class="aui-button rab-copy-btn" data-copy-target="rab-prompt-trace" aria-label="Copy trace-error prompt">Copy prompt</button>
             </div>
             <pre id="rab-prompt-trace" class="rab-admin-prompt">$promptTraceError</pre>
           </article>

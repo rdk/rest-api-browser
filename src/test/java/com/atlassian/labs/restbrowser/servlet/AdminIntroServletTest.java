@@ -56,6 +56,7 @@ public class AdminIntroServletTest {
         Plugin own = mock(Plugin.class);
         PluginInformation info = mock(PluginInformation.class);
         when(pluginAccessor.getPlugin("com.atlassian.labs.rest-api-browser")).thenReturn(own);
+        when(pluginAccessor.isPluginEnabled(com.atlassian.labs.restbrowser.spring.LocalBeans.LIVE_SCALPEL_KEY)).thenReturn(true);
         when(own.getPluginInformation()).thenReturn(info);
         when(info.getVersion()).thenReturn("4.3.3-SNAPSHOT");
 
@@ -143,6 +144,16 @@ public class AdminIntroServletTest {
         assertTrue(stuck.contains("decompile_source"));
         assertTrue(stuck.contains("read_bundle_resource"));
         assertTrue(stuck.contains("https://example.test/jira/rest/restbrowser/1"));
+
+        assertEquals(Boolean.TRUE, ctx.get("hasLiveScalpel"));
+        assertEquals("/jira/plugins/servlet/live-scalpel", ctx.get("liveScalpelUrl"));
+        Map<String, Object> dualCfg = JsonParser.parseObject((String) ctx.get("dualMcpConfigJson"));
+        Map<String, Object> dualServers = (Map<String, Object>) dualCfg.get("mcpServers");
+        assertTrue(dualServers.containsKey("rest-api-browser"));
+        assertTrue(dualServers.containsKey("live-scalpel"));
+        String dualPrompt = (String) ctx.get("promptDualWorkflow");
+        assertTrue(dualPrompt.contains("scalpel_trace"));
+        assertTrue(dualPrompt.contains("decompile_source"));
     }
 
     @Test

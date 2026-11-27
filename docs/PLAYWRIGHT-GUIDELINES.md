@@ -13,6 +13,10 @@ Put each check at the lowest layer that genuinely exercises the behaviour:
 - **JUnit (`src/test/java`) & Vitest (`src/main/frontend/src/core/*.test.ts`, `src/main/frontend/src/ui/*.test.tsx`)**:
   pure frontend logic, JSON formatting/redaction, OpenAPI synthesis, bytecode/DTO inspection, Preact component state,
   and keyboard/focus unit behaviour with mocks. Fast and hermetic — prefer these first.
+- **Offline Mock Harness & CI Mock E2E (`src/test/harness/`, [e2e-mock/](../src/test/product/e2e-mock/harness.spec.ts), [playwright.mock.config.ts](../src/test/product/playwright.mock.config.ts))**:
+  loads the real built Vite bundle (`target/classes/assets/next/next.js` & `next.css`) in real Chromium against a
+  deterministic `window.fetch` mock (`npm run test:mock`), catching DOM, CSS, keyboard, deep-link, overlay `inert`, and
+  failure-banner regressions in CI without a running Jira/Confluence instance.
 - **Playwright E2E (`src/test/product/e2e/*.spec.ts`)**: cross-stack flows against real Jira and Confluence servers —
   Atlassian page decorators, auth routing, full-screen shell hiding, real product catalogs, live `GET` requests,
   downloaded artifacts, multi-overlay keyboard/focus choreography, tabbed decompiler/code intelligence panels, and live
@@ -203,7 +207,8 @@ product boot/decompilation takes longer (`openNewUi` waits up to `60_000` / `90_
 ## 8. Agent checklist before committing Playwright changes
 
 1. Typecheck specs without running browsers: `cd src/test/product && npm run typecheck`
-2. If you touched the fallback runner, syntax-check it: `node --check src/test/product/cdp.js` (and `ui.js` / `ui_next.js`)
+2. Run offline mock UI verification (builds/uses `target/classes/assets/next/`): `cd src/test/product && npm run test:mock`
+3. If you touched the fallback runner, syntax-check it: `node --check src/test/product/cdp.js` (and `ui.js` / `ui_next.js`)
 3. Run against both products when instances are available:
    - `RAB_PRODUCT=jira npm test` (and watch live changes with `RAB_HEADED=1`)
    - `RAB_PRODUCT=confluence npm test`

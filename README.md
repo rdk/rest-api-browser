@@ -96,7 +96,10 @@ summaries, descriptions and parameter hints, supports URL-encoded form parameter
 uploads (`@MultipartFormParam`), JSON response formatting with long-line **View full** modal and **Wrap** toggle, search,
 a history of sent requests, **Copy as curl**, per-module **OpenAPI 3.1** downloads (operation header and pinned
 module card), **Generate example** DTO JSON payloads on the **Body** tab, and deep links that prefill a request
-without sending it. System administrators also get clickable Java input/output/parameter types with rich hover cards
+without sending it (`?op=...`, `?supportedOnly=1`, or sysadmin `?class=...&method=...&line=...` to open the decompiler
+directly). When running in a cluster or alongside [Live Scalpel](https://github.com/rdk/live-scalpel), the header shows
+the current `nodeId` badge and a **Trace in Scalpel** deep link on operations. System administrators also get clickable Java
+input/output/parameter types with rich hover cards
 (OSGi bundle wiring, plugin ownership and timestamps, classloader, bytecode info), a **Java** tab per operation with
 virtualized on-demand method and full class decompilation (focusing the method declaration header), and a
 draggable/resizable/maximizable persistent tabbed decompiler window with CFR 0.152 / Vineflower 1.11.1 switching,
@@ -132,19 +135,26 @@ cookies, Basic auth, or Jira/Confluence Personal Access Tokens (`Authorization: 
     Browser's own endpoints; `/rest/restbrowser/1/catalog/openapi?module={id}` generates an OpenAPI 3.1.0 spec on
     demand for any indexed REST module (with DTO schemas for sysadmins).
 - **Catalog & Code Intelligence (`/rest/restbrowser/1/*`)**:
-  - **Catalog** (`@LicensedOnly`): server-side scored search (`/catalog/operations`, including `?usesClass=` and
+  - **Catalog** (`@LicensedOnly`): ultra-compact plain-text cluster/module triage brief (`GET /catalog/brief` /
+    `?format=brief`), server-side scored search (`/catalog/operations`, including `?usesClass=` and
     `?format=markdown`), JAX-RS template URL matching (`/catalog/resolve?url=...`), and `/catalog/index/current`.
   - **Code & OSGi** (`@SystemAdminOnly`): one-shot `POST /code/context` (metadata + DTO schemas + decompiled handler +
-    OSGi implementations), Draft 2020-12 JSON Schema & examples (`/code/schema`), bytecode outlines and inline
-    service hints (`/code/class`), live OSGi implementations (`/code/implementations`), constant-pool callers and grep
-    (`/code/callers`, `/code/grep`), safe bundle resource reader (`/code/resource`), typed BFS reference graphs
-    (`/code/graph?preset=domain`), and Vineflower 1.11.1 / CFR 0.152 decompilation (`/code/source`). Most read
-    endpoints support `ETag` / `If-None-Match` (`304`) and `format=markdown` (`Accept: text/markdown`).
+    OSGi implementations, with `maxChars` truncation budget), Draft 2020-12 JSON Schema & examples (`/code/schema`),
+    bytecode outlines and inline service hints (`/code/class`), live OSGi implementations (`/code/implementations`),
+    constant-pool callers and grep (`/code/callers`, `/code/grep`), safe bundle resource reader (`/code/resource`),
+    typed BFS reference graphs (`/code/graph?preset=domain`), and Vineflower 1.11.1 / CFR 0.152 decompilation
+    (`/code/source`). Most read endpoints support `ETag` / `If-None-Match` (`304`) and `format=markdown` (`Accept:
+    text/markdown`).
+- **Zero-Dependency Python Client ([`client/rab.py`](client/rab.py))**:
+  - Python 3.9+ stdlib CLI (`brief`, `search`, `resolve`, `context`, `source`, `schema`, `impls`, `callers`, `grep`,
+    `graph`, `resource`, `plugin`, `mcp`) with `RAB_URL` / `RAB_TOKEN` support, sticky session cookies, automatic XSRF
+    headers, and default `--max-chars 6000` output clipping.
 - **Built-in Read-Only MCP Server (`POST /rest/restbrowser/1/mcp`)**:
   - Streamable HTTP JSON-RPC 2.0 exposing read-only `tools/*` (4 catalog tools for licensed users, 16 tools for system
-    administrators), `resources/*` (`rab://llms.txt`, `rab://llms-full.txt`, `rab://catalog/summary`, `rab://openapi/self`,
-    plus URI templates for module OpenAPI specs and sysadmin class/source/plugin inspection), and `prompts/*` workflows
-    over PAT authentication:
+    administrators, all supporting optional `maxChars` output clipping), `resources/*` (`rab://llms.txt`,
+    `rab://llms-full.txt`, `rab://catalog/brief`, `rab://catalog/summary`, `rab://openapi/self`, plus URI templates for
+    module OpenAPI specs and sysadmin class/source/plugin inspection), and `prompts/*` workflows over PAT
+    authentication (and ready to pair with Live Scalpel's dual-MCP config shown on the Admin Intro page):
 
 ```json
 {
@@ -196,10 +206,17 @@ creates a draft release with it.
 
 ## Testing
 
-`mvn verify` runs the integration test against the refapp. To check the plugin on a real Jira Data Center (Jira 11.3.13 by default), see [src/test/product/README.md](src/test/product/README.md); with `RAB_PRODUCT=confluence` the same scripts and Playwright E2E suite check it on Confluence 10.2.20:
+`mvn verify` runs the integration test against the refapp, and the CI workflow plus local `npm run test:mock` exercise
+the built Preact UI without a running Jira/Confluence server via the offline browser harness
+([`src/test/harness/index.html`](src/test/harness/index.html)) and
+[`src/test/product/e2e-mock/`](src/test/product/e2e-mock/harness.spec.ts). To check the plugin on a real Jira Data
+Center (Jira 11.3.13 by default), see [src/test/product/README.md](src/test/product/README.md); with
+`RAB_PRODUCT=confluence` the same scripts and Playwright E2E suite check it on Confluence 10.2.20:
 
 ```bash
-mvn -B clean package -DskipTests
+mvn -B clean package -DskipTests                   # target/rest-api-browser-<version>.jar
+python -B -m unittest discover -s client -v        # Python CLI client tests (stdlib only)
+(cd src/test/product && npm run test:mock)         # offline mock UI Playwright E2E suite
 src/test/product/product.sh start
 python src/test/product/smoke.py --expect-version 11.3.13
 python src/test/product/mcp_pat_check.py             # MCP tools, resources, prompts over PAT auth

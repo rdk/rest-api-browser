@@ -11,6 +11,8 @@
   },
   "include": [
     "playwright.config.ts",
-    "e2e/**/*.ts"
+    "playwright.mock.config.ts",
+    "e2e/**/*.ts",
+    "e2e-mock/**/*.ts"
   ]
 }

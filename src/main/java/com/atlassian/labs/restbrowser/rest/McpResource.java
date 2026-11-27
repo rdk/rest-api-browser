@@ -2,6 +2,7 @@ package com.atlassian.labs.restbrowser.rest;
 
 import com.atlassian.annotations.security.LicensedOnly;
 import com.atlassian.annotations.security.XsrfProtectionExcluded;
+import com.atlassian.labs.restbrowser.catalog.AgentMarkdown;
 import com.atlassian.labs.restbrowser.catalog.CatalogQuery;
 import com.atlassian.labs.restbrowser.catalog.CatalogQuery.OperationFilter;
 import com.atlassian.labs.restbrowser.catalog.CatalogService;
@@ -161,6 +162,7 @@ public class McpResource {
         @SuppressWarnings("unchecked")
         Map<String, Object> args = params.get("arguments") instanceof Map<?, ?> m
                 ? (Map<String, Object>) m : Map.of();
+        Integer maxChars = intObjArg(args, "maxChars");
 
         return switch (toolName) {
             case "search_operations" -> {
@@ -173,38 +175,43 @@ public class McpResource {
                 String text = "markdown".equalsIgnoreCase(strArg(args, "format"))
                         ? CatalogQuery.searchMarkdown(snap, filter)
                         : CatalogQuery.searchJson(snap, filter);
-                yield rpcToolText(id, text, false);
+                yield rpcToolText(id, text, false, maxChars);
             }
             case "resolve_url" -> {
                 String url = strArg(args, "url");
                 if (url == null || url.isBlank()) {
-                    yield rpcToolResult(id, new Result(400, "{\"error\":\"missing-url\",\"hint\":\"Pass url argument.\"}"));
+                    yield rpcToolResult(id, new Result(400, "{\"error\":\"missing-url\",\"hint\":\"Pass url argument.\"}"), maxChars);
                 }
                 CatalogSnapshot snap = catalog.current(request.getServletContext());
                 String text = "markdown".equalsIgnoreCase(strArg(args, "format"))
                         ? CatalogQuery.resolveUrlMarkdown(snap, strArg(args, "method"), url, intArg(args, "limit", 10))
                         : CatalogQuery.resolveUrlJson(snap, strArg(args, "method"), url, intArg(args, "limit", 10));
-                yield rpcToolText(id, text, false);
+                yield rpcToolText(id, text, false, maxChars);
             }
-            case "get_catalog_summary" -> rpcToolText(id, buildCatalogSummary(sysadmin, request), false);
+            case "get_catalog_summary" -> {
+                String text = "brief".equalsIgnoreCase(strArg(args, "format"))
+                        ? buildCatalogBrief(sysadmin, intArg(args, "top", 12), request)
+                        : buildCatalogSummary(sysadmin, request);
+                yield rpcToolText(id, text, false, maxChars);
+            }
             case "export_module_openapi" -> {
                 String module = strArg(args, "module");
                 if (module == null || module.isBlank()) {
-                    yield rpcToolResult(id, new Result(400, "{\"error\":\"missing-module\",\"hint\":\"Pass module key.\"}"));
+                    yield rpcToolResult(id, new Result(400, "{\"error\":\"missing-module\",\"hint\":\"Pass module key.\"}"), maxChars);
                 }
                 String spec = exportModuleOpenApiJson(module, sysadmin,
                         intArg(args, "schemaDepth", 2), boolArg(args, "includeSchemas", true), request);
                 if (spec == null) {
-                    yield rpcToolResult(id, new Result(404, "{\"error\":\"unknown-module\"}"));
+                    yield rpcToolResult(id, new Result(404, "{\"error\":\"unknown-module\"}"), maxChars);
                 }
-                yield rpcToolText(id, spec, false);
+                yield rpcToolText(id, spec, false, maxChars);
             }
-            default -> handleSysadminTool(id, toolName, args, sysadmin, request);
+            default -> handleSysadminTool(id, toolName, args, sysadmin, maxChars, request);
         };
     }
 
     private Response handleSysadminTool(Object id, String toolName, Map<String, Object> args,
-                                        boolean sysadmin, HttpServletRequest request) {
+                                        boolean sysadmin, Integer maxChars, HttpServletRequest request) {
         if (!isKnownSysadminTool(toolName)) {
             return rpcErrorResponse(id, -32602, "Unknown tool: " + toolName);
         }
@@ -212,7 +219,7 @@ public class McpResource {
             return rpcErrorResponse(id, -32003, "Forbidden: system administrator privileges required for " + toolName);
         }
         if (source == null) {
-            return rpcToolResult(id, new Result(404, "{\"error\":\"not-described\"}"));
+            return rpcToolResult(id, new Result(404, "{\"error\":\"not-described\"}"), maxChars);
         }
 
         Result res = switch (toolName) {
@@ -297,7 +304,7 @@ public class McpResource {
                     boolArg(args, "lineNumbers", false), intArg(args, "limit", 100));
             default -> new Result(400, "{\"error\":\"unknown-tool\"}");
         };
-        return rpcToolResult(id, res);
+        return rpcToolResult(id, res, maxChars);
     }
 
     private void maybeTouchCatalog(Map<String, Object> args, HttpServletRequest request) {
@@ -334,7 +341,21 @@ public class McpResource {
                 applicationProperties.getVersion(),
                 applicationProperties.getBuildNumber(),
                 applicationProperties.getBaseUrl(UrlMode.RELATIVE),
-                admin, sysadmin);
+                admin, sysadmin,
+                LocalBeans.clusterNodeId(),
+                sysadmin && LocalBeans.isLiveScalpelEnabled(pluginAccessor));
+    }
+
+    private String buildCatalogBrief(boolean sysadmin, int top, HttpServletRequest request) {
+        CatalogSnapshot snap = catalog.current(request.getServletContext());
+        return CatalogQuery.briefText(
+                snap,
+                applicationProperties.getDisplayName(),
+                applicationProperties.getVersion(),
+                LocalBeans.clusterNodeId(),
+                sysadmin,
+                sysadmin && LocalBeans.isLiveScalpelEnabled(pluginAccessor),
+                top);
     }
 
     private String exportModuleOpenApiJson(String module, boolean sysadmin, int schemaDepth, boolean includeSchemas,
@@ -369,6 +390,8 @@ public class McpResource {
                 "Complete Markdown agent reference with curl examples, MCP client config, and error recovery hints.", "text/markdown");
         resourceEntry(j, "rab://catalog/summary", "catalog-summary",
                 "Current REST catalog hash, product metadata, completeness progress, and modules.", "application/json");
+        resourceEntry(j, "rab://catalog/brief", "catalog-brief",
+                "Compact ~200-token plain-text overview of node, catalog hash, top modules, and failures.", "text/plain");
         resourceEntry(j, "rab://openapi/self", "openapi-self",
                 "OpenAPI 3.1.0 specification of REST API Browser's own agent and catalog endpoints.", "application/json");
         return j.endArray().endObject().toString();
@@ -422,6 +445,8 @@ public class McpResource {
                     LlmsTxtServlet.renderGuide(applicationProperties, pluginAccessor, catalog, true, sysadmin, true));
             case "rab://catalog/summary" -> rpcResourceText(id, uri, "application/json",
                     buildCatalogSummary(sysadmin, request));
+            case "rab://catalog/brief" -> rpcResourceText(id, uri, "text/plain",
+                    buildCatalogBrief(sysadmin, 12, request));
             case "rab://openapi/self" -> rpcResourceText(id, uri, "application/json",
                     OpenApiExporter.selfSpecJson(canonicalOrRelativeBase(), LocalBeans.pluginVersion(pluginAccessor), sysadmin));
             default -> handleTemplateResourceRead(id, uri, sysadmin, request);
@@ -615,8 +640,8 @@ public class McpResource {
         tool(j, "resolve_url", "Resolve a concrete endpoint URL (full or /rest/...) to matching JAX-RS operation key(s) and extracted pathParams.",
                 Map.of("url", "string", "method", "string", "limit", "integer", "format", "string"),
                 List.of("url"));
-        tool(j, "get_catalog_summary", "Fetch current catalog hash, completeness progress, and REST modules.",
-                Map.of(), List.of());
+        tool(j, "get_catalog_summary", "Fetch current catalog hash, completeness progress, and REST modules (supports format='brief').",
+                Map.of("format", "string", "top", "integer"), List.of());
         tool(j, "export_module_openapi", "Generate an OpenAPI 3.1.0 specification for a single catalog REST module.",
                 Map.of("module", "string", "includeSchemas", "boolean", "schemaDepth", "integer"),
                 List.of("module"));
@@ -692,6 +717,9 @@ public class McpResource {
         for (Map.Entry<String, String> e : props.entrySet()) {
             j.name(e.getKey()).beginObject().field("type", e.getValue()).endObject();
         }
+        if (!props.containsKey("maxChars")) {
+            j.name("maxChars").beginObject().field("type", "integer").endObject();
+        }
         j.endObject();
         if (!required.isEmpty()) {
             j.strings("required", required);
@@ -744,14 +772,15 @@ public class McpResource {
         return -1;
     }
 
-    private static Response rpcToolResult(Object id, Result res) {
-        return rpcToolText(id, res.json(), res.status() >= 400);
+    private static Response rpcToolResult(Object id, Result res, Integer maxChars) {
+        return rpcToolText(id, res.json(), res.status() >= 400, maxChars);
     }
 
-    private static Response rpcToolText(Object id, String text, boolean isError) {
+    private static Response rpcToolText(Object id, String text, boolean isError, Integer maxChars) {
+        String capped = AgentMarkdown.truncateToChars(text == null ? "" : text, maxChars);
         Json result = new Json().beginObject()
                 .name("content").beginArray()
-                .beginObject().field("type", "text").field("text", text == null ? "" : text).endObject()
+                .beginObject().field("type", "text").field("text", capped).endObject()
                 .endArray()
                 .field("isError", isError)
                 .endObject();

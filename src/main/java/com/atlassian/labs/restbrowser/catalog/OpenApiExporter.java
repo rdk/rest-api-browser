@@ -53,7 +53,10 @@ public final class OpenApiExporter {
                 .endArray();
 
         Map<String, List<SelfOp>> paths = new LinkedHashMap<>();
-        addSelf(paths, "/catalog", "get", "getCatalogSummary", "Catalog summary, hash, and module states", List.of("catalog"), List.of(), false);
+        addSelf(paths, "/catalog", "get", "getCatalogSummary", "Catalog summary, hash, and module states (supports ?format=brief&top=12)", List.of("catalog"),
+                List.of("format", "top"), false);
+        addSelf(paths, "/catalog/brief", "get", "getCatalogBrief", "Compact plain-text triage brief (~200 tokens) of product, node, and top/problem modules", List.of("catalog"),
+                List.of("top"), false);
         addSelf(paths, "/catalog/operations", "get", "searchOperations", "Scored server-side search over indexed REST operations", List.of("catalog"),
                 List.of("q", "method", "path", "module", "plugin", "access", "deprecated", "usesClass", "limit", "offset", "fields", "format"), false);
         addSelf(paths, "/catalog/resolve", "get", "resolveUrl", "Match a live URL against JAX-RS URI templates", List.of("catalog"),
@@ -94,7 +97,9 @@ public final class OpenApiExporter {
             addSelf(paths, "/code/resource", "get", "inspectBundleResource", "List or read non-binary text resources inside an OSGi bundle", List.of("code", "sysadmin"),
                     List.of("bundleId", "plugin", "path", "prefix", "startLine", "maxLines", "lineNumbers", "limit", "format"), false);
             addSelf(paths, "/code/batch", "post", "batchCode", "Batch inspect, decompile, or generate schemas for up to 10 items", List.of("code", "sysadmin"), List.of(), true);
-            addSelf(paths, "/code/context", "post", "investigationContext", "One-shot investigation bundle: metadata, schemas, handler source, and dependency impls", List.of("code", "sysadmin"), List.of(), true);
+            addSelf(paths, "/code/context", "post", "investigationContext",
+                    "One-shot investigation bundle: metadata, schemas, handler source, and dependency impls",
+                    List.of("code", "sysadmin"), List.of("format", "maxChars"), true);
         }
 
         j.name("paths").beginObject();

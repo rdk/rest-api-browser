@@ -13,15 +13,21 @@ import com.atlassian.plugin.PluginInformation;
 import com.atlassian.plugin.metadata.PluginMetadataManager;
 import com.atlassian.plugin.servlet.ServletModuleManager;
 import com.atlassian.sal.api.ApplicationProperties;
+import org.osgi.framework.Bundle;
+import org.osgi.framework.BundleContext;
+import org.osgi.framework.FrameworkUtil;
+import org.osgi.framework.ServiceReference;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.lang.reflect.Method;
 import java.util.List;
 
 @Configuration
 public class LocalBeans {
 
     public static final String PLUGIN_KEY = "com.atlassian.labs.rest-api-browser";
+    public static final String LIVE_SCALPEL_KEY = "com.github.rdk.live-scalpel";
 
     public static String pluginVersion(PluginAccessor pluginAccessor) {
         if (pluginAccessor == null) {
@@ -34,6 +40,75 @@ public class LocalBeans {
             return version == null ? "" : version.trim();
         } catch (RuntimeException | LinkageError e) {
             return "";
+        }
+    }
+
+    /** Returns true when the companion Live Scalpel JVM diagnostic plugin is installed and enabled. */
+    public static boolean isLiveScalpelEnabled(PluginAccessor pluginAccessor) {
+        if (pluginAccessor == null) {
+            return false;
+        }
+        try {
+            return pluginAccessor.isPluginEnabled(LIVE_SCALPEL_KEY);
+        } catch (RuntimeException | LinkageError e) {
+            return false;
+        }
+    }
+
+    /**
+     * Best-effort cluster node identifier read reflectively from Jira or Confluence OSGi {@code ClusterManager}
+     * services without adding compile-time product dependencies. Returns {@code null} on single-node or test hosts.
+     */
+    public static String clusterNodeId() {
+        try {
+            Bundle bundle = FrameworkUtil.getBundle(LocalBeans.class);
+            BundleContext bc = bundle == null ? null : bundle.getBundleContext();
+            if (bc == null) {
+                return null;
+            }
+            String jiraNode = readClusterServiceNodeId(bc, "com.atlassian.jira.cluster.ClusterManager", false);
+            if (jiraNode != null) {
+                return jiraNode;
+            }
+            return readClusterServiceNodeId(bc, "com.atlassian.confluence.cluster.ClusterManager", true);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static String readClusterServiceNodeId(BundleContext bc, String className, boolean confluenceStyle) {
+        ServiceReference<?> ref = null;
+        try {
+            ref = bc.getServiceReference(className);
+            if (ref == null) {
+                return null;
+            }
+            Object svc = bc.getService(ref);
+            if (svc == null) {
+                return null;
+            }
+            if (!confluenceStyle) {
+                Method m = svc.getClass().getMethod("getNodeId");
+                Object raw = m.invoke(svc);
+                String id = raw == null ? "" : String.valueOf(raw).trim();
+                return id.isEmpty() ? null : id;
+            }
+            Object nodeInfo = svc.getClass().getMethod("getThisNodeInformation").invoke(svc);
+            if (nodeInfo == null) {
+                return null;
+            }
+            Object raw = nodeInfo.getClass().getMethod("getAnonymizedNodeIdentifier").invoke(nodeInfo);
+            String id = raw == null ? "" : String.valueOf(raw).trim();
+            return id.isEmpty() ? null : id;
+        } catch (Throwable ignored) {
+            return null;
+        } finally {
+            if (ref != null) {
+                try {
+                    bc.ungetService(ref);
+                } catch (Throwable ignored) {
+                }
+            }
         }
     }
 

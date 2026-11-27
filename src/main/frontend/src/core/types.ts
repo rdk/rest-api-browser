@@ -4,8 +4,9 @@ export type ModuleState = 'ok' | 'pending' | 'failed';
 export interface Summary {            // GET /rest/restbrowser/1/catalog
   format: 1; product: { name: string; version: string; build: string };
   baseUrl: string;                    // the context path, relative: "/jira", or "" at the root; no trailing slash
+  nodeId?: string;
   hash: string; complete: boolean; progress: { done: number; total: number };
-  admin: boolean; sysadmin?: boolean; modules: Module[];
+  admin: boolean; sysadmin?: boolean; liveScalpel?: boolean; modules: Module[];
 }
 export interface Module {
   id: string;                         // plugin module complete key, unique

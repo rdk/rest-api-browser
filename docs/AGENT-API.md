@@ -30,7 +30,8 @@ All examples below use `https://example.invalid/jira` as the base URL.
 
 | Endpoint | Role | Params & Notes |
 |---|---|---|
-| `GET /catalog` | Licensed | Current `hash`, `complete`, `progress{done,total}`, product info, `sysadmin` flag, and REST module states (`ok`, `pending`, `failed`). Supports `ETag` / `If-None-Match` (`304`). |
+| `GET /catalog` | Licensed | Current `hash`, `complete`, `progress{done,total}`, product info, optional cluster `nodeId`, `sysadmin` & `liveScalpel` flags, and REST module states (`ok`, `pending`, `failed`). Pass `?format=brief` (with optional `top`) for plain-text triage output, or use `ETag` / `If-None-Match` (`304`) for JSON. |
+| `GET /catalog/brief` | Licensed | Plain-text instance & catalog triage brief (`text/plain`; optional `top` module count, default `12`) showing product version, cluster node, catalog state, Live Scalpel availability, and top REST modules. Supports `ETag` / `304`. |
 | `GET /catalog/operations` | Licensed | Server-side scored search & pagination across indexed operations: `q`, `method`, `path` (substring or safe `/regex/`), `module`, `plugin`, `access` (`anonymous`, `unlicensed`, `licensed`, `admin`, `sysadmin`), `deprecated` (`true`/`false`), `usesClass` (DTO/param type word-boundary filter), `limit` (`<= 200`), `offset`, `fields=compact|full`, `format=json|markdown`. Emits `X-Catalog-Hash`. |
 | `GET /catalog/resolve` | Licensed | Matches a concrete URL (`?url=/rest/...` or full URL) plus optional `method` against JAX-RS URI templates; returns ranked candidate operations (`limit <= 25`) with extracted `pathParams` and `queryParams`. Supports `format=json|markdown`. |
 | `GET /catalog/openapi` | Licensed | Exports OpenAPI 3.1.0 JSON for `?module={moduleId}`. Optional `includeSchemas=true|false` and `schemaDepth` (`<= 2` default; sysadmin only, capped at 60 operations for deep DTO schemas). Supports `ETag` / `If-None-Match`. |
@@ -46,7 +47,7 @@ All `/code/*` endpoints require a **system administrator** (`@SystemAdminOnly`).
 
 | Endpoint | Method | Params & Behavior |
 |---|---|---|
-| `/code/context` | `POST` | Requires `X-Atlassian-Token: no-check`. Accepts JSON `{"op":"..."}` or `{"url":"...","method":"..."}` plus `maxLines` (default `400`), `schemaDepth` (`3`), `includeSchemas`, `includeImplementations`, `includeSource`, `lineNumbers`, `decompiler` (`vineflower`|`cfr`), `format` (`json`|`markdown`). Returns resolved operation summary, details, request/response DTO schemas, line-budgeted handler source, and OSGi implementations for injected fields in one call. |
+| `/code/context` | `POST` | Requires `X-Atlassian-Token: no-check`. Accepts JSON `{"op":"..."}` or `{"url":"...","method":"..."}` plus `maxLines` (default `400`), `maxChars` (optional `200..200000` Markdown char budget, also accepted as query param), `schemaDepth` (`3`), `includeSchemas`, `includeImplementations`, `includeSource`, `lineNumbers`, `decompiler` (`vineflower`|`cfr`), `format` (`json`|`markdown`). Returns resolved operation summary, details, request/response DTO schemas, line-budgeted handler source, and OSGi implementations for injected fields in one call. |
 | `/code/operation` | `GET` | `op`, `scope` (`method`|`class`), `decompiler`, `view` (`compact`|`full`), `startLine`, `maxLines`, `lineNumbers`, `format` (`json`|`markdown`). Combines reflection details, OSGi bundle/plugin provenance, handler source, and bytecode `refs`. |
 | `/code/class` | `GET` | `class` / `op`, `fromBundle`, `view` (`compact`|`full`), `outline` (`true`/`false` for bytecode `LineNumberTable` method ranges), `includeImplementations` (`true`/`false` + inline service hints on interfaces/abstract types), `format` (`json`|`markdown`). Reads fields, annotations, and enum constants without decompiling. Supports `ETag`. |
 | `/code/schema` | `GET` | `class` / `op`, `fromBundle`, `depth` (default `3`), `includeExample` (`true`/`false`), `format` (`json`|`markdown`). Synthesizes Draft 2020-12 JSON Schema + representative example payloads from DTO bytecode/reflection (request body + typed return DTOs). Supports `ETag`. |
@@ -81,11 +82,13 @@ All `/code/*` endpoints require a **system administrator** (`@SystemAdminOnly`).
 
 ### Tools Exposed
 
+All 16 tools accept an optional `maxChars` integer (`200..200000`) to cap returned text/Markdown payloads cleanly at a line boundary.
+
 - **Licensed users (4 tools)**:
-  - `search_operations` — search indexed operations (`q`, `method`, `path`, `module`, `plugin`, `access`, `deprecated`, `usesClass`, `limit`, `offset`, `format`)
-  - `resolve_url` — match a concrete URL against JAX-RS URI templates (`url`, `method`, `limit`, `format`)
-  - `get_catalog_summary` — retrieve current catalog hash, build progress, and modules
-  - `export_module_openapi` — generate OpenAPI 3.1.0 JSON for one module (`module`, `includeSchemas`, `schemaDepth`)
+  - `search_operations` — search indexed operations (`q`, `method`, `path`, `module`, `plugin`, `access`, `deprecated`, `usesClass`, `limit`, `offset`, `format`, `maxChars`)
+  - `resolve_url` — match a concrete URL against JAX-RS URI templates (`url`, `method`, `limit`, `format`, `maxChars`)
+  - `get_catalog_summary` — retrieve current catalog hash, build progress, and modules (`format=json|brief`, `top`, `maxChars`)
+  - `export_module_openapi` — generate OpenAPI 3.1.0 JSON for one module (`module`, `includeSchemas`, `schemaDepth`, `maxChars`)
 - **System administrators (+12 tools, 16 total)**:
   - `investigate_operation_context` — one-shot context bundle (`POST /code/context`)
   - `inspect_operation` — combined reflection details, OSGi provenance, and handler source (`GET /code/operation`)
@@ -105,6 +108,7 @@ All `/code/*` endpoints require a **system administrator** (`@SystemAdminOnly`).
 - **Static resources (`resources/list`)**:
   - `rab://llms.txt` (`text/markdown`) — compact discovery guide
   - `rab://llms-full.txt` (`text/markdown`) — full reference with `curl` & MCP config
+  - `rab://catalog/brief` (`text/plain`) — concise cluster/module triage brief
   - `rab://catalog/summary` (`application/json`) — current catalog hash, product info, and module list
   - `rab://openapi/self` (`application/json`) — OpenAPI 3.1.0 spec for REST API Browser's own endpoints
 - **URI templates (`resources/templates/list`)**:
@@ -193,6 +197,12 @@ Error text or identifier: <PASTE ERROR STRING / LOG FRAGMENT HERE>
 3. Find upstream REST handlers calling the helper with `find_callers` (`/code/callers`) and cross-reference via `search_operations` (`usesClass=...`).
 4. Explain the exact condition triggering the error and which REST endpoints can reach it.
 ```
+
+## UI Deep Links & Dual-MCP Workflow with Live Scalpel
+
+- **Direct browser deep links**: `?op=<key>` opens an operation, `?supportedOnly=1` enables the supported API filter, and sysadmin links `?class=<fqcn>&method=<name>&line=<n>&fromBundle=<bundleId>` open `SourceDialog` directly on that class/line (handy when jumping from Live Scalpel flame graphs or stack frames).
+- **Companion integration (`liveScalpel` / `nodeId`)**: When Live Scalpel is enabled on the node, sysadmin catalog responses set `liveScalpel: true`, the UI header displays the cluster `nodeId` badge plus **Trace in Scalpel**, and `/plugins/servlet/rest-api-browser/admin` emits a ready-to-copy dual-MCP client configuration pairing `rest-api-browser` (static REST/bytecode intelligence) with `live-scalpel` (live thread/CPU/allocation traces).
+- **Zero-dependency Python CLI**: [`client/rab.py`](../client/rab.py) wraps all catalog, code, and MCP operations (`python client/rab.py --url ... --token ... brief`, `search`, `resolve`, `context`, `source`, `impls`, `callers`, `grep`, `mcp`).
 
 ## Implementation Map
 

@@ -35,8 +35,8 @@ function BrandIcon({ size }: { size: number }) {
   );
 }
 
-function About({ version, product, operations, modules, pinned }: {
-  version: string; product: string; operations: number; modules?: number; pinned: boolean;
+function About({ version, product, nodeId, operations, modules, pinned }: {
+  version: string; product: string; nodeId?: string; operations: number; modules?: number; pinned: boolean;
 }) {
   return (
     <div id="rab-n-about" class="rab-n-about" role="tooltip" data-testid="about">
@@ -56,6 +56,12 @@ function About({ version, product, operations, modules, pinned }: {
           <>
             <dt>Running on</dt>
             <dd>{product}</dd>
+          </>
+        )}
+        {nodeId && (
+          <>
+            <dt>Node</dt>
+            <dd>{nodeId}</dd>
           </>
         )}
         {modules !== undefined && operations > 0 && (
@@ -84,6 +90,7 @@ export interface TopBarProps {
   product: string;
   productLabel: string;
   version: string;
+  nodeId?: string;
   siteUrl: string;
   classicUrl: string;
   sysadmin: boolean;
@@ -189,7 +196,7 @@ export const TopBar = memo(function TopBar(p: TopBarProps) {
             </span>
             <strong class="rab-n-topbar-title">REST API Browser</strong>
           </button>
-          <About version={p.version} product={p.productLabel} operations={p.operationsCount} modules={p.modulesCount} pinned={about.pinned} />
+          <About version={p.version} product={p.productLabel} nodeId={p.nodeId} operations={p.operationsCount} modules={p.modulesCount} pinned={about.pinned} />
         </span>
         {p.version && (
           <a
@@ -205,6 +212,18 @@ export const TopBar = memo(function TopBar(p: TopBarProps) {
           >
             v{p.version}
           </a>
+        )}
+        {p.nodeId && (
+          <span
+            class="rab-n-node"
+            data-testid="node-id"
+            {...tipProps({
+              title: `Cluster node ${p.nodeId}`,
+              body: 'Atlassian Data Center node serving this session and catalog.',
+            })}
+          >
+            {p.nodeId}
+          </span>
         )}
       </div>
       <div class="rab-n-top-center">

@@ -123,6 +123,79 @@ public final class CatalogQuery {
         return md.toString();
     }
 
+    /** Renders a compact ~150-250 token plain-text triage brief of catalog state, top modules, and failures. */
+    public static String briefText(CatalogSnapshot snapshot, String productName, String productVersion,
+                                   String nodeId, boolean sysadmin, boolean liveScalpel, int topModules) {
+        int limit = topModules <= 0 ? 12 : Math.min(topModules, 50);
+        int ok = 0;
+        int waiting = 0;
+        int failed = 0;
+        List<ModuleEntry> okMods = new ArrayList<>();
+        List<ModuleEntry> problemMods = new ArrayList<>();
+        for (ModuleEntry m : snapshot.modules()) {
+            if (m.state() == Model.State.ok) {
+                ok++;
+                if (m.opCount() > 0) {
+                    okMods.add(m);
+                }
+            } else if (m.state() == Model.State.pending || "not-started".equals(m.reason()) || "not-startable".equals(m.reason())) {
+                waiting++;
+                problemMods.add(m);
+            } else {
+                failed++;
+                problemMods.add(m);
+            }
+        }
+        okMods.sort(Comparator.comparingInt(ModuleEntry::opCount).reversed().thenComparing(ModuleEntry::path));
+
+        String prod = ((productName == null ? "" : productName.trim()) + " "
+                + (productVersion == null ? "" : productVersion.trim())).trim();
+        StringBuilder sb = new StringBuilder(512);
+        sb.append("RAB ").append(prod.isEmpty() ? "Atlassian" : prod);
+        if (nodeId != null && !nodeId.isBlank()) {
+            sb.append(" | node:").append(nodeId.trim());
+        }
+        sb.append(" | hash:").append(snapshot.hash())
+                .append(" | ").append(snapshot.complete() ? "complete" : (snapshot.done() + "/" + snapshot.total()))
+                .append(" | ").append(snapshot.operations().size()).append(" ops / ")
+                .append(snapshot.modules().size()).append(" modules (ok:").append(ok)
+                .append(" wait:").append(waiting).append(" fail:").append(failed).append(")\n");
+
+        sb.append("role: ").append(sysadmin ? "sysadmin" : "licensed");
+        if (sysadmin && liveScalpel) {
+            sb.append(" | companions: live-scalpel");
+        }
+        sb.append('\n');
+
+        int shownOk = Math.min(limit, okMods.size());
+        if (shownOk > 0) {
+            sb.append("top modules (").append(shownOk).append('/').append(okMods.size()).append("):\n");
+            for (int i = 0; i < shownOk; i++) {
+                ModuleEntry m = okMods.get(i);
+                sb.append("- ").append(m.path()).append(" (").append(m.opCount()).append(" ops, ")
+                        .append(m.stability()).append(", ").append(m.pluginKey()).append(")\n");
+            }
+        }
+
+        if (!problemMods.isEmpty()) {
+            int shownProb = Math.min(10, problemMods.size());
+            sb.append("waiting/failed (").append(problemMods.size()).append("):\n");
+            for (int i = 0; i < shownProb; i++) {
+                ModuleEntry m = problemMods.get(i);
+                String reason = m.reason() != null && !m.reason().isBlank() ? m.reason() : m.state().name();
+                sb.append("- ").append(m.path()).append(" [").append(m.state().name()).append(": ").append(reason)
+                        .append("] (").append(m.id()).append(")\n");
+            }
+        }
+
+        sb.append("next: GET /catalog/operations?q=...&format=markdown | GET /catalog/resolve?url=/rest/...");
+        if (sysadmin) {
+            sb.append(" | POST /code/context");
+        }
+        sb.append('\n');
+        return sb.toString();
+    }
+
     public static String resolveUrlJson(CatalogSnapshot snapshot, String rawMethod, String rawUrl, int rawLimit) {
         UrlResolution res = evaluateResolve(snapshot, rawMethod, rawUrl, rawLimit);
         Json j = new Json().beginObject()

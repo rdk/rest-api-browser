@@ -410,6 +410,7 @@ public class CodeResource {
     @Produces({MediaType.APPLICATION_JSON, MARKDOWN, MediaType.TEXT_PLAIN})
     public Response context(InputStream body,
                             @QueryParam("format") String queryFormat,
+                            @QueryParam("maxChars") Integer queryMaxChars,
                             @Context HttpServletRequest request) {
         Response denied = checkSysadmin(request);
         if (denied != null) {
@@ -445,6 +446,8 @@ public class CodeResource {
         String method = optionalString(obj.get("method"), null, "method");
         Integer maxLinesObj = toOptionalInt(obj.get("maxLines"));
         Integer schemaDepthObj = toOptionalInt(obj.get("schemaDepth"));
+        Integer bodyMaxChars = toOptionalInt(obj.get("maxChars"));
+        Integer maxChars = queryMaxChars != null ? queryMaxChars : bodyMaxChars;
         boolean includeSchemas = optionalBoolean(obj.get("includeSchemas"), true, "includeSchemas");
         boolean includeImplementations = optionalBoolean(obj.get("includeImplementations"), true, "includeImplementations");
         boolean includeSource = optionalBoolean(obj.get("includeSource"), true, "includeSource");
@@ -460,9 +463,13 @@ public class CodeResource {
                 schemaDepthObj == null ? 3 : schemaDepthObj,
                 includeSchemas, includeImplementations, includeSource, lineNumbers, decompiler, details);
         if (RestAuth.wantsMarkdown(format, request)) {
-            return noStoreMarkdown(r, AgentMarkdown.renderContextJson(r.json()));
+            return noStoreMarkdown(r, AgentMarkdown.truncateToChars(AgentMarkdown.renderContextJson(r.json()), maxChars));
         }
         return jsonResponse(r);
+    }
+
+    Response context(InputStream body, String queryFormat, HttpServletRequest request) {
+        return context(body, queryFormat, null, request);
     }
 
     private static final class BodyTooLargeException extends IOException {

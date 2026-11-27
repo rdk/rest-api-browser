@@ -224,18 +224,28 @@ public final class CatalogSnapshot {
 
     public String summary(String productName, String productVersion, String productBuild, String baseUrl,
                           boolean admin, boolean sysadmin) {
+        return summary(productName, productVersion, productBuild, baseUrl, admin, sysadmin, null, false);
+    }
+
+    public String summary(String productName, String productVersion, String productBuild, String baseUrl,
+                          boolean admin, boolean sysadmin, String nodeId, boolean liveScalpel) {
+        String cleanNode = nodeId == null || nodeId.isBlank() ? null : nodeId.trim();
         Json j = new Json().beginObject()
                 .field("format", FORMAT)
                 .name("product").beginObject()
                 .field("name", productName).field("version", productVersion).field("build", productBuild)
                 .endObject()
                 .field("baseUrl", baseUrl)
+                .optional("nodeId", cleanNode)
                 .field("hash", hash)
                 .field("complete", complete)
                 .name("progress").beginObject().field("done", done).field("total", total).endObject()
                 .field("admin", admin)
-                .field("sysadmin", sysadmin)
-                .name("modules").beginArray();
+                .field("sysadmin", sysadmin);
+        if (sysadmin && liveScalpel) {
+            j.field("liveScalpel", true);
+        }
+        j.name("modules").beginArray();
         for (ModuleEntry m : modules) {
             j.beginObject()
                     .field("id", m.id()).field("path", m.path()).field("origin", m.origin())

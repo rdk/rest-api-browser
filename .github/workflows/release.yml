@@ -31,5 +31,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" "target/rest-api-browser-$GITHUB_REF_NAME.jar" \
-            --draft --title "$GITHUB_REF_NAME" --notes "Built by GitHub Actions from $GITHUB_SHA."
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists; skipping create."
+          else
+            gh release create "$GITHUB_REF_NAME" "target/rest-api-browser-$GITHUB_REF_NAME.jar" \
+              --draft --title "$GITHUB_REF_NAME" --notes "Built by GitHub Actions from $GITHUB_SHA."
+          fi

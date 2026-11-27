@@ -40,4 +40,20 @@ describe('router', () => {
     expect(Object.entries(s.form!)).toEqual([['a', ['1', '2']], ['__proto__', ['p']], ['toString', ['t']]]);
     expect(parseState(formatState(s))).toEqual(s);
   });
+
+  it('parses decompiler class/method/line/bundle deep links and supportedOnly flag', () => {
+    const s = parseState('?class=com.example.Ctrl&method=handle&line=42&fromBundle=19&supportedOnly=1');
+    expect(s).toEqual({
+      path: {},
+      q: {},
+      h: {},
+      className: 'com.example.Ctrl',
+      method: 'handle',
+      line: 42,
+      fromBundle: 19,
+      supportedOnly: true,
+    });
+    expect(parseState(formatState(s))).toEqual(s);
+    expect(parseState('?line=-1&fromBundle=nope&supportedOnly=maybe')).toEqual({ path: {}, q: {}, h: {} });
+  });
 });

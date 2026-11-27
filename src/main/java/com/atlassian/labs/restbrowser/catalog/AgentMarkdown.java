@@ -15,6 +15,22 @@ public final class AgentMarkdown {
     private AgentMarkdown() {
     }
 
+    /** Caps long Markdown/tool text output cleanly on a line boundary to keep agent responses within context budgets. */
+    public static String truncateToChars(String text, Integer maxChars) {
+        if (text == null || maxChars == null || maxChars <= 0) {
+            return text;
+        }
+        int limit = Math.max(200, Math.min(200_000, maxChars));
+        if (text.length() <= limit) {
+            return text;
+        }
+        String note = "\n\n… [truncated to " + limit + " chars; pass maxChars=0 or narrow scope/maxLines to inspect further]\n";
+        int cutMax = Math.max(80, limit - note.length());
+        int nl = text.lastIndexOf('\n', cutMax);
+        int cut = nl > cutMax / 2 ? nl : cutMax;
+        return text.substring(0, cut) + note;
+    }
+
     public static String renderSourceJson(String sourceJson) {
         Map<String, Object> m = safeObject(sourceJson);
         if (m == null || m.containsKey("error")) {

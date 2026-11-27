@@ -115,7 +115,7 @@ public class McpResourceTest {
         Response resListResp = resource.rpc(bytes("{\"jsonrpc\":\"2.0\",\"id\":21,\"method\":\"resources/list\"}"), request);
         List<Map<String, Object>> resList = (List<Map<String, Object>>)
                 ((Map<String, Object>) JsonParser.parseObject((String) resListResp.getEntity()).get("result")).get("resources");
-        assertEquals(4, resList.size());
+        assertEquals(5, resList.size());
 
         Response tplListResp = resource.rpc(bytes("{\"jsonrpc\":\"2.0\",\"id\":22,\"method\":\"resources/templates/list\"}"), request);
         List<Map<String, Object>> tplList = (List<Map<String, Object>>)
@@ -124,7 +124,7 @@ public class McpResourceTest {
 
         String cls = OperationSourceTest.SampleResource.class.getName();
         for (String uri : List.of("rab://llms.txt", "rab://llms-full.txt", "rab://catalog/summary",
-                "rab://openapi/self", "rab://catalog/openapi/demo",
+                "rab://catalog/brief", "rab://openapi/self", "rab://catalog/openapi/demo",
                 "rab://code/class/" + cls, "rab://code/source/" + cls)) {
             Response rr = resource.rpc(bytes("{\"jsonrpc\":\"2.0\",\"id\":23,\"method\":\"resources/read\",\"params\":{\"uri\":\"" + uri + "\"}}"), request);
             Map<String, Object> rRes = (Map<String, Object>) JsonParser.parseObject((String) rr.getEntity()).get("result");
@@ -132,6 +132,21 @@ public class McpResourceTest {
             assertEquals(1, contents.size());
             assertFalse(String.valueOf(contents.get(0).get("text")).isBlank());
         }
+
+        // get_catalog_summary supports format='brief' and maxChars capping on tools
+        Response briefCall = resource.rpc(bytes(
+                "{\"jsonrpc\":\"2.0\",\"id\":27,\"method\":\"tools/call\",\"params\":{\"name\":\"get_catalog_summary\",\"arguments\":{\"format\":\"brief\",\"top\":5}}}"), request);
+        Map<String, Object> briefRes = (Map<String, Object>) JsonParser.parseObject((String) briefCall.getEntity()).get("result");
+        String briefText = String.valueOf(((List<Map<String, Object>>) briefRes.get("content")).get(0).get("text"));
+        assertTrue(briefText.contains("RAB Jira 11.3.13"));
+        assertTrue(briefText.contains("role: sysadmin"));
+
+        Response cappedSrcCall = resource.rpc(bytes(
+                "{\"jsonrpc\":\"2.0\",\"id\":28,\"method\":\"tools/call\",\"params\":{\"name\":\"decompile_source\",\"arguments\":{\"class\":\"" + cls + "\",\"maxChars\":220}}}"), request);
+        Map<String, Object> cappedRes = (Map<String, Object>) JsonParser.parseObject((String) cappedSrcCall.getEntity()).get("result");
+        String cappedText = String.valueOf(((List<Map<String, Object>>) cappedRes.get("content")).get(0).get("text"));
+        assertTrue(cappedText.length() <= 220);
+        assertTrue(cappedText.contains("truncated to 220 chars"));
 
         // Prompts for sysadmin
         Response promptsResp = resource.rpc(bytes("{\"jsonrpc\":\"2.0\",\"id\":24,\"method\":\"prompts/list\"}"), request);

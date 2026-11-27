@@ -50,10 +50,11 @@ function UrlText({ parts }: { parts: UrlPart[] }) {
 }
 
 export function OperationHeader({
-  baseUrl, sysadmin, op, module, draft, built, running, compact, max, onSend, onCancel, onViewMaxResponse, onOpenClass,
+  baseUrl, sysadmin, liveScalpel, op, module, draft, built, running, compact, max, onSend, onCancel, onViewMaxResponse, onOpenClass,
 }: {
   baseUrl: string;
   sysadmin?: boolean;
+  liveScalpel?: boolean;
   op: Operation;
   module?: Module;
   draft: Draft;
@@ -153,6 +154,21 @@ export function OperationHeader({
           >
             {exportingApi ? 'Exporting…' : apiState === 'done' ? 'Saved' : apiState === 'failed' ? 'Failed' : 'OpenAPI'}
           </button>
+        )}
+        {sysadmin && liveScalpel && (
+          <a
+            class="rab-n-button"
+            href={`${baseUrl}/plugins/servlet/live-scalpel#traces`}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="trace-in-scalpel"
+            {...tipProps({
+              title: 'Trace in Live Scalpel',
+              body: 'Open Live Scalpel URL request stack tracing on this instance in a new tab.',
+            })}
+          >
+            Trace in Scalpel
+          </a>
         )}
       </div>
       {(op.summary || op.description) && <OpDoc summary={op.summary} description={op.description} />}

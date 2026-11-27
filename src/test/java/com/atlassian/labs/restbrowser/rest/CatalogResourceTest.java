@@ -557,5 +557,48 @@ public class CatalogResourceTest {
         Response adminSelf = selfApi.spec(request);
         assertEquals(200, adminSelf.getStatus());
         assertTrue(((String) adminSelf.getEntity()).contains("\"/code/context\""));
+        assertTrue(((String) adminSelf.getEntity()).contains("\"/catalog/brief\""));
+    }
+
+    @Test
+    public void briefEndpointAndLiveScalpelCompanionWorkWithEtagAndRoleFiltering() {
+        com.atlassian.plugin.PluginAccessor plugins = mock(com.atlassian.plugin.PluginAccessor.class);
+        when(plugins.isPluginEnabled(com.atlassian.labs.restbrowser.spring.LocalBeans.LIVE_SCALPEL_KEY)).thenReturn(true);
+        CatalogResource wired = new CatalogResource(catalog, userManager, props, details, source, plugins);
+
+        // Unauthenticated rejected
+        assertEquals(401, wired.brief(10, request).getStatus());
+
+        // Licensed non-sysadmin receives brief without companions flag and summary without liveScalpel
+        login(false, false);
+        Response userBrief = wired.summary("brief", 5, request);
+        assertEquals(200, userBrief.getStatus());
+        assertTrue(userBrief.getMediaType().toString().startsWith("text/plain"));
+        String userText = (String) userBrief.getEntity();
+        assertTrue(userText.contains("RAB Jira 10.3.0"));
+        assertTrue(userText.contains("hash:" + snapshot.hash()));
+        assertTrue(userText.contains("role: licensed"));
+        assertFalse(userText.contains("companions: live-scalpel"));
+
+        Response userSummary = wired.summary(request);
+        assertFalse(((String) userSummary.getEntity()).contains("\"liveScalpel\""));
+
+        // Sysadmin receives companions in brief, liveScalpel in summary, and 304 on matching ETag
+        login(true, true);
+        Response adminBrief = wired.brief(5, request);
+        assertEquals(200, adminBrief.getStatus());
+        String briefEtag = adminBrief.getHeaderString("ETag");
+        assertTrue(briefEtag != null && !briefEtag.isBlank());
+        String adminText = (String) adminBrief.getEntity();
+        assertTrue(adminText.contains("role: sysadmin"));
+        assertTrue(adminText.contains("companions: live-scalpel"));
+        assertTrue(adminText.contains("POST /code/context"));
+
+        when(request.getHeader("If-None-Match")).thenReturn(briefEtag);
+        assertEquals(304, wired.brief(5, request).getStatus());
+        when(request.getHeader("If-None-Match")).thenReturn(null);
+
+        Response adminSummary = wired.summary(request);
+        assertTrue(((String) adminSummary.getEntity()).contains("\"liveScalpel\":true"));
     }
 }
