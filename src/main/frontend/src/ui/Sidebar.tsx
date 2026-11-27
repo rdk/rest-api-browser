@@ -468,6 +468,7 @@ export function Sidebar(p: SidebarProps) {
         </div>
       )}
       {card && <RowCard id={CARD_ID} target={card.target} left={card.left} top={card.top} rowHeight={ROW}
+                        baseUrl={p.summary?.baseUrl}
                         startFailure={card.target.kind === 'module' ? p.startFailures?.get(card.target.module.id)?.message : undefined}
                         pinned={pinned} boxRef={cardBox} />}
     </div>

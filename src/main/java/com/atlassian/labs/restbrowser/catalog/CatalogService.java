@@ -63,6 +63,8 @@ public class CatalogService implements InitializingBean, DisposableBean {
     static final long PAUSE_BETWEEN_MODULES_MS = 10;
     static final long MODULE_TIMEOUT_MS = 30_000;
     static final long DEBOUNCE_MS = 3_000;
+    static final long NOT_STARTABLE_TTL_MS = 30 * 60_000L;
+    static final long[] BUILD_RETRY_DELAYS_MS = { 2_000L, 5_000L, 15_000L };
     private static final int MAX_DESCRIBE_THREADS = 8;
     private static final int TASK_PENDING = 0;
     private static final int TASK_RUNNING = 1;
@@ -82,8 +84,11 @@ public class CatalogService implements InitializingBean, DisposableBean {
     private final Map<String, Built> built = new LinkedHashMap<>();
     /** Flagged calls that timed out while running; pruned alongside {@link #built}. */
     private final Map<String, AtomicInteger> stuck = new HashMap<>();
+    /** Modules on this node that stayed unstarted even after a browser probe request, mapped to nanoTime() marked. */
+    private final Map<String, Long> notStartable = new ConcurrentHashMap<>();
     private final Set<String> stalePlugins = new HashSet<>();
     private boolean rebuildAll;
+    private final AtomicInteger consecutiveBuildFailures = new AtomicInteger();
 
     private volatile ScheduledExecutorService buildThread;
     private volatile ExecutorService describeThreads;
@@ -91,10 +96,18 @@ public class CatalogService implements InitializingBean, DisposableBean {
     private boolean pendingImmediate;
     private volatile long debounceMs = DEBOUNCE_MS;
     private volatile long pauseBetweenModulesMs = PAUSE_BETWEEN_MODULES_MS;
+    private volatile long[] buildRetryDelaysMs = BUILD_RETRY_DELAYS_MS;
+    private volatile long notStartableTtlMs = NOT_STARTABLE_TTL_MS;
 
     void setTimingForTests(long debounceMs, long pauseBetweenModulesMs) {
         this.debounceMs = Math.max(0L, debounceMs);
         this.pauseBetweenModulesMs = Math.max(0L, pauseBetweenModulesMs);
+    }
+
+    void setTimingForTests(long debounceMs, long pauseBetweenModulesMs, long[] buildRetryDelaysMs, long notStartableTtlMs) {
+        setTimingForTests(debounceMs, pauseBetweenModulesMs);
+        this.buildRetryDelaysMs = buildRetryDelaysMs == null ? new long[0] : buildRetryDelaysMs.clone();
+        this.notStartableTtlMs = Math.max(0L, notStartableTtlMs);
     }
 
     private record BuiltOp(Operation op, String json) {
@@ -182,7 +195,7 @@ public class CatalogService implements InitializingBean, DisposableBean {
         contextHolder.setIfAbsent(context);
         CatalogSnapshot snapshot = current.get();
         if (snapshot != null) {
-            return snapshot;
+            return expireNotStartable(snapshot);
         }
         synchronized (this) {
             snapshot = current.get();
@@ -202,10 +215,13 @@ public class CatalogService implements InitializingBean, DisposableBean {
     }
 
     public void refresh(String moduleId) {
+        consecutiveBuildFailures.set(0);
         synchronized (stalePlugins) {
             if (moduleId == null) {
                 rebuildAll = true;
+                notStartable.clear();
             } else {
+                notStartable.remove(moduleId);
                 stalePlugins.add("module:" + moduleId);
             }
             if (started) {
@@ -223,12 +239,15 @@ public class CatalogService implements InitializingBean, DisposableBean {
         }
         RestModule module = findModule(discovery.discover(), moduleId);
         if (module == null) {
+            notStartable.remove(moduleId);
             return new Started(StartOutcome.UNKNOWN, null);
         }
         JerseyModelSource jersey = jersey();
         if (jersey != null && !jersey.started(module)) {
+            markNotStartable(moduleId);
             return new Started(StartOutcome.STILL_NOT_STARTED, null);
         }
+        notStartable.remove(moduleId);
         ScheduledExecutorService thread = buildThread;
         if (thread == null || thread.isShutdown()) {
             return new Started(StartOutcome.FAILED, null);
@@ -280,6 +299,9 @@ public class CatalogService implements InitializingBean, DisposableBean {
             }
             needRediscover = true;
             built.put(moduleId, b);
+            if (!JerseyModelSource.NOT_STARTED.equals(b.entry().reason())) {
+                notStartable.remove(moduleId);
+            }
             return b.entry();
         } finally {
             startedReads.remove(moduleId);
@@ -307,7 +329,63 @@ public class CatalogService implements InitializingBean, DisposableBean {
     }
 
     private static boolean waitingToStart(ModuleEntry e) {
-        return e.state() == State.failed && JerseyModelSource.NOT_STARTED.equals(e.reason());
+        return e.state() == State.failed
+                && (JerseyModelSource.NOT_STARTED.equals(e.reason())
+                || JerseyModelSource.NOT_STARTABLE.equals(e.reason()));
+    }
+
+    private void markNotStartable(String moduleId) {
+        notStartable.put(moduleId, System.nanoTime());
+        String ver = ownVersion.get();
+        current.updateAndGet(s -> s == null ? null
+                : s.withModuleReason(moduleId, JerseyModelSource.NOT_STARTED, JerseyModelSource.NOT_STARTABLE, ver));
+    }
+
+    private boolean isNotStartable(String moduleId) {
+        Long markedAt = notStartable.get(moduleId);
+        if (markedAt == null) {
+            return false;
+        }
+        long ttlMs = notStartableTtlMs;
+        if (ttlMs <= 0 || TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - markedAt) >= ttlMs) {
+            notStartable.remove(moduleId, markedAt);
+            return false;
+        }
+        return true;
+    }
+
+    private CatalogSnapshot expireNotStartable(CatalogSnapshot snapshot) {
+        if (notStartable.isEmpty()) {
+            return snapshot;
+        }
+        List<String> expired = null;
+        for (ModuleEntry m : snapshot.modules()) {
+            if (m.state() == State.failed && JerseyModelSource.NOT_STARTABLE.equals(m.reason())
+                    && !isNotStartable(m.id())) {
+                if (expired == null) {
+                    expired = new ArrayList<>();
+                }
+                expired.add(m.id());
+            }
+        }
+        if (expired == null) {
+            return snapshot;
+        }
+        final List<String> toRevert = expired;
+        final String ver = ownVersion.get();
+        return current.updateAndGet(cur -> {
+            if (cur == null) {
+                return null;
+            }
+            CatalogSnapshot updated = cur;
+            for (String id : toRevert) {
+                if (!isNotStartable(id)) {
+                    updated = updated.withModuleReason(id, JerseyModelSource.NOT_STARTABLE,
+                            JerseyModelSource.NOT_STARTED, ver);
+                }
+            }
+            return updated;
+        });
     }
 
     private void publishDone(List<RestModule> modules) {
@@ -392,12 +470,26 @@ public class CatalogService implements InitializingBean, DisposableBean {
         }
         try {
             buildOnce();
+            consecutiveBuildFailures.set(0);
         } catch (RuntimeException | LinkageError e) {
-            LOGGER.warn("Building the REST API catalog failed; it is retried on the next change or refresh", e);
+            int attempt = consecutiveBuildFailures.incrementAndGet();
+            long[] delays = buildRetryDelaysMs;
+            if (attempt <= delays.length) {
+                long delay = Math.max(0L, delays[attempt - 1]);
+                LOGGER.warn("Building the REST API catalog failed (attempt {}/{}); retrying in {} ms",
+                        attempt, delays.length, delay, e);
+                schedule(delay);
+            } else {
+                LOGGER.warn("Building the REST API catalog failed after {} retries; marking unread modules failed",
+                        delays.length, e);
+                consecutiveBuildFailures.set(0);
+                publishBuildFailure(e);
+            }
         }
     }
 
     private void buildOnce() {
+        List<RestModule> modules = discovery.discover();
         Set<String> stale;
         boolean all;
         synchronized (stalePlugins) {
@@ -408,18 +500,19 @@ public class CatalogService implements InitializingBean, DisposableBean {
         }
         CatalogSnapshot curSnap = current.get();
         boolean changed = all || curSnap == null || !curSnap.complete();
-        List<RestModule> modules = discovery.discover();
         Set<String> present = new HashSet<>(modules.size() * 2);
         for (RestModule m : modules) {
             present.add(m.id());
         }
         changed |= built.keySet().removeIf(id -> !present.contains(id));
         stuck.keySet().removeIf(id -> !present.contains(id));
+        notStartable.keySet().removeIf(id -> !present.contains(id));
 
         List<RestModule> todo = new ArrayList<>();
         for (RestModule m : modules) {
             Built b = built.get(m.id());
             if (all || b == null || stale.contains(m.pluginKey()) || stale.contains("module:" + m.id())) {
+                notStartable.remove(m.id());
                 todo.add(m);
             }
         }
@@ -451,6 +544,57 @@ public class CatalogService implements InitializingBean, DisposableBean {
             return;
         }
         publishDone(modules);
+    }
+
+    private void publishBuildFailure(Throwable failure) {
+        String errText = "Catalog build failed: " + failure;
+        List<RestModule> modules = null;
+        try {
+            modules = discovery.discover();
+        } catch (RuntimeException | LinkageError ignored) {
+            // Fall back to the modules already in the current snapshot
+        }
+        if (modules != null) {
+            for (RestModule m : modules) {
+                if (!built.containsKey(m.id())) {
+                    built.put(m.id(), failed(m, null, "error", errText));
+                }
+            }
+            publish(modules, modules.size(), true);
+            return;
+        }
+        CatalogSnapshot prev = current.get();
+        if (prev == null) {
+            current.set(CatalogSnapshot.of(List.of(), List.of(), true, 0, 0, ownVersion.get()));
+            return;
+        }
+        List<ModuleEntry> entries = new ArrayList<>(prev.modules().size());
+        List<BuiltOp> allOps = new ArrayList<>();
+        for (ModuleEntry m : prev.modules()) {
+            Built b = built.get(m.id());
+            if (b != null) {
+                ModuleEntry entry = b.entry();
+                if (waitingToStart(entry) && isNotStartable(m.id())) {
+                    entry = entry.withReason(JerseyModelSource.NOT_STARTABLE);
+                }
+                entries.add(entry);
+                allOps.addAll(b.operations());
+            } else if (m.state() == State.pending) {
+                entries.add(new ModuleEntry(m.id(), m.path(), m.origin(), m.stability(), m.source(),
+                        State.failed, "error", errText, 0, m.pluginKey(), m.pluginName(), m.pluginVersion()));
+            } else {
+                entries.add(m);
+            }
+        }
+        allOps.sort(Comparator.comparing(bo -> bo.op().key()));
+        List<Operation> opsList = new ArrayList<>(allOps.size());
+        List<String> jsonList = new ArrayList<>(allOps.size());
+        for (BuiltOp bo : allOps) {
+            opsList.add(bo.op());
+            jsonList.add(bo.json());
+        }
+        current.set(CatalogSnapshot.ofPreserialized(
+                entries, opsList, jsonList, true, entries.size(), entries.size(), ownVersion.get()));
     }
 
     private Built describe(RestModule module) {
@@ -552,7 +696,11 @@ public class CatalogService implements InitializingBean, DisposableBean {
             if (b == null) {
                 entries.add(entry(m, null, State.pending, null, null, 0));
             } else {
-                entries.add(b.entry());
+                ModuleEntry entry = b.entry();
+                if (waitingToStart(entry) && isNotStartable(m.id())) {
+                    entry = entry.withReason(JerseyModelSource.NOT_STARTABLE);
+                }
+                entries.add(entry);
                 allOps.addAll(b.operations());
             }
         }

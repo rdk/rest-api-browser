@@ -371,6 +371,29 @@ def new_ui(j, a, P):
               len([m for m in summary2['modules'] if m.get('state') == 'ok']) == len(okm),
               summary2 and summary2.get('progress'))
 
+    # ---- MCP resources/* and prompts/*
+    mcp_headers = {'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Atlassian-Token': 'no-check'}
+    for req_id, label, payload, verify_fn in (
+        (101, 'MCP resources/list returns static discovery resources',
+         {'jsonrpc': '2.0', 'id': 101, 'method': 'resources/list'},
+         lambda d: len(((d or {}).get('result') or {}).get('resources') or []) >= 4),
+        (102, 'MCP resources/read(rab://llms.txt) returns guide text',
+         {'jsonrpc': '2.0', 'id': 102, 'method': 'resources/read', 'params': {'uri': 'rab://llms.txt'}},
+         lambda d: '# REST API Browser' in ((((d or {}).get('result') or {}).get('contents') or [{}])[0].get('text', ''))),
+        (103, 'MCP prompts/list returns agent prompts',
+         {'jsonrpc': '2.0', 'id': 103, 'method': 'prompts/list'},
+         lambda d: len(((d or {}).get('result') or {}).get('prompts') or []) >= 1),
+        (104, 'MCP prompts/get returns interpolated prompt messages',
+         {'jsonrpc': '2.0', 'id': 104, 'method': 'prompts/get', 'params': {'name': 'explore-endpoint-payload', 'arguments': {'query': 'ping'}}},
+         lambda d: 'ping' in (((((d or {}).get('result') or {}).get('messages') or [{}])[0].get('content') or {}).get('text', ''))),
+    ):
+        s_mcp, raw_mcp, _ = j.call('POST', '/rest/restbrowser/1/mcp', headers=mcp_headers, data=json.dumps(payload).encode('utf-8'))
+        try:
+            parsed_mcp = json.loads(raw_mcp) if raw_mcp else {}
+        except ValueError:
+            parsed_mcp = {}
+        check(label, s_mcp == 200 and verify_fn(parsed_mcp), (s_mcp, raw_mcp[:160]))
+
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
@@ -519,11 +542,19 @@ def main():
         warn('WADL not served: ' + b)
     if no_txw2:
         print('  %d of them fail in %s itself: JAXB\'s schema writer txw2 is missing from its WEB-INF/lib (Confluence '
-              '10.2.20 does not ship it; see src/test/product/README.md)' % (no_txw2, P['name']))
-    check('%s serves the WADL of %s (the sidebar\'s public APIs)' % (P['name'], P['core']),
-          core and not any(b.startswith(core_wadl + ' ') for b in bad), [b for b in bad if b.startswith(core_wadl + ' ')])
-    check('%s serves at least 95%% of the WADLs the page loads (%d of %d)' % (P['name'], ok, len(loaded)),
-          loaded and ok >= 0.95 * len(loaded), bad[:10])
+              '10.2.20 does not ship it; Classic UI links them to the new UI)' % (no_txw2, P['name']))
+        has_fallback = 'id="rab-wadl-fallback"' in page and '/plugins/servlet/rest-api-browser' in page
+        check('%s serves %s WADL or Classic UI links failed modules to the new UI' % (P['name'], P['core']),
+              (core and not any(b.startswith(core_wadl + ' ') for b in bad)) or (bool(core) and has_fallback),
+              [b for b in bad if b.startswith(core_wadl + ' ')])
+        non_txw2_ok = len(loaded) - (len(bad) - no_txw2)
+        check('%s serves at least 95%% of WADLs not affected by missing txw2 (%d of %d)' % (P['name'], non_txw2_ok, len(loaded)),
+              loaded and non_txw2_ok >= 0.95 * len(loaded), bad[:10])
+    else:
+        check('%s serves the WADL of %s (the sidebar\'s public APIs)' % (P['name'], P['core']),
+              core and not any(b.startswith(core_wadl + ' ') for b in bad), [b for b in bad if b.startswith(core_wadl + ' ')])
+        check('%s serves at least 95%% of the WADLs the page loads (%d of %d)' % (P['name'], ok, len(loaded)),
+              loaded and ok >= 0.95 * len(loaded), bad[:10])
 
     # ---- the web resources of the page
     res = sorted(set(html.unescape(u) for u in re.findall(r'(?:src|href)="([^"]*com\.atlassian\.labs\.rest-api-browser[^"]*)"', page)))

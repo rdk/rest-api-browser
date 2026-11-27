@@ -6,7 +6,7 @@
 | [NEW-UI-PLAN.md](NEW-UI-PLAN.md) | The new UI's design: goals, the server-side catalog, the API, the page, the steps and their status. |
 | [AGENT-API.md](AGENT-API.md) | Agent & automation REST API reference: discovery (`llms.txt`, `llms-full.txt`, OpenAPI 3.1), `/catalog/*`, `/code/*`, and the read-only `/mcp` server. |
 | [todo/](todo/) | One file per open item of [TODO.md](../TODO.md); [todo/README.md](todo/README.md) has the conventions. |
-| [../src/test/product/README.md](../src/test/product/README.md) | Testing against real products: `product.sh`, `smoke.py`, `ui.js`, `ui_next.js`. |
+| [../src/test/product/README.md](../src/test/product/README.md) | Testing against real products: `product.sh`, `smoke.py`, `mcp_pat_check.py`, `ui.js`, `ui_next.js`. |
 
 Conventions for everything here:
 

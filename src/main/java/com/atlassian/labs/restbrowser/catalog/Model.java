@@ -70,5 +70,10 @@ public final class Model {
             return new ModuleEntry(id, path, origin, stability, source, state, reason, error, opCount, pluginKey,
                     pluginName, pluginVersion);
         }
+
+        ModuleEntry withReason(String reason) {
+            return new ModuleEntry(id, path, origin, stability, source, state, reason, error, opCount, pluginKey,
+                    pluginName, pluginVersion);
+        }
     }
 }

@@ -13,7 +13,7 @@ All examples below use `https://example.invalid/jira` as the base URL.
 | Full agent reference | `/plugins/servlet/rest-api-browser/llms-full.txt` | Optional (`@AnonymousSiteAccess`) | Extended guide with `curl` examples, MCP JSON config, `ETag` notes, and error recovery hints. |
 | Self OpenAPI 3.1.0 | `/rest/restbrowser/1/openapi` (`/openapi.json`) | `@LicensedOnly` | OpenAPI 3.1.0 spec for REST API Browser's own endpoints (role-filtered to hide `/code/*` and `/catalog/refresh` from non-sysadmins; supports `ETag`). |
 | Module OpenAPI 3.1.0 | `/rest/restbrowser/1/catalog/openapi?module={id}` | `@LicensedOnly` | On-demand OpenAPI 3.1.0 spec for any catalog REST module (adds DTO schemas when called by a sysadmin; supports `ETag`). |
-| Built-in MCP server | `/rest/restbrowser/1/mcp` | `@LicensedOnly` | Streamable HTTP JSON-RPC 2.0 endpoint exposing 4 catalog tools for licensed users and 16 tools for system administrators. |
+| Built-in MCP server | `/rest/restbrowser/1/mcp` | `@LicensedOnly` | Streamable HTTP JSON-RPC 2.0 endpoint exposing `tools/*` (4 catalog / 16 sysadmin), `resources/*`, and `prompts/*`. |
 
 > [!NOTE]
 > Atlassian REST v2 runs Jersey's URI extension content negotiation (`UriConnegFilter`), stripping trailing `.json`. [`OpenApiResource.java`](../src/main/java/com/atlassian/labs/restbrowser/rest/OpenApiResource.java) declares `@Path("/openapi")`, so both `/rest/restbrowser/1/openapi` and `/rest/restbrowser/1/openapi.json` resolve to it cleanly.
@@ -62,7 +62,7 @@ All `/code/*` endpoints require a **system administrator** (`@SystemAdminOnly`).
 
 ## Built-in Read-Only MCP Server (`POST /rest/restbrowser/1/mcp`)
 
-[`McpResource.java`](../src/main/java/com/atlassian/labs/restbrowser/rest/McpResource.java) implements MCP Streamable HTTP JSON-RPC 2.0 (`protocolVersion`: `"2025-03-26"`), handling `initialize`, `notifications/*`, `ping`, `tools/list`, and `tools/call` (`GET /mcp` returns `405` with `Allow: POST`). Every tool sets `readOnlyHint: true`, `destructiveHint: false`, and `idempotentHint: true`.
+[`McpResource.java`](../src/main/java/com/atlassian/labs/restbrowser/rest/McpResource.java) implements MCP Streamable HTTP JSON-RPC 2.0 (`protocolVersion`: `"2025-03-26"`), advertising `tools`, `resources`, and `prompts` capabilities and handling `initialize`, `notifications/*`, `ping`, `tools/list`, `tools/call`, `resources/list`, `resources/templates/list`, `resources/read`, `prompts/list`, and `prompts/get` (`GET /mcp` returns `405` with `Allow: POST`). Every tool sets `readOnlyHint: true`, `destructiveHint: false`, and `idempotentHint: true`.
 
 ### MCP Client Configuration
 
@@ -99,6 +99,25 @@ All `/code/*` endpoints require a **system administrator** (`@SystemAdminOnly`).
   - `search_classes` — class name search across active bundles (`GET /code/search`)
   - `inspect_plugin` — plugin dependencies, modules, and OSGi bundle metadata (`GET /code/plugin`)
   - `read_bundle_resource` — list or read UTF-8 descriptors/templates inside a bundle (`GET /code/resource`)
+
+### Resources & Templates Exposed
+
+- **Static resources (`resources/list`)**:
+  - `rab://llms.txt` (`text/markdown`) — compact discovery guide
+  - `rab://llms-full.txt` (`text/markdown`) — full reference with `curl` & MCP config
+  - `rab://catalog/summary` (`application/json`) — current catalog hash, product info, and module list
+  - `rab://openapi/self` (`application/json`) — OpenAPI 3.1.0 spec for REST API Browser's own endpoints
+- **URI templates (`resources/templates/list`)**:
+  - `rab://catalog/openapi/{module}` (`application/json`, all licensed users) — OpenAPI 3.1.0 spec for one URL-encoded module ID
+  - `rab://code/class/{fqcn}` (`application/json`, `@SystemAdminOnly`) — reflection metadata & bytecode outline
+  - `rab://code/source/{fqcn}` (`application/json`, `@SystemAdminOnly`) — decompiled Java source
+  - `rab://code/plugin/{pluginKey}` (`application/json`, `@SystemAdminOnly`) — plugin metadata & OSGi bundle details
+
+### Prompts Exposed
+
+- `explore-endpoint-payload` (all licensed users, optional `query`) — document a REST endpoint's permissions, parameters, and DTO payload
+- `debug-stuck-endpoint` (`@SystemAdminOnly`, optional `target`) — read-only investigation workflow for slow/stuck REST endpoints
+- `trace-rest-error` (`@SystemAdminOnly`, optional `error`) — trace an unexpected REST error string back to bytecode callers and handlers
 
 ## Content Negotiation, ETag Caching & Error Recovery
 
@@ -178,6 +197,6 @@ Error text or identifier: <PASTE ERROR STRING / LOG FRAGMENT HERE>
 ## Implementation Map
 
 - REST resources & auth: [`CatalogResource.java`](../src/main/java/com/atlassian/labs/restbrowser/rest/CatalogResource.java), [`CodeResource.java`](../src/main/java/com/atlassian/labs/restbrowser/rest/CodeResource.java), [`OpenApiResource.java`](../src/main/java/com/atlassian/labs/restbrowser/rest/OpenApiResource.java), [`McpResource.java`](../src/main/java/com/atlassian/labs/restbrowser/rest/McpResource.java), [`EchoResource.java`](../src/main/java/com/atlassian/labs/restbrowser/rest/EchoResource.java), [`RestAuth.java`](../src/main/java/com/atlassian/labs/restbrowser/rest/RestAuth.java)
-- Servlets: [`LlmsTxtServlet.java`](../src/main/java/com/atlassian/labs/restbrowser/servlet/LlmsTxtServlet.java)
+- Servlets: [`LlmsTxtServlet.java`](../src/main/java/com/atlassian/labs/restbrowser/servlet/LlmsTxtServlet.java), [`AdminIntroServlet.java`](../src/main/java/com/atlassian/labs/restbrowser/servlet/AdminIntroServlet.java) (plus buffered rendering in [`RequiresLoginServlet.java`](../src/main/java/com/atlassian/labs/restbrowser/servlet/RequiresLoginServlet.java))
 - Catalog queries, Markdown & OpenAPI export: [`CatalogQuery.java`](../src/main/java/com/atlassian/labs/restbrowser/catalog/CatalogQuery.java), [`OpenApiExporter.java`](../src/main/java/com/atlassian/labs/restbrowser/catalog/OpenApiExporter.java), [`AgentMarkdown.java`](../src/main/java/com/atlassian/labs/restbrowser/catalog/AgentMarkdown.java), [`OperationSource.java`](../src/main/java/com/atlassian/labs/restbrowser/catalog/OperationSource.java)
 - Bytecode & OSGi inspection: [`ClassFileInspector.java`](../src/main/java/com/atlassian/labs/restbrowser/inspect/ClassFileInspector.java), [`ClassGraphTraverser.java`](../src/main/java/com/atlassian/labs/restbrowser/inspect/ClassGraphTraverser.java), [`DtoSchemaInspector.java`](../src/main/java/com/atlassian/labs/restbrowser/inspect/DtoSchemaInspector.java), [`OsgiImplementationFinder.java`](../src/main/java/com/atlassian/labs/restbrowser/inspect/osgi/OsgiImplementationFinder.java), [`OsgiBundleResourceReader.java`](../src/main/java/com/atlassian/labs/restbrowser/inspect/osgi/OsgiBundleResourceReader.java), [`OsgiBytecodeScanner.java`](../src/main/java/com/atlassian/labs/restbrowser/inspect/osgi/OsgiBytecodeScanner.java)

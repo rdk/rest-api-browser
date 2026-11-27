@@ -13,6 +13,10 @@ export interface ReasonInfo {
   kind: ReasonKind;
   /** What it means and what to do, for the hover card. */
   text: string;
+  /** Optional row override when a reason within a kind has its own short wording. */
+  row?: string;
+  /** Optional hover-card header override. */
+  card?: string;
 }
 
 /** What the list's row and the hover card say of each kind (a failure adds its code to the row). */
@@ -22,7 +26,8 @@ export const KIND_TEXT: Record<ReasonKind, { row: string; card: string }> = {
   failed: { row: 'failed', card: 'Could not be described' },
 };
 
-const known = (code: string, kind: ReasonKind, text: string): ReasonInfo => Object.freeze({ code, kind, text });
+const known = (code: string, kind: ReasonKind, text: string, row?: string, card?: string): ReasonInfo =>
+  Object.freeze({ code, kind, text, ...(row ? { row } : {}), ...(card ? { card } : {}) });
 
 const REASONS: Record<string, ReasonInfo> = Object.fromEntries([
   known('not-started', 'waiting',
@@ -30,6 +35,11 @@ const REASONS: Record<string, ReasonInfo> = Object.fromEntries([
     + 'until then its operations cannot be read. Select the module to start it: the browser sends one OPTIONS request to a path the '
     + 'module does not have, which starts it on this node, and the catalog reads it again. A few modules start only '
     + 'for their own kind of login (OAuth tokens): those stay not started.'),
+  known('not-startable', 'skipped',
+    'This module did not start on a normal browser request; some modules (such as OAuth token endpoints) start only '
+    + 'for their own kind of login. It is checked again on the next catalog rebuild.',
+    'needs its own login',
+    'Needs its own login (did not start)'),
   known('excluded', 'skipped',
     'Left out on purpose: an API for other applications, which log in with Crowd application credentials, not for users.'),
   known('rest-v1', 'skipped',
@@ -59,8 +69,11 @@ export const moduleReason = (m: Module): ReasonInfo | null => (m.state === 'fail
 /** A module whose REST API has not started yet on this node (Confluence starts one on the first request to it). */
 export const isWaiting = (m: Module) => moduleReason(m)?.kind === 'waiting';
 
-/** The list row's short text: "not started", "not described", "failed: timeout". */
-export const rowLabel = (r: ReasonInfo) => (r.kind === 'failed' ? `failed: ${r.code}` : KIND_TEXT[r.kind].row);
+/** The list row's short text: "not started", "not described", "needs its own login", "failed: timeout". */
+export const rowLabel = (r: ReasonInfo) => r.row ?? (r.kind === 'failed' ? `failed: ${r.code}` : KIND_TEXT[r.kind].row);
+
+/** The hover card's short status text for a reason. */
+export const cardLabel = (r: ReasonInfo) => r.card ?? KIND_TEXT[r.kind].card;
 
 export interface StatusInfo {
   /** "Not Found"; empty for a code this browser does not know and the server gave no text for. */

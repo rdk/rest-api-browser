@@ -220,10 +220,11 @@ public class CatalogServiceTest {
 
     @Test
     public void aModuleWhoseApplicationStillDoesNotRunIsNotRead() throws Exception {
+        final boolean[] startedFlag = {false};
         JerseyModelSource notRunning = new JerseyModelSource(() -> null, () -> null) {
             @Override
             public boolean started(RestModule module) {
-                return false;
+                return startedFlag[0];
             }
 
             @Override
@@ -235,6 +236,7 @@ public class CatalogServiceTest {
         source.failures.put("b", new SpecSource.SpecException(JerseyModelSource.NOT_STARTED, "not started", null));
         service = new CatalogService(discovery, List.of(notRunning, source), new ProductAdapter("jira", () -> null), null,
                 () -> "1.0.0");
+        service.setTimingForTests(50, 0, new long[]{20, 40}, 60_000L);
         service.afterPropertiesSet();
         service.current(null);
         completeSnapshot();
@@ -242,7 +244,69 @@ public class CatalogServiceTest {
         int calls = source.count("b");
         assertEquals(CatalogService.StartOutcome.STILL_NOT_STARTED, service.readStarted("b", 10_000).outcome());
         assertEquals(calls, source.count("b"));
+        assertEquals(JerseyModelSource.NOT_STARTABLE, entry(service.current(null), "b").reason());
+
+        // Subsequent rebuild clears the non-startable mark and re-evaluates module b cleanly
+        startedFlag[0] = true;
+        service.refresh("b");
+        await(() -> entry(service.current(null), "b").state() == State.ok && service.current(null).complete());
+
+        // Expire non-startable TTL -> reverts back to NOT_STARTED
+        startedFlag[0] = false;
+        source.failures.put("b", new SpecSource.SpecException(JerseyModelSource.NOT_STARTED, "not started", null));
+        service.setTimingForTests(50, 0, new long[]{20, 40}, 40L);
+        service.refresh("b");
+        await(() -> JerseyModelSource.NOT_STARTED.equals(entry(service.current(null), "b").reason()) && service.current(null).complete());
+        assertEquals(CatalogService.StartOutcome.STILL_NOT_STARTED, service.readStarted("b", 10_000).outcome());
+        assertEquals(JerseyModelSource.NOT_STARTABLE, entry(service.current(null), "b").reason());
+        Thread.sleep(60);
         assertEquals(JerseyModelSource.NOT_STARTED, entry(service.current(null), "b").reason());
+    }
+
+    @Test
+    public void buildRetriesAfterDiscoveryFailureAndPublishesCompleteErrorSnapshotWhenExhausted() throws Exception {
+        service.destroy();
+        AtomicInteger discoverCalls = new AtomicInteger();
+        FakeDiscovery recovering = new FakeDiscovery() {
+            @Override
+            public List<RestModule> discover() {
+                int n = discoverCalls.incrementAndGet();
+                if (n == 2 || n == 3) {
+                    throw new IllegalStateException("transient osgi error #" + n);
+                }
+                return super.discover();
+            }
+        };
+        recovering.modules = List.of(module("a", "plugin.a"));
+        service = new CatalogService(recovering, List.of(source), new ProductAdapter("jira", () -> null), null, () -> "1.0.0");
+        service.setTimingForTests(10, 0, new long[]{20, 20}, 60_000L);
+        service.afterPropertiesSet();
+        service.current(null); // call 1 succeeds, background build call 2 & 3 throw, retry call 4 succeeds
+        await(() -> service.current(null).complete());
+        assertEquals(State.ok, entry(service.current(null), "a").state());
+
+        // Permanent failure exhausts retries and still publishes complete=true with pending -> failed(error)
+        service.destroy();
+        FakeDiscovery alwaysBrokenAfterInit = new FakeDiscovery() {
+            final AtomicInteger calls = new AtomicInteger();
+            @Override
+            public List<RestModule> discover() {
+                if (calls.incrementAndGet() >= 2) {
+                    throw new IllegalStateException("permanent failure");
+                }
+                return super.discover();
+            }
+        };
+        alwaysBrokenAfterInit.modules = List.of(module("a", "plugin.a"));
+        service = new CatalogService(alwaysBrokenAfterInit, List.of(source), new ProductAdapter("jira", () -> null), null, () -> "1.0.0");
+        service.setTimingForTests(10, 0, new long[]{15, 15}, 60_000L);
+        service.afterPropertiesSet();
+        service.current(null);
+        await(() -> service.current(null).complete());
+        ModuleEntry failedEntry = entry(service.current(null), "a");
+        assertEquals(State.failed, failedEntry.state());
+        assertEquals("error", failedEntry.reason());
+        assertTrue(failedEntry.error().contains("permanent failure"));
     }
 
     @Test

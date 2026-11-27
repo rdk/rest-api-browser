@@ -275,7 +275,8 @@ public class CatalogResource {
         if (entry.state() == State.pending) {
             return Response.accepted().header("Cache-Control", "no-store").build();
         }
-        if (!JerseyModelSource.NOT_STARTED.equals(entry.reason())) {
+        if (!JerseyModelSource.NOT_STARTED.equals(entry.reason())
+                && !JerseyModelSource.NOT_STARTABLE.equals(entry.reason())) {
             return RestAuth.error(Response.Status.CONFLICT, "not-waiting-to-start");
         }
         CatalogService.Started started = catalog.readStarted(module, STARTED_WAIT_MS);

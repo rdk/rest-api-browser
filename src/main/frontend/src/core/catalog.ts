@@ -231,7 +231,15 @@ export class CatalogStore {
     if (res.status === 409) {
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       this.checkStopped(epoch);
-      if (body.error === 'still-not-started') throw new Error(DID_NOT_START);
+      if (body.error === 'still-not-started') {
+        try {
+          await this.reload(epoch);
+        } catch (err) {
+          if (err instanceof StartStopped || isSessionExpired(err)) throw err;
+        }
+        this.checkStopped(epoch);
+        throw new Error(DID_NOT_START);
+      }
       await this.reload(epoch);
       throw new Error('it is not waiting to start any more');
     }

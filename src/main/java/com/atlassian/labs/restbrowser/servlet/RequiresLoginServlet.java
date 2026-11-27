@@ -10,6 +10,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.net.URI;
 import java.util.Map;
 
@@ -58,9 +60,13 @@ public abstract class RequiresLoginServlet extends HttpServlet {
             return;
         }
         if (!handleRequest(req, resp)) {
+            StringWriter buf = new StringWriter(4096);
+            renderer.render(getTemplatePath(), getContext(req), buf);
             resp.setHeader("Cache-Control", "private, no-store");
             resp.setContentType("text/html;charset=utf-8");
-            renderer.render(getTemplatePath(), getContext(req), resp.getWriter());
+            PrintWriter out = resp.getWriter();
+            out.write(buf.toString());
+            out.flush();
         }
     }
 

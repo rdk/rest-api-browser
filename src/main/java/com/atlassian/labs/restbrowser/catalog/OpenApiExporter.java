@@ -29,7 +29,7 @@ public final class OpenApiExporter {
     /** Generates an OpenAPI 3.1.0 document describing REST API Browser's own API (role-filtered). */
     public static String selfSpecJson(String baseUrl, String pluginVersion, boolean includeSysadmin) {
         String root = stripTrailingSlash(baseUrl);
-        String ver = (pluginVersion == null || pluginVersion.isBlank()) ? "4.3.3-SNAPSHOT" : pluginVersion;
+        String ver = (pluginVersion == null || pluginVersion.isBlank()) ? "4.4.0" : pluginVersion;
 
         Json j = new Json().beginObject()
                 .field("openapi", "3.1.0")

@@ -11,6 +11,8 @@ afterEach(() => {
   render(null, document.body);
   clearEscapeStack();
   document.body.innerHTML = '';
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 function setInput(el: HTMLInputElement | HTMLTextAreaElement, value: string) {
@@ -166,5 +168,101 @@ describe('ui/OperationView', () => {
     expect(rows[0].querySelector('.rab-n-param-name .rab-n-required')?.textContent).toBe('*');
     expect(rows[1].querySelector('select[name=mode]')?.querySelectorAll('option')).toHaveLength(4);
     expect(rows[3].querySelector('select[name=deleteOrganizationsWithInactiveUsers]')?.querySelectorAll('option')).toHaveLength(3);
+  });
+
+  it('exports module OpenAPI specification and generates DTO JSON body example', async () => {
+    const mod = module('jira:api2', 'api/2');
+    const postOp = op('jira:api2', 'POST', 'issue', {
+      consumes: ['application/json'],
+      bodyType: 'com.example.IssueCreateInput',
+    });
+    const sm = summary([mod], { sysadmin: true });
+    const runner = { running: false, abort: vi.fn(), run: vi.fn() } as unknown as RequestRunner;
+    const userStore = new UserStore('test-op-agent', null);
+    const onDraft = vi.fn<(_k: string, _d: Draft) => void>();
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/rest/restbrowser/1/catalog/openapi')) {
+        return new Response(JSON.stringify({ openapi: '3.1.0', info: { title: 'api2', version: '1' } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url.includes('/rest/restbrowser/1/code/schema')) {
+        return new Response(JSON.stringify({
+          format: 1,
+          key: postOp.key,
+          requestBody: {
+            javaType: 'com.example.IssueCreateInput',
+            example: { summary: 'Example issue', priority: 1 },
+          },
+        }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response('{}', { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const origCreate = URL.createObjectURL;
+    const origRevoke = URL.revokeObjectURL;
+    const createMock = vi.fn(() => 'blob:openapi-test');
+    const revokeMock = vi.fn();
+    URL.createObjectURL = createMock;
+    URL.revokeObjectURL = revokeMock;
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+
+    try {
+      render(
+        <div class="rab-n">
+          <OperationView
+            summary={sm}
+            op={postOp}
+            module={mod}
+            onDraft={onDraft}
+            runner={runner}
+            userStore={userStore}
+            split={0.45}
+            onSplit={() => undefined}
+            tab="body"
+          />
+        </div>,
+        document.body,
+      );
+      const waitUntil = async (fn: () => boolean, ms = 500) => {
+        const end = Date.now() + ms;
+        while (Date.now() < end && !fn()) await new Promise((r) => setTimeout(r, 15));
+        return fn();
+      };
+      await waitUntil(() => !!document.querySelector('[data-testid=export-module-openapi]'));
+
+      const exportBtn = document.querySelector('[data-testid=export-module-openapi]') as HTMLButtonElement;
+      expect(exportBtn).not.toBeNull();
+      exportBtn.click();
+      await waitUntil(() => exportBtn.getAttribute('data-state') === 'done');
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/jira/rest/restbrowser/1/catalog/openapi?module=jira%3Aapi2',
+        expect.anything(),
+      );
+      expect(createMock).toHaveBeenCalledTimes(1);
+      expect(clickSpy).toHaveBeenCalledTimes(1);
+      expect(exportBtn.getAttribute('data-state')).toBe('done');
+
+      const genBtn = document.querySelector('[data-testid=generate-example]') as HTMLButtonElement;
+      expect(genBtn).not.toBeNull();
+      genBtn.click();
+      await waitUntil(() => document.body.textContent?.includes('Generated example from IssueCreateInput') ?? false);
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/jira/rest/restbrowser/1/code/schema?'),
+        expect.anything(),
+      );
+      const bodyArea = document.querySelector('[data-testid=body]') as HTMLTextAreaElement;
+      expect(bodyArea.value).toBe('{\n  "summary": "Example issue",\n  "priority": 1\n}');
+      expect(document.body.textContent).toContain('Generated example from IssueCreateInput');
+    } finally {
+      URL.createObjectURL = origCreate;
+      URL.revokeObjectURL = origRevoke;
+    }
   });
 });

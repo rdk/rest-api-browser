@@ -123,3 +123,19 @@ export function indexIn(sorted: number[], value: number): number {
   }
   return -1;
 }
+
+/** Extracts the trimmed line text and optional JSON property name without round-tripping through JSON.parse. */
+export function extractPrettyLineMeta(rawLineText: string): { key?: string; text: string } {
+  const trimmed = rawLineText.trimStart();
+  const match = /^"((?:[^"\\]|\\.)*)"\s*:/.exec(trimmed);
+  if (!match) return { text: trimmed };
+  let key = match[1];
+  if (key.includes('\\')) {
+    try {
+      key = JSON.parse(`"${key}"`) as string;
+    } catch {
+      // Keep raw key slice if escape sequence is malformed
+    }
+  }
+  return { key, text: trimmed };
+}

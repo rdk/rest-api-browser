@@ -141,6 +141,21 @@ export interface SourceQuery {
   decompiler?: DecompilerId;
 }
 
+export interface SchemaPart {
+  javaType?: string;
+  typesVisited?: number;
+  truncated?: boolean;
+  schema?: unknown;
+  example?: unknown;
+}
+
+export interface OperationSchemaInfo {
+  format: number;
+  key?: string;
+  requestBody?: SchemaPart;
+  responseBody?: SchemaPart;
+}
+
 export interface OperationDetails {
   format: 1; key: string;
   method: Section<JavaMethod>;
@@ -194,6 +209,7 @@ const sourceCache = new Map<string, Promise<OperationSource>>();
 const resolvedSources = new Map<string, OperationSource>();
 const classInfoCache = new Map<string, Promise<ClassInfo>>();
 const pluginInfoCache = new Map<string, Promise<PluginDetailInfo>>();
+const schemaCache = new Map<string, Promise<OperationSchemaInfo>>();
 let lastBaseUrl = '';
 
 const scoped = (baseUrl: string, key: string) => `${baseUrl}\0${key}`;
@@ -498,6 +514,49 @@ export function forgetDetails(key: string, baseUrl?: string): void {
   forgetSource(key, baseUrl);
 }
 
+/** Synthesizes request/response DTO JSON Schemas and representative example payloads for an operation (sysadmin only). */
+export function fetchOperationSchema(
+  baseUrl: string,
+  opKey: string,
+  depth = 3,
+  fetchFn: typeof fetch = (...a) => fetch(...a),
+): Promise<OperationSchemaInfo> {
+  lastBaseUrl = baseUrl;
+  const cacheKey = scoped(baseUrl, `${opKey}\0${depth}`);
+  const hit = schemaCache.get(cacheKey);
+  if (hit) {
+    lruTouch(schemaCache, cacheKey, hit, CACHE_SIZE);
+    return hit;
+  }
+  const params = new URLSearchParams({ op: opKey, depth: String(depth), includeExample: 'true' });
+  const p = (async () => {
+    const res = await fetchFn(`${baseUrl}/rest/restbrowser/1/code/schema?${params.toString()}`, {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' },
+    });
+    if (isLoginAnswer(res, true)) {
+      throw new DetailsError(401, 'session-expired', 'Your session has expired: reload the page to log in again.');
+    }
+    let body: unknown;
+    try {
+      body = JSON.parse(await res.text());
+    } catch {
+      body = undefined;
+    }
+    if (!res.ok) {
+      const reason = isObject(body) && typeof body.error === 'string' ? body.error : `HTTP ${res.status}`;
+      throw new DetailsError(res.status, reason);
+    }
+    if (!isObject(body) || typeof body.format !== 'number') {
+      throw new DetailsError(res.status, 'not-schema', 'The server answered with something other than a DTO schema.');
+    }
+    return body as unknown as OperationSchemaInfo;
+  })();
+  lruTouch(schemaCache, cacheKey, p, CACHE_SIZE);
+  p.catch(() => schemaCache.get(cacheKey) === p && schemaCache.delete(cacheKey));
+  return p;
+}
+
 /** Forgets every operation's details, e.g. when the catalog was rebuilt and the Java behind it may have changed. */
 export function clearDetails(): void {
   cache.clear();
@@ -506,4 +565,5 @@ export function clearDetails(): void {
   resolvedSources.clear();
   classInfoCache.clear();
   pluginInfoCache.clear();
+  schemaCache.clear();
 }

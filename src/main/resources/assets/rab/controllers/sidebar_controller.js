@@ -6,9 +6,29 @@ angular.module('RAB')
             $rootScope.resourcesLoaded = false;
             $scope.publicOnly = true;
             $scope.resources = [];
+            $scope.failedModules = [];
+            $scope.newUiUrl = ((window.RAB && RAB.baseUrl) || '') + '/plugins/servlet/rest-api-browser';
             var pendingLoads = 0;
-            $scope.$watch("publicOnly", loadResources);
+            $scope.$watch("publicOnly", function(newValue) {
+                syncFailedModules();
+                loadResources(newValue);
+            });
+            $rootScope.$watch("failedWadlServices", syncFailedModules, true);
             $scope.$watch(function() { return $routeParams.key; }, syncSelectedResource);
+
+            function syncFailedModules() {
+                var failed = $rootScope.failedWadlServices || [];
+                var filtered = [];
+                for (var i = 0; i < failed.length; i++) {
+                    if (!$scope.publicOnly || failed[i]['public']) {
+                        filtered.push(failed[i]);
+                    }
+                }
+                filtered.sort(function(a, b) {
+                    return a.relativeResource < b.relativeResource ? -1 : (a.relativeResource > b.relativeResource ? 1 : 0);
+                });
+                $scope.failedModules = filtered;
+            }
 
             function syncSelectedResource() {
                 if (!$routeParams.key || !$scope.resources) return;

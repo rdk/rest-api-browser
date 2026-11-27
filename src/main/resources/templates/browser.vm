@@ -68,6 +68,20 @@ window.RAB = window.RAB || {};
                                 </li>
                             </ul>
                         </div>
+                        <div id="rab-wadl-fallback" class="rab-wadl-fallback aui-message aui-message-info" ng-show="resourcesLoaded && failedModules.length">
+                            <p class="rab-wadl-fallback-title">
+                                Some modules (<span ng-bind="failedModules.length"></span>) did not return a WADL in Classic UI.
+                            </p>
+                            <p>The new UI reads Jersey endpoints directly without WADLs and lists them in full.</p>
+                            <p>
+                                <a class="aui-button aui-button-link rab-wadl-fallback-cta" href="$baseUrl/plugins/servlet/rest-api-browser" target="_blank" rel="noopener noreferrer">Open in the new UI</a>
+                            </p>
+                            <ul class="rab-wadl-fallback-list">
+                                <li ng-repeat="mod in failedModules">
+                                    <a ng-href="$baseUrl/plugins/servlet/rest-api-browser" target="_blank" rel="noopener noreferrer" title="Open {{mod.relativeResource}} in the new UI" ng-bind="mod.relativeResource"></a>
+                                </li>
+                            </ul>
+                        </div>
                         <i ng-show="resourcesLoaded">That's all the APIs folks!</i>
                     </nav>
                 </div>

@@ -140,6 +140,31 @@ public final class CatalogSnapshot {
                 operationsJson, newIndex.getBytes(StandardCharsets.UTF_8));
     }
 
+    /**
+     * Updates one failed module's reason (e.g. {@code not-started -> not-startable}) without re-sorting or
+     * re-serializing operations. Returns {@code this} when no matching entry changed.
+     */
+    CatalogSnapshot withModuleReason(String moduleId, String expectedReason, String newReason, String ownVersion) {
+        if (moduleId == null || expectedReason == null || expectedReason.equals(newReason)) {
+            return this;
+        }
+        ModuleEntry existing = moduleIndex.get(moduleId);
+        if (existing == null || existing.state() != Model.State.failed || !expectedReason.equals(existing.reason())) {
+            return this;
+        }
+        List<ModuleEntry> updated = new ArrayList<>(modules.size());
+        Map<String, ModuleEntry> updatedIndex = new HashMap<>(moduleIndex.size() * 2);
+        for (ModuleEntry m : modules) {
+            ModuleEntry next = m.id().equals(moduleId) ? m.withReason(newReason) : m;
+            updated.add(next);
+            updatedIndex.put(next.id(), next);
+        }
+        String newHash = computeHash(updated, operationsJson, complete, ownVersion);
+        String newIndex = "{\"format\":" + FORMAT + ",\"hash\":\"" + newHash + "\",\"operations\":" + operationsJson + "}";
+        return new CatalogSnapshot(newHash, complete, done, total, List.copyOf(updated), Map.copyOf(updatedIndex),
+                operations, operationIndex, operationsJson, newIndex.getBytes(StandardCharsets.UTF_8));
+    }
+
     public String adminTag() {
         return adminTag;
     }

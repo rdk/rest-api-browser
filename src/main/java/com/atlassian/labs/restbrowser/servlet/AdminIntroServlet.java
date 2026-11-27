@@ -167,7 +167,7 @@ public class AdminIntroServlet extends RequiresLoginServlet {
                 + "}";
     }
 
-    static String buildPromptDebugStuck(final String apiBase, final String uiBase) {
+    public static String buildPromptDebugStuck(final String apiBase, final String uiBase) {
         return "Investigate why a REST endpoint on this instance is slow or getting stuck (read-only).\n"
                 + "Target URL or symptom: <PASTE REQUEST URL / THREAD DUMP SYMPTOM HERE>\n"
                 + "Instance API base: " + apiBase + " (full UI: " + uiBase + ")\n\n"
@@ -182,7 +182,7 @@ public class AdminIntroServlet extends RequiresLoginServlet {
                 + "5. Summarize root-cause hypotheses with exact class/method/line references, lock/I-O/query bottlenecks, and safe remediation steps without executing mutating REST calls.";
     }
 
-    static String buildPromptExplorePayload(final String apiBase) {
+    public static String buildPromptExplorePayload(final String apiBase) {
         return "Document and construct a valid request for an undocumented or internal REST endpoint on this instance.\n"
                 + "Search term or URL: <PASTE KEYWORD OR /rest/... URL HERE>\n"
                 + "Instance API base: " + apiBase + "\n\n"
@@ -192,7 +192,7 @@ public class AdminIntroServlet extends RequiresLoginServlet {
                 + "4. Return required permissions, exact query/path/body fields, edge-case constraints, and a ready-to-run `curl` command.";
     }
 
-    static String buildPromptTraceError(final String apiBase) {
+    public static String buildPromptTraceError(final String apiBase) {
         return "Trace an unexpected REST error message, status code, or response header back to the plugin and Java code that emitted it.\n"
                 + "Error text or identifier: <PASTE ERROR STRING / LOG FRAGMENT HERE>\n"
                 + "Instance API base: " + apiBase + "\n\n"

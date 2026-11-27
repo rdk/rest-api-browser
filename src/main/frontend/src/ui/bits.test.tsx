@@ -75,19 +75,28 @@ describe('ui/bits components', () => {
     expect(targets[0].getAttribute('role')).toBe('button');
     expect(targets[0].getAttribute('aria-pressed')).toBe('false');
 
+    const waitUntil = async (fn: () => boolean, ms = 500) => {
+      const end = Date.now() + ms;
+      while (Date.now() < end && !fn()) await new Promise((r) => setTimeout(r, 15));
+      return fn();
+    };
+    const flushEffects = () => new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r, 20)));
+
     targets[0].click();
-    await new Promise((r) => setTimeout(r, 20));
+    await waitUntil(() => wraps[0].classList.contains('pinned'));
+    await flushEffects();
     expect(wraps[0].classList.contains('pinned')).toBe(true);
     expect(targets[0].getAttribute('aria-pressed')).toBe('true');
 
     // Pinning a second tooltip automatically unpins the first
     targets[1].click();
-    await new Promise((r) => setTimeout(r, 20));
+    await waitUntil(() => wraps[1].classList.contains('pinned') && !wraps[0].classList.contains('pinned'));
+    await flushEffects();
     expect(wraps[0].classList.contains('pinned')).toBe(false);
     expect(wraps[1].classList.contains('pinned')).toBe(true);
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
-    await new Promise((r) => setTimeout(r, 20));
+    await waitUntil(() => !wraps[1].classList.contains('pinned'));
     expect(wraps[1].classList.contains('pinned')).toBe(false);
   });
 
@@ -97,7 +106,8 @@ describe('ui/bits components', () => {
     render(<CopyButton label="Copy URL" testId="copy-btn" text={() => 'https://example.test'} />, document.body);
     const btn = document.querySelector('[data-testid=copy-btn]') as HTMLButtonElement;
     btn.click();
-    await new Promise((r) => setTimeout(r, 10));
+    const end = Date.now() + 500;
+    while (Date.now() < end && btn.dataset.state !== 'done') await new Promise((r) => setTimeout(r, 15));
     expect(writeText).toHaveBeenCalledWith('https://example.test');
     expect(btn.dataset.state).toBe('done');
   });

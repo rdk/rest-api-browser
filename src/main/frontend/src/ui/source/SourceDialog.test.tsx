@@ -41,14 +41,19 @@ describe('ui/source/SourceDialog', () => {
       document.body,
     );
 
-    await new Promise((r) => setTimeout(r, 20));
+    const waitUntil = async (fn: () => boolean, ms = 500) => {
+      const end = Date.now() + ms;
+      while (Date.now() < end && !fn()) await new Promise((r) => setTimeout(r, 15));
+      return fn();
+    };
+    await waitUntil(() => !!document.querySelector('.rab-n-topbar')?.hasAttribute('inert'));
     expect(document.querySelector('[data-testid=source-dialog]')).not.toBeNull();
     expect(document.querySelector('.rab-n-topbar')?.hasAttribute('inert')).toBe(true);
 
     // Open quick-open input, type Class:42, and submit
     const addBtn = document.querySelector('[data-testid=source-dialog-add]') as HTMLButtonElement;
     addBtn.click();
-    await new Promise((r) => setTimeout(r, 20));
+    await waitUntil(() => !!document.querySelector('[data-testid=source-dialog-quickopen]'));
 
     const form = document.querySelector('[data-testid=source-dialog-quickopen]') as HTMLFormElement;
     const input = form.querySelector('input') as HTMLInputElement;

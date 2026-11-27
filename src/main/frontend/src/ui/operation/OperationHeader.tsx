@@ -1,11 +1,12 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { accessFact } from '../../core/facts';
+import { fetchModuleOpenApi, moduleOpenApiFilename } from '../../core/openapi';
 import { toCurl, type BuiltRequest, type UrlPart } from '../../core/request';
 import type { Module, Operation } from '../../core/types';
 import { tipProps, type UiTipSpec } from '../../core/uitips';
 import type { Draft } from '../../core/operationform';
 import type { OpenTabRequest } from '../../core/sourcetabs';
-import { CopyButton, formatBytes, MethodBadge, PathText, WRITE_METHODS } from '../bits';
+import { CopyButton, download, formatBytes, MethodBadge, PathText, useFlash, WRITE_METHODS } from '../bits';
 import { AppLozenge } from '../java/AppLozenge';
 import { JavaTypeExpr } from '../java/JavaTypeLinks';
 
@@ -73,6 +74,35 @@ export function OperationHeader({
   const hasBadges = module?.stability === 'supported' || isApp || !!op.access || !!op.deprecated;
   const absolute = (url: string) => (url.startsWith('/') ? location.origin + url : url);
 
+  const [exportingApi, setExportingApi] = useState(false);
+  const [apiState, setApiState] = useState<'idle' | 'done' | 'failed'>('idle');
+  const flashApi = useFlash<'done' | 'failed'>(setApiState);
+  const mountedRef = useRef(true);
+  const modIdRef = useRef(module?.id);
+  modIdRef.current = module?.id;
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const exportModuleOpenApi = async () => {
+    if (!module || module.state !== 'ok' || exportingApi) return;
+    const mod = module;
+    setExportingApi(true);
+    try {
+      const json = await fetchModuleOpenApi(baseUrl, mod.id);
+      if (!mountedRef.current || modIdRef.current !== mod.id) return;
+      download(new Blob([json], { type: 'application/json;charset=utf-8' }), moduleOpenApiFilename(mod));
+      flashApi('done');
+    } catch {
+      if (mountedRef.current && modIdRef.current === mod.id) flashApi('failed');
+    } finally {
+      if (mountedRef.current) setExportingApi(false);
+    }
+  };
+
   return (
     <div class="rab-n-op-head">
       <div class="rab-n-op-title">
@@ -108,6 +138,22 @@ export function OperationHeader({
             : { title: 'Copy as cURL', body: 'Copy this request (method, URL, headers, and body) as a runnable curl command.' }}
           text={() => (built.request ? toCurl({ ...built.request, url: absolute(built.request.url) }) : '')}
         />
+        {module && module.state === 'ok' && (
+          <button
+            type="button"
+            class={'rab-n-button' + (apiState === 'done' ? ' copied' : apiState === 'failed' ? ' failed' : '')}
+            data-testid="export-module-openapi"
+            data-state={apiState}
+            disabled={exportingApi}
+            onClick={() => void exportModuleOpenApi()}
+            {...tipProps({
+              title: 'Export module OpenAPI 3.1',
+              body: `Download an OpenAPI 3.1.0 JSON spec for module ${module.path}${sysadmin ? ' (including DTO schemas)' : ''}.`,
+            })}
+          >
+            {exportingApi ? 'Exporting…' : apiState === 'done' ? 'Saved' : apiState === 'failed' ? 'Failed' : 'OpenAPI'}
+          </button>
+        )}
       </div>
       {(op.summary || op.description) && <OpDoc summary={op.summary} description={op.description} />}
       {(op.bodyType || op.returnType) && (

@@ -1,16 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { isWaiting, moduleReason, reasonInfo, rowLabel, statusInfo, statusTone } from './explain';
+import { cardLabel, isWaiting, moduleReason, reasonInfo, rowLabel, statusInfo, statusTone } from './explain';
 import { module } from './fixtures';
 
 describe('reasonInfo', () => {
   it('tells a module waiting to start, one left out on purpose and one that failed apart', () => {
     expect(reasonInfo('not-started')).toMatchObject({ code: 'not-started', kind: 'waiting' });
     expect(reasonInfo('not-started').text).toMatch(/first request/);
+    expect(reasonInfo('not-startable')).toMatchObject({ code: 'not-startable', kind: 'skipped' });
+    expect(cardLabel(reasonInfo('not-startable'))).toMatch(/Needs its own login/);
     expect(reasonInfo('excluded').kind).toBe('skipped');
     expect(reasonInfo('rest-v1').kind).toBe('skipped');
     expect(reasonInfo('timeout').kind).toBe('failed');
-    expect(['not-started', 'excluded', 'timeout'].map((c) => rowLabel(reasonInfo(c))))
-      .toEqual(['not started', 'not described', 'failed: timeout']);
+    expect(['not-started', 'not-startable', 'excluded', 'timeout'].map((c) => rowLabel(reasonInfo(c))))
+      .toEqual(['not started', 'needs its own login', 'not described', 'failed: timeout']);
   });
   it('shows an unknown or missing reason as a failure with its code', () => {
     expect(rowLabel(reasonInfo('something-new'))).toBe('failed: something-new');

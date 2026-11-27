@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { buildLines, formatJson } from '../../lib/json-lines';
+import { fetchOperationSchema, shortJava } from '../../core/details';
+import { describeDetailsError } from '../../core/detailserror';
 import { mediaChoices, type RequestValues } from '../../core/request';
 import type { OpenTabRequest } from '../../core/sourcetabs';
 import type { Operation } from '../../core/types';
@@ -19,19 +21,41 @@ function parseJsonError(text: string): string | null {
   }
 }
 
-export function BodyTab({ op, values, onValues, hasForm, formActive, onOpenParams, onOpenClass }: {
+export function BodyTab({ baseUrl = '', sysadmin = false, op, values, onValues, hasForm, formActive, onOpenParams, onOpenClass }: {
+  baseUrl?: string; sysadmin?: boolean;
   op: Operation; values: RequestValues; onValues: (v: RequestValues, separate?: boolean) => void;
   hasForm: boolean; formActive: boolean; onOpenParams: () => void; onOpenClass?: (req: OpenTabRequest) => void;
 }) {
   const types = mediaChoices(op.consumes);
   const [formatNote, setFormatNote] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
   const contentType = values.contentType ?? types[0];
   const isJson = /json/i.test(contentType);
   const body = values.body ?? '';
+  const mountedRef = useRef(true);
+  const preserveNoteRef = useRef(false);
+  const latestRef = useRef({ opKey: op.key, values, onValues });
+  latestRef.current = { opKey: op.key, values, onValues };
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     setFormatNote(null);
-  }, [op.key, body, contentType]);
+    setGenerating(false);
+  }, [op.key]);
+
+  useEffect(() => {
+    if (preserveNoteRef.current) {
+      preserveNoteRef.current = false;
+      return;
+    }
+    setFormatNote(null);
+  }, [body, contentType]);
 
   const [error, setError] = useState<string | null>(() =>
     isJson && body.trim() && body.length <= SYNC_JSON_LIMIT ? parseJsonError(body) : null);
@@ -53,6 +77,37 @@ export function BodyTab({ op, values, onValues, hasForm, formActive, onOpenParam
     const formatted = formatJson(body);
     setFormatNote(formatted === null ? 'Too large or too deeply nested to format' : null);
     if (formatted !== null && formatted !== body) onValues({ ...values, body: formatted }, true);
+  };
+
+  const generateExample = async () => {
+    const reqKey = op.key;
+    setGenerating(true);
+    setFormatNote(null);
+    try {
+      const info = await fetchOperationSchema(baseUrl, reqKey);
+      if (!mountedRef.current || latestRef.current.opKey !== reqKey) return;
+      const ex = info.requestBody?.example;
+      if (ex === undefined) {
+        setFormatNote('No example payload available for this endpoint');
+        return;
+      }
+      const nextBody = typeof ex === 'string' ? ex : JSON.stringify(ex, null, 2);
+      const cur = latestRef.current.values;
+      if (nextBody !== (cur.body ?? '')) {
+        preserveNoteRef.current = true;
+      }
+      latestRef.current.onValues({ ...cur, body: nextBody }, true);
+      const typeLabel = info.requestBody?.javaType ? shortJava(info.requestBody.javaType) : (op.bodyType ?? 'DTO');
+      setFormatNote(`Generated example from ${typeLabel}`);
+    } catch (e) {
+      if (mountedRef.current && latestRef.current.opKey === reqKey) {
+        setFormatNote(describeDetailsError(e, 'details'));
+      }
+    } finally {
+      if (mountedRef.current && latestRef.current.opKey === reqKey) {
+        setGenerating(false);
+      }
+    }
   };
   return (
     <div class="rab-n-body">
@@ -88,6 +143,18 @@ export function BodyTab({ op, values, onValues, hasForm, formActive, onOpenParam
             <CheckMark check={error ? { state: 'warn', message: 'Not valid JSON: ' + error } : { state: 'ok', message: 'Valid JSON' }} />
             <span class="rab-n-json-check-text" title={error ?? undefined}>{error ? 'Not valid JSON: ' + error : 'Valid JSON'}</span>
           </span>
+        )}
+        {sysadmin && isJson && (op.bodyType || op.bodyJavaType) && (
+          <button
+            type="button"
+            class="rab-n-button"
+            data-testid="generate-example"
+            onClick={() => void generateExample()}
+            disabled={formActive || generating}
+            {...tipProps({ title: 'Generate example JSON', body: 'Synthesize a representative JSON request body from the endpoint DTO Java type via /code/schema.' })}
+          >
+            {generating ? 'Generating…' : 'Generate example'}
+          </button>
         )}
         {isJson && (
           <button

@@ -5,7 +5,7 @@ import { PRETTY_MAX, type ResponseViewKind } from '../core/responsetext';
 import { tipProps } from '../core/uitips';
 import { formatBytes, MaximizeButton, RichTip, Tabs, tabId } from './bits';
 import { RequestHeadersView, ResponseHeadersView } from './response/HeadersView';
-import { JsonView } from './response/JsonView';
+import { JsonView, PRETTY_WRAP_MAX_CHARS, PRETTY_WRAP_MAX_LINES } from './response/JsonView';
 import { CopyContentButton, DownloadButton, FindBox, StatusTip } from './response/ResponseToolbar';
 import { TextView } from './response/TextView';
 import type { Step } from './response/useFind';
@@ -23,6 +23,7 @@ export function ResponseView({ result, running, onCancel, maximized, onMaximize,
   result: RunResult | null; running: boolean; onCancel: () => void; maximized: boolean; onMaximize: () => void; baseUrl: string;
 }) {
   const [view, setView] = useState<ResponseViewKind>('pretty');
+  const [wrapPretty, setWrapPretty] = useState(false);
   const [needle, setNeedle] = useState('');
   const [step, setStep] = useState<Step>({ n: 0, dir: 1 });
   const [found, setFound] = useState({ count: 0, index: 0, forNeedle: '' });
@@ -35,6 +36,8 @@ export function ResponseView({ result, running, onCancel, maximized, onMaximize,
     () => (result && result.kind === 'json' && !result.truncated && result.text && !tooLarge ? buildLines(result.text) : null),
     [result, tooLarge],
   );
+  const canWrap = !!model && (result?.text?.length ?? 0) <= PRETTY_WRAP_MAX_CHARS && model.lines.length <= PRETTY_WRAP_MAX_LINES;
+  const effectiveWrap = wrapPretty && canWrap;
   if (running) {
     return (
       <div class="rab-n-response rab-n-response-state" data-testid="response-running">
@@ -111,6 +114,21 @@ export function ResponseView({ result, running, onCancel, maximized, onMaximize,
           ]}
         />
         <span class="rab-n-spacer" />
+        {view === 'pretty' && model && (
+          <button
+            type="button"
+            class={'rab-n-pill' + (effectiveWrap ? ' on' : '')}
+            disabled={!canWrap}
+            aria-pressed={effectiveWrap}
+            data-testid="toggle-wrap"
+            onClick={() => setWrapPretty((w) => !w)}
+            {...tipProps(canWrap
+              ? { title: 'Wrap long lines', body: effectiveWrap ? 'Return Pretty view to virtualized horizontal scrolling.' : 'Wrap long JSON lines at the pane width.' }
+              : { title: 'Wrap unavailable', body: 'This JSON body is too large to wrap inline; use Raw view or View full on individual lines.', tone: 'warn' })}
+          >
+            Wrap
+          </button>
+        )}
         {(view === 'pretty' || view === 'raw') && result.kind !== 'binary' && result.kind !== 'empty' && (
           <FindBox initial={needle} reportedNeedle={found.forNeedle} onFind={setNeedle}
                    onStep={(dir) => setStep((st) => ({ n: st.n + 1, dir }))}
@@ -140,7 +158,7 @@ export function ResponseView({ result, running, onCancel, maximized, onMaximize,
         ) : result.kind === 'empty' ? (
           <div class="rab-n-response-state rab-n-subtle">No content.</div>
         ) : view === 'pretty' && model ? (
-          <JsonView key={'json' + id} model={model} needle={needle} step={step} onFound={onFound} />
+          <JsonView key={'json' + id} model={model} needle={needle} step={step} onFound={onFound} wrap={effectiveWrap} />
         ) : (
           <TextView key={'text' + id} text={result.text ?? ''} needle={needle} step={step} onFound={onFound} />
         )}

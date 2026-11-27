@@ -73,6 +73,7 @@ public class JerseyModelSource implements SpecSource {
     }
 
     public static final String NOT_STARTED = "not-started";
+    public static final String NOT_STARTABLE = "not-startable";
 
     @Override
     public String id() {

@@ -382,6 +382,14 @@ public class CatalogResourceTest {
         assertEquals("no-store", r.getHeaderString("Cache-Control"));
         assertEquals("{\"state\":\"ok\",\"reason\":null,\"opCount\":" + read.opCount() + "}", r.getEntity());
         verify(catalog, never()).refresh(any()); // the catalog is not marked incomplete
+
+        // Also permits re-reading a not-startable module if it started later via OAuth
+        snapshot = withModules(failedModule("p:oauth", "not-startable"));
+        ModuleEntry oauthOk = CatalogTestSupport.module("p:oauth", "token-auth/1", State.ok, "1.0");
+        when(catalog.readStarted("p:oauth", CatalogResource.STARTED_WAIT_MS))
+                .thenReturn(new CatalogService.Started(CatalogService.StartOutcome.READ, oauthOk));
+        Response r2 = resource.started("p:oauth", request);
+        assertEquals(200, r2.getStatus());
     }
 
     @Test

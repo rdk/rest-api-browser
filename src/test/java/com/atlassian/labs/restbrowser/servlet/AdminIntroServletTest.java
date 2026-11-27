@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.io.Writer;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -100,14 +101,20 @@ public class AdminIntroServletTest {
         when(userManager.isAdmin(admin)).thenReturn(true);
         when(userManager.isSystemAdmin(admin)).thenReturn(true);
         HttpServletResponse adminResp = mock(HttpServletResponse.class);
-        PrintWriter writer = new PrintWriter(new StringWriter());
+        StringWriter adminOut = new StringWriter();
+        PrintWriter writer = new PrintWriter(adminOut);
         when(adminResp.getWriter()).thenReturn(writer);
+        doAnswer(inv -> {
+            inv.<Writer>getArgument(2).write("<!--admin-intro-->");
+            return null;
+        }).when(renderer).render(eq("/templates/admin-intro.vm"), anyMap(), any(Writer.class));
 
         servlet.doGet(adminReq, adminResp);
 
         verify(adminResp).setHeader("Cache-Control", "private, no-store");
         ArgumentCaptor<Map<String, Object>> ctxCaptor = ArgumentCaptor.forClass(Map.class);
-        verify(renderer).render(eq("/templates/admin-intro.vm"), ctxCaptor.capture(), eq(writer));
+        verify(renderer).render(eq("/templates/admin-intro.vm"), ctxCaptor.capture(), any(Writer.class));
+        assertEquals("<!--admin-intro-->", adminOut.toString());
         verify(catalog, never()).current(any());
 
         Map<String, Object> ctx = ctxCaptor.getValue();

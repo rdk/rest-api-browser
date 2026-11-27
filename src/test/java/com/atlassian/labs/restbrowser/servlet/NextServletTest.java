@@ -12,10 +12,13 @@ import com.atlassian.sal.api.user.UserKey;
 import com.atlassian.sal.api.user.UserManager;
 import com.atlassian.templaterenderer.TemplateRenderer;
 import jakarta.servlet.ServletContext;
+import jakarta.servlet.ServletOutputStream;
+import jakarta.servlet.WriteListener;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.Test;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintWriter;
@@ -138,23 +141,48 @@ public class NextServletTest {
         assertTrue(authed.contains("system administrator access"));
 
         HttpServletResponse llmsResp = mock(HttpServletResponse.class);
-        StringWriter llmsOut = new StringWriter();
-        when(llmsResp.getWriter()).thenReturn(new PrintWriter(llmsOut));
+        ByteArrayOutputStream llmsOut = mockOutputStream(llmsResp);
         llms.doGet(request, llmsResp);
         verify(llmsResp).setContentType("text/plain; charset=utf-8");
         verify(llmsResp).setHeader("Cache-Control", "private, no-cache");
-        assertTrue(llmsOut.toString().startsWith("# REST API Browser"));
+        verify(llmsResp).setContentLength(llmsOut.size());
+        assertTrue(llmsOut.toString(StandardCharsets.UTF_8).startsWith("# REST API Browser"));
 
         // llms-full.txt serves extended examples & MCP configuration when path ends with /llms-full.txt
         when(request.getServletPath()).thenReturn("/plugins/servlet/rest-api-browser/llms-full.txt");
         HttpServletResponse fullResp = mock(HttpServletResponse.class);
-        StringWriter fullOut = new StringWriter();
-        when(fullResp.getWriter()).thenReturn(new PrintWriter(fullOut));
+        ByteArrayOutputStream fullOut = mockOutputStream(fullResp);
         llms.doGet(request, fullResp);
-        String fullText = fullOut.toString();
+        verify(fullResp).setContentLength(fullOut.size());
+        String fullText = fullOut.toString(StandardCharsets.UTF_8);
         assertTrue(fullText.contains("Full Agent Reference"));
         assertTrue(fullText.contains("mcpServers"));
         assertTrue(fullText.contains("Quick Curl Examples"));
+    }
+
+    private static ByteArrayOutputStream mockOutputStream(HttpServletResponse resp) throws IOException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        when(resp.getOutputStream()).thenReturn(new ServletOutputStream() {
+            @Override
+            public boolean isReady() {
+                return true;
+            }
+
+            @Override
+            public void setWriteListener(WriteListener writeListener) {
+            }
+
+            @Override
+            public void write(int b) {
+                baos.write(b);
+            }
+
+            @Override
+            public void write(byte[] b, int off, int len) {
+                baos.write(b, off, len);
+            }
+        });
+        return baos;
     }
 
     @Test

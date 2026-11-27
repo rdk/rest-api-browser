@@ -119,10 +119,12 @@ describe('CatalogStore.startModule', () => {
     store.stop();
   });
 
-  it('tells why it did not start, and keeps it for the row', async () => {
-    const store = new CatalogStore('', product(status(409, { error: 'still-not-started' })).fetchFn);
+  it('tells why it did not start, keeps it for the row, and reloads not-startable summary', async () => {
+    const notStartable = module('p:m', 'conf/1.0', { state: 'failed', reason: 'not-startable' });
+    const store = new CatalogStore('', product(status(409, { error: 'still-not-started' }), [notStartable]).fetchFn);
     await expect(store.startModule(waiting)).rejects.toThrow(/did not start on that request/);
     expect(store.startFailures.get('p:m')).toMatchObject({ notStarted: true, message: expect.stringMatching(/did not start/) });
+    expect(store.summary?.modules[0].reason).toBe('not-startable');
     expect(store.starting.size).toBe(0);
   });
 

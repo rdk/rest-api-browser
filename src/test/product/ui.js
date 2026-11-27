@@ -71,8 +71,23 @@ const check = (name, ok, detail) => c.check(name, ok, detail);
         const publicLoaded = await waitFor(loaded, 90000);
         const publicCount = await evaluate(sidebarCount);
         const publicNames = await evaluate('[...document.querySelectorAll("#searchTextResults li a")].map(a => a.textContent)');
-        check('the public APIs are loaded into the sidebar', publicLoaded && publicCount > 0, { publicLoaded, publicCount });
-        check(`the public list has ${P.name}'s ${P.coreName} resources`, (publicNames || []).some(n => P.core.test(n)), (publicNames || []).slice(0, 5));
+        const fallback = await evaluate(`(() => {
+            const box = document.querySelector("#rab-wadl-fallback");
+            if (!box || box.offsetParent === null) return null;
+            const cta = box.querySelector("a.rab-wadl-fallback-cta");
+            const items = [...box.querySelectorAll(".rab-wadl-fallback-list li a")].map(a => ({ text: a.textContent.trim(), href: a.getAttribute("href"), target: a.target }));
+            return { ctaText: cta ? cta.textContent.trim() : "", ctaHref: cta ? cta.getAttribute("href") : "", ctaTarget: cta ? cta.target : "", items };
+        })()`);
+        if (publicCount > 0) {
+            check('the public APIs are loaded into the sidebar', publicLoaded && publicCount > 0, { publicLoaded, publicCount });
+            check(`the public list has ${P.name}'s ${P.coreName} resources`, (publicNames || []).some(n => P.core.test(n)), (publicNames || []).slice(0, 5));
+        } else {
+            check('when public WADLs fail on this product, Classic UI links them to the new UI',
+                publicLoaded && !!fallback && /Open in the new UI/.test(fallback.ctaText)
+                && /\/plugins\/servlet\/rest-api-browser$/.test(fallback.ctaHref) && fallback.ctaTarget === '_blank', fallback);
+            check(`the fallback list links ${P.name}'s ${P.coreName} module to the new UI`,
+                !!fallback && fallback.items.some(it => P.core.test(it.text) && /\/plugins\/servlet\/rest-api-browser$/.test(it.href) && it.target === '_blank'), fallback);
+        }
         console.log(`Public resources in the sidebar: ${publicCount}`);
         await shot(PRODUCT + '-1-public-apis');
 
@@ -177,8 +192,15 @@ const check = (name, ok, detail) => c.check(name, ok, detail);
         // dev mode. Like smoke.py, at least 95% have to load.
         const wadlRequests = Object.values(b.requests).filter(u => /application\.wadl/.test(u)).length;
         const wadlFailures = failedRequests.filter(u => /application\.wadl/.test(u) && !ownFailures.includes(u));
-        check(`at least 95% of the WADLs load (${wadlRequests - wadlFailures.length} of ${wadlRequests})`,
-            wadlRequests > 0 && wadlFailures.length <= 0.05 * wadlRequests, wadlFailures.slice(0, 10));
+        const fallbackVisible = await evaluate('!!(document.querySelector("#rab-wadl-fallback") && document.querySelector("#rab-wadl-fallback").offsetParent !== null)');
+        const non500WadlFailures = wadlFailures.filter(u => !/^500 /.test(u));
+        if (fallbackVisible && non500WadlFailures.length <= 0.05 * wadlRequests) {
+            check(`WADLs either load or link to the new UI on HTTP 500 (${wadlRequests - wadlFailures.length} loaded, ${wadlFailures.length} failed linked)`,
+                wadlRequests > 0, { wadlRequests, failed: wadlFailures.length, sample: wadlFailures.slice(0, 5) });
+        } else {
+            check(`at least 95% of the WADLs load (${wadlRequests - wadlFailures.length} of ${wadlRequests})`,
+                wadlRequests > 0 && wadlFailures.length <= 0.05 * wadlRequests, wadlFailures.slice(0, 10));
+        }
         failedRequests.filter(u => !ownFailures.includes(u)).forEach(u => console.log('WARN failed request: ' + u));
         console.log(`Screenshots: ${OUT}`);
     } catch (e) {

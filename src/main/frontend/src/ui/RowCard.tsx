@@ -1,9 +1,10 @@
-import { useLayoutEffect } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import type { Module, Operation } from '../core/types';
-import { MethodBadge, PathText, PinHint } from './bits';
+import { download, MethodBadge, PathText, PinHint, useFlash } from './bits';
 import { accessFact, moduleFact, originLabel, paramSummary, sourceLabel, stabilityLabel, type Fact } from '../core/facts';
-import { KIND_TEXT, moduleReason } from '../core/explain';
+import { fetchModuleOpenApi, moduleOpenApiFilename } from '../core/openapi';
+import { KIND_TEXT, cardLabel, moduleReason } from '../core/explain';
 
 export type CardTarget = { kind: 'op'; op: Operation; module?: Module } | { kind: 'module'; module: Module; count: number };
 
@@ -11,9 +12,9 @@ export type CardTarget = { kind: 'op'; op: Operation; module?: Module } | { kind
  * The hover card of a list row: everything the row's ticks stand for, spelled out, with the app's full name and
  * what else helps to pick an operation. It sits beside the list, aligned with the row, and never takes the pointer.
  */
-export function RowCard({ id, target, left, top, rowHeight, pinned, boxRef, startFailure }: {
+export function RowCard({ id, target, left, top, rowHeight, pinned, boxRef, startFailure, baseUrl }: {
   id?: string; target: CardTarget; left: number; top: number; rowHeight: number; pinned: boolean;
-  boxRef: { current: HTMLDivElement | null }; startFailure?: string;
+  boxRef: { current: HTMLDivElement | null }; startFailure?: string; baseUrl?: string;
 }) {
   const ref = boxRef;
   useLayoutEffect(() => {
@@ -42,7 +43,7 @@ export function RowCard({ id, target, left, top, rowHeight, pinned, boxRef, star
     <div ref={ref} id={id} class={'rab-n-card' + (pinned ? ' pinned' : '')} role="tooltip" data-testid="row-card"
          style={{ left: left + 'px', top: top + 'px' }}>
       <div class="rab-n-card-body">
-        {target.kind === 'op' ? <OpFacts op={target.op} m={target.module} /> : <ModuleFacts m={target.module} count={target.count} startFailure={startFailure} />}
+        {target.kind === 'op' ? <OpFacts op={target.op} m={target.module} /> : <ModuleFacts m={target.module} count={target.count} startFailure={startFailure} baseUrl={baseUrl} pinned={pinned} />}
         <PinHint pinned={pinned} />
       </div>
     </div>
@@ -82,9 +83,39 @@ function OpFacts({ op, m }: { op: Operation; m?: Module }) {
   );
 }
 
-function ModuleFacts({ m, count, startFailure }: { m: Module; count: number; startFailure?: string }) {
+function ModuleFacts({ m, count, startFailure, baseUrl, pinned }: {
+  m: Module; count: number; startFailure?: string; baseUrl?: string; pinned: boolean;
+}) {
   const source = sourceLabel(m.source);
   const reason = moduleReason(m);
+  const [exporting, setExporting] = useState(false);
+  const [flashState, setFlashState] = useState<'idle' | 'done' | 'failed'>('idle');
+  const flash = useFlash<'done' | 'failed'>(setFlashState);
+  const mounted = useRef(true);
+  const idRef = useRef(m.id);
+  idRef.current = m.id;
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  const exportSpec = async () => {
+    if (baseUrl === undefined || exporting) return;
+    const mod = m;
+    setExporting(true);
+    try {
+      const json = await fetchModuleOpenApi(baseUrl, mod.id);
+      if (!mounted.current || idRef.current !== mod.id) return;
+      download(new Blob([json], { type: 'application/json;charset=utf-8' }), moduleOpenApiFilename(mod));
+      flash('done');
+    } catch {
+      if (mounted.current && idRef.current === mod.id) flash('failed');
+    } finally {
+      if (mounted.current) setExporting(false);
+    }
+  };
   return (
     <>
       <div class="rab-n-card-head">
@@ -95,7 +126,7 @@ function ModuleFacts({ m, count, startFailure }: { m: Module; count: number; sta
         <AppRows m={m} />
         <Row name="Operations">
           {m.state === 'ok' ? (count === m.opCount ? m.opCount.toLocaleString() : `${count.toLocaleString()} of ${m.opCount.toLocaleString()} shown`)
-            : reason ? KIND_TEXT[reason.kind].card : 'Being read…'}
+            : reason ? cardLabel(reason) : 'Being read…'}
         </Row>
         {reason && (
           <Row name="Reason">
@@ -106,6 +137,13 @@ function ModuleFacts({ m, count, startFailure }: { m: Module; count: number; sta
           </Row>
         )}
         {source && <Row name="Read from">{source}</Row>}
+        {pinned && m.state === 'ok' && baseUrl !== undefined && (
+          <Row name="OpenAPI 3.1">
+            <button type="button" class="rab-n-link" data-testid="card-export-openapi" disabled={exporting} onClick={() => void exportSpec()}>
+              {exporting ? 'Exporting…' : flashState === 'done' ? 'Downloaded OpenAPI JSON' : flashState === 'failed' ? 'Export failed' : 'Download specification'}
+            </button>
+          </Row>
+        )}
       </dl>
     </>
   );

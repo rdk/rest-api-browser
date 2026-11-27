@@ -11,11 +11,13 @@ import com.atlassian.sal.api.ApplicationProperties;
 import com.atlassian.sal.api.UrlMode;
 import com.atlassian.sal.api.user.UserKey;
 import com.atlassian.sal.api.user.UserManager;
+import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 
 import static java.util.Objects.requireNonNull;
 
@@ -46,7 +48,11 @@ public class LlmsTxtServlet extends HttpServlet {
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
         resp.setContentType("text/plain; charset=utf-8");
         resp.setHeader("Cache-Control", "private, no-cache");
-        resp.getWriter().write(isFullGuide(req) ? renderFull(req) : render(req));
+        byte[] body = (isFullGuide(req) ? renderFull(req) : render(req)).getBytes(StandardCharsets.UTF_8);
+        resp.setContentLength(body.length);
+        ServletOutputStream out = resp.getOutputStream();
+        out.write(body);
+        out.flush();
     }
 
     private static boolean isFullGuide(HttpServletRequest req) {
@@ -65,68 +71,30 @@ public class LlmsTxtServlet extends HttpServlet {
         UserKey user = RestAuth.remoteUser(userManager, req);
         boolean licensed = RestAuth.isLicensedUser(userManager, user);
         boolean sysadmin = licensed && RestAuth.isSystemAdmin(userManager, user);
-        String base = licensed ? stripTrailingSlash(canonicalOrRelativeBase()) : "";
-        String api = base + "/rest/restbrowser/1";
-        String ui = base + "/plugins/servlet/rest-api-browser";
-
-        StringBuilder md = new StringBuilder(2048);
-        appendHeader(md, user, licensed, sysadmin);
-
-        md.append("Recommended agent workflow:\n");
-        md.append("1. Call `GET ").append(api).append("/catalog/operations?q={keyword}&limit=20` or resolve a live endpoint URL via `GET ").append(api).append("/catalog/resolve?url=/rest/...`. Add `&format=markdown` (or `Accept: text/markdown`) for concise Markdown.\n");
-        md.append("2. For one-call deep understanding (metadata, DTO schemas, handler source, and injected OSGi service implementations), call `POST ").append(api).append("/code/context` with `{\"op\":\"{key}\"}` or `{\"url\":\"/rest/...\"}` (sysadmin only).\n");
-        md.append("3. Connect MCP-compatible agents directly via Streamable HTTP `POST ").append(api).append("/mcp` using `Authorization: Bearer <PAT>`.\n");
-        md.append("4. Read complete examples, parameters, and error codes in [llms-full.txt](").append(ui).append("/llms-full.txt) or fetch machine-readable [openapi.json](").append(api).append("/openapi.json) (`/openapi`).\n\n");
-
-        md.append("## Catalog API\n\n");
-        md.append("- [Catalog summary](").append(api).append("/catalog): Current catalog `hash`, product info, `sysadmin` flag, and all REST modules with state (`ok`, `pending`, `failed`). Supports `ETag` / `If-None-Match`.\n");
-        md.append("- [Search operations](").append(api).append("/catalog/operations?q={text}&method={GET}&path={substr}&module={key}&plugin={key}&access={admin|sysadmin|licensed|anonymous}&deprecated={true|false}&usesClass={substr}&limit=50&offset=0&fields=compact|full&format=json|markdown): Server-side scored search & pagination over all indexed operations.\n");
-        md.append("- [Resolve endpoint URL](").append(api).append("/catalog/resolve?url={pathOrUrl}&method={optional}&limit=10&format=json|markdown): Matches a URL against JAX-RS URI templates, returning ranked candidate operations and extracted `pathParams`/`queryParams`.\n");
-        md.append("- [Export module OpenAPI 3.1](").append(api).append("/catalog/openapi?module={moduleId}&includeSchemas=true&schemaDepth=2): Generates an OpenAPI 3.1.0 specification for one indexed REST module (supports `ETag`).\n");
-        md.append("- [Self OpenAPI 3.1](").append(api).append("/openapi.json): OpenAPI 3.1.0 specification of REST API Browser's own endpoints (also `/openapi`, role-filtered, supports `ETag`).\n");
-        md.append("- [Current catalog index](").append(api).append("/catalog/index/current): Latest catalog snapshot stream supporting `ETag` / `If-None-Match` and `X-Catalog-Hash`.\n");
-        md.append("- [Catalog index by hash](").append(api).append("/catalog/index/{hash}): Immutable snapshot stream for a specific catalog `hash`.\n");
-        md.append("- [Start lazy module](").append(api).append("/catalog/started?module={moduleId}): POST with `X-Atlassian-Token: no-check` after probing a lazy module to index it on this node.\n");
-        md.append("- [Rebuild catalog](").append(api).append("/catalog/refresh): POST with `X-Atlassian-Token: no-check` (sysadmin only) to rebuild the full catalog or one `?module={moduleId}`.\n\n");
-
-        md.append("## Code & Decompilation API\n\n");
-        md.append("- [One-shot investigation context](").append(api).append("/code/context): POST `X-Atlassian-Token: no-check` with `{\"op\":\"...\",\"url\":\"...\",\"method\":\"...\",\"maxLines\":400,\"format\":\"json|markdown\"}` for metadata, DTO schemas, decompiled handler source, and OSGi dependency implementations (sysadmin only).\n");
-        md.append("- [Read-only MCP endpoint](").append(api).append("/mcp): JSON-RPC 2.0 `initialize`, `tools/list`, and `tools/call` exposing read-only catalog and code tools via PAT auth.\n");
-        md.append("- [Operation details + source](").append(api).append("/code/operation?op={key}&scope=method&decompiler=vineflower&view=compact|full&startLine=1&maxLines=250&lineNumbers=true&format=json|markdown): Combined reflection details, OSGi bundle, plugin ownership, decompiled source, and bytecode `refs` (sysadmin only).\n");
-        md.append("- [Class metadata, outlines, fields & enums](").append(api).append("/code/class?class={fqcn}&fromBundle={bundleId}&op={key}&view=compact|full&outline=true&includeImplementations=false&format=json|markdown): Reflection metadata, field annotations, enum constants, bytecode `LineNumberTable` outlines, and `ETag` caching (sysadmin only).\n");
-        md.append("- [DTO JSON Schema & example](").append(api).append("/code/schema?class={fqcn}&op={key}&fromBundle={bundleId}&depth=3&includeExample=true&format=json|markdown): Draft 2020-12 JSON Schema + representative example payload (supports `ETag`, sysadmin only).\n");
-        md.append("- [Plugin & OSGi bundle metadata](").append(api).append("/code/plugin?key={pluginKey}&view=compact|full): Inspect an Atlassian plugin, dependencies, modules, and backing OSGi bundle (supports `ETag`, sysadmin only).\n");
-        md.append("- [Bundle resource reader](").append(api).append("/code/resource?bundleId={id}&plugin={key}&path={entry}&prefix=&startLine=1&maxLines=200&lineNumbers=true&format=json|text|markdown): Safely list or read UTF-8 descriptors (`atlassian-plugin.xml`), Spring configs, Velocity `.vm` templates, and `.properties` inside an OSGi bundle (supports `ETag`, sysadmin only).\n");
-        md.append("- [Decompile class or method](").append(api).append("/code/source?class={fqcn}&op={key}&method={name}&scope=class&decompiler=vineflower&fromBundle={bundleId}&startLine=1&maxLines=250&includeMeta=false&lineNumbers=true&format=json|text|markdown): Decompile via `vineflower` or `cfr` with warnings/`decompilerFallback` hints and `ETag` support (sysadmin only).\n");
-        md.append("- [Traverse typed reference graph](").append(api).append("/code/graph?class={fqcn}&op={key}&fromBundle={bundleId}&depth=2&maxNodes=40&includeJdk=false&excludeLibraries=false&preset=domain&edgeKinds=extends,implements,field,signature,body&packagePrefix=&includeSources=false&decompiler=vineflower): BFS traversal with typed edges and domain filtering (sysadmin only).\n");
-        md.append("- [Find implementations & OSGi services](").append(api).append("/code/implementations?class={fqcn}&op={key}&fromBundle={bundleId}&bundleId={optional}&plugin={optional}&includeAbstract=false&limit=30): Live OSGi registered services plus concrete bytecode subtypes (sysadmin only).\n");
-        md.append("- [Find bytecode callers](").append(api).append("/code/callers?class={fqcn}&method={optional}&op={key}&fromBundle={bundleId}&bundleId={optional}&plugin={optional}&packagePrefix=&limit=50): Scan constant pools for callers (sysadmin only).\n");
-        md.append("- [Grep bytecode string literals](").append(api).append("/code/grep?q={text}&bundleId={optional}&plugin={optional}&packagePrefix=&caseSensitive=false&includeUtf8=true&limit=50): Fast constant-pool string/UTF-8 grep across bundles (sysadmin only).\n");
-        md.append("- [Search Java classes](").append(api).append("/code/search?q={query}&limit=30&bundleId={optional}): Find Java classes across active OSGi bundles (sysadmin only).\n");
-        md.append("- [Batch inspect or decompile](").append(api).append("/code/batch): POST `X-Atlassian-Token: no-check` with `{\"classes\":[...], ...}` or heterogeneous `{\"items\":[...]}` for up to 10 items (sysadmin only).\n");
-        md.append("- [Operation Java details (UI)](").append(api).append("/catalog/details?op={key}): Reflection details (sysadmin only).\n");
-        md.append("- [Operation source (UI)](").append(api).append("/catalog/details/source?op={key}&class={candidates}&fromBundle={bundleId}&scope=method&decompiler=vineflower): UI decompiler endpoint (sysadmin only).\n\n");
-
-        md.append("## Optional\n\n");
-        md.append("- [Complete Agent Reference](").append(ui).append("/llms-full.txt): Extended guide with curl examples, MCP client config, and error recovery hints.\n");
-        md.append("- [REST API Browser UI](").append(ui).append("): Interactive web UI with search, live request runner, response viewer, clickable Java types, and tabbed decompiler.\n");
-        md.append("- [Classic UI](").append(base).append("/plugins/servlet/restbrowser): Original WADL-based REST API Browser page.\n");
-        md.append("- [Echo request headers](").append(api).append("/echo): Returns the request headers seen by the server (with secret headers redacted).\n");
-
-        return md.toString();
+        return renderGuide(applicationProperties, pluginAccessor, catalog, licensed, sysadmin, false);
     }
 
     String renderFull(HttpServletRequest req) {
         UserKey user = RestAuth.remoteUser(userManager, req);
         boolean licensed = RestAuth.isLicensedUser(userManager, user);
         boolean sysadmin = licensed && RestAuth.isSystemAdmin(userManager, user);
-        String base = licensed ? stripTrailingSlash(canonicalOrRelativeBase()) : "";
-        String api = base + "/rest/restbrowser/1";
+        return renderGuide(applicationProperties, pluginAccessor, catalog, licensed, sysadmin, true);
+    }
 
+    /** Renders compact {@code llms.txt} or extended {@code llms-full.txt} Markdown for REST and MCP callers. */
+    public static String renderGuide(ApplicationProperties appProps, PluginAccessor pluginAccessor,
+                                     CatalogService catalog, boolean licensed, boolean sysadmin, boolean full) {
+        String base = licensed ? stripTrailingSlash(canonicalOrRelativeBase(appProps)) : "";
+        String api = base + "/rest/restbrowser/1";
+        String ui = base + "/plugins/servlet/rest-api-browser";
+        String compact = renderCompact(appProps, pluginAccessor, catalog, licensed, sysadmin, base, api, ui);
+        if (!full) {
+            return compact;
+        }
         StringBuilder md = new StringBuilder(4096);
         md.append("# REST API Browser — Full Agent Reference\n\n");
-        appendHeader(md, user, licensed, sysadmin);
-        md.append(render(req)).append('\n');
+        appendHeader(md, appProps, pluginAccessor, catalog, licensed, sysadmin);
+        md.append(compact).append('\n');
 
         md.append("## Quick Curl Examples\n\n");
         md.append("```bash\n");
@@ -170,12 +138,63 @@ public class LlmsTxtServlet extends HttpServlet {
         return md.toString();
     }
 
-    private void appendHeader(StringBuilder md, UserKey user, boolean licensed, boolean sysadmin) {
+    private static String renderCompact(ApplicationProperties appProps, PluginAccessor pluginAccessor,
+                                        CatalogService catalog, boolean licensed, boolean sysadmin,
+                                        String base, String api, String ui) {
+        StringBuilder md = new StringBuilder(2048);
+        appendHeader(md, appProps, pluginAccessor, catalog, licensed, sysadmin);
+
+        md.append("Recommended agent workflow:\n");
+        md.append("1. Call `GET ").append(api).append("/catalog/operations?q={keyword}&limit=20` or resolve a live endpoint URL via `GET ").append(api).append("/catalog/resolve?url=/rest/...`. Add `&format=markdown` (or `Accept: text/markdown`) for concise Markdown.\n");
+        md.append("2. For one-call deep understanding (metadata, DTO schemas, handler source, and injected OSGi service implementations), call `POST ").append(api).append("/code/context` with `{\"op\":\"{key}\"}` or `{\"url\":\"/rest/...\"}` (sysadmin only).\n");
+        md.append("3. Connect MCP-compatible agents directly via Streamable HTTP `POST ").append(api).append("/mcp` using `Authorization: Bearer <PAT>`.\n");
+        md.append("4. Read complete examples, parameters, and error codes in [llms-full.txt](").append(ui).append("/llms-full.txt) or fetch machine-readable [openapi.json](").append(api).append("/openapi.json) (`/openapi`).\n\n");
+
+        md.append("## Catalog API\n\n");
+        md.append("- [Catalog summary](").append(api).append("/catalog): Current catalog `hash`, product info, `sysadmin` flag, and all REST modules with state (`ok`, `pending`, `failed`). Supports `ETag` / `If-None-Match`.\n");
+        md.append("- [Search operations](").append(api).append("/catalog/operations?q={text}&method={GET}&path={substr}&module={key}&plugin={key}&access={admin|sysadmin|licensed|anonymous}&deprecated={true|false}&usesClass={substr}&limit=50&offset=0&fields=compact|full&format=json|markdown): Server-side scored search & pagination over all indexed operations.\n");
+        md.append("- [Resolve endpoint URL](").append(api).append("/catalog/resolve?url={pathOrUrl}&method={optional}&limit=10&format=json|markdown): Matches a URL against JAX-RS URI templates, returning ranked candidate operations and extracted `pathParams`/`queryParams`.\n");
+        md.append("- [Export module OpenAPI 3.1](").append(api).append("/catalog/openapi?module={moduleId}&includeSchemas=true&schemaDepth=2): Generates an OpenAPI 3.1.0 specification for one indexed REST module (supports `ETag`).\n");
+        md.append("- [Self OpenAPI 3.1](").append(api).append("/openapi.json): OpenAPI 3.1.0 specification of REST API Browser's own endpoints (also `/openapi`, role-filtered, supports `ETag`).\n");
+        md.append("- [Current catalog index](").append(api).append("/catalog/index/current): Latest catalog snapshot stream supporting `ETag` / `If-None-Match` and `X-Catalog-Hash`.\n");
+        md.append("- [Catalog index by hash](").append(api).append("/catalog/index/{hash}): Immutable snapshot stream for a specific catalog `hash`.\n");
+        md.append("- [Start lazy module](").append(api).append("/catalog/started?module={moduleId}): POST with `X-Atlassian-Token: no-check` after probing a lazy module to index it on this node.\n");
+        md.append("- [Rebuild catalog](").append(api).append("/catalog/refresh): POST with `X-Atlassian-Token: no-check` (sysadmin only) to rebuild the full catalog or one `?module={moduleId}`.\n\n");
+
+        md.append("## Code & Decompilation API\n\n");
+        md.append("- [One-shot investigation context](").append(api).append("/code/context): POST `X-Atlassian-Token: no-check` with `{\"op\":\"...\",\"url\":\"...\",\"method\":\"...\",\"maxLines\":400,\"format\":\"json|markdown\"}` for metadata, DTO schemas, decompiled handler source, and OSGi dependency implementations (sysadmin only).\n");
+        md.append("- [Read-only MCP endpoint](").append(api).append("/mcp): JSON-RPC 2.0 `initialize`, `tools/*`, `resources/*`, and `prompts/*` exposing read-only catalog and code tools, resources, and prompts via PAT auth.\n");
+        md.append("- [Operation details + source](").append(api).append("/code/operation?op={key}&scope=method&decompiler=vineflower&view=compact|full&startLine=1&maxLines=250&lineNumbers=true&format=json|markdown): Combined reflection details, OSGi bundle, plugin ownership, decompiled source, and bytecode `refs` (sysadmin only).\n");
+        md.append("- [Class metadata, outlines, fields & enums](").append(api).append("/code/class?class={fqcn}&fromBundle={bundleId}&op={key}&view=compact|full&outline=true&includeImplementations=false&format=json|markdown): Reflection metadata, field annotations, enum constants, bytecode `LineNumberTable` outlines, and `ETag` caching (sysadmin only).\n");
+        md.append("- [DTO JSON Schema & example](").append(api).append("/code/schema?class={fqcn}&op={key}&fromBundle={bundleId}&depth=3&includeExample=true&format=json|markdown): Draft 2020-12 JSON Schema + representative example payload (supports `ETag`, sysadmin only).\n");
+        md.append("- [Plugin & OSGi bundle metadata](").append(api).append("/code/plugin?key={pluginKey}&view=compact|full): Inspect an Atlassian plugin, dependencies, modules, and backing OSGi bundle (supports `ETag`, sysadmin only).\n");
+        md.append("- [Bundle resource reader](").append(api).append("/code/resource?bundleId={id}&plugin={key}&path={entry}&prefix=&startLine=1&maxLines=200&lineNumbers=true&format=json|text|markdown): Safely list or read UTF-8 descriptors (`atlassian-plugin.xml`), Spring configs, Velocity `.vm` templates, and `.properties` inside an OSGi bundle (supports `ETag`, sysadmin only).\n");
+        md.append("- [Decompile class or method](").append(api).append("/code/source?class={fqcn}&op={key}&method={name}&scope=class&decompiler=vineflower&fromBundle={bundleId}&startLine=1&maxLines=250&includeMeta=false&lineNumbers=true&format=json|text|markdown): Decompile via `vineflower` or `cfr` with warnings/`decompilerFallback` hints and `ETag` support (sysadmin only).\n");
+        md.append("- [Traverse typed reference graph](").append(api).append("/code/graph?class={fqcn}&op={key}&fromBundle={bundleId}&depth=2&maxNodes=40&includeJdk=false&excludeLibraries=false&preset=domain&edgeKinds=extends,implements,field,signature,body&packagePrefix=&includeSources=false&decompiler=vineflower): BFS traversal with typed edges and domain filtering (sysadmin only).\n");
+        md.append("- [Find implementations & OSGi services](").append(api).append("/code/implementations?class={fqcn}&op={key}&fromBundle={bundleId}&bundleId={optional}&plugin={optional}&includeAbstract=false&limit=30): Live OSGi registered services plus concrete bytecode subtypes (sysadmin only).\n");
+        md.append("- [Find bytecode callers](").append(api).append("/code/callers?class={fqcn}&method={optional}&op={key}&fromBundle={bundleId}&bundleId={optional}&plugin={optional}&packagePrefix=&limit=50): Scan constant pools for callers (sysadmin only).\n");
+        md.append("- [Grep bytecode string literals](").append(api).append("/code/grep?q={text}&bundleId={optional}&plugin={optional}&packagePrefix=&caseSensitive=false&includeUtf8=true&limit=50): Fast constant-pool string/UTF-8 grep across bundles (sysadmin only).\n");
+        md.append("- [Search Java classes](").append(api).append("/code/search?q={query}&limit=30&bundleId={optional}): Find Java classes across active OSGi bundles (sysadmin only).\n");
+        md.append("- [Batch inspect or decompile](").append(api).append("/code/batch): POST `X-Atlassian-Token: no-check` with `{\"classes\":[...], ...}` or heterogeneous `{\"items\":[...]}` for up to 10 items (sysadmin only).\n");
+        md.append("- [Operation Java details (UI)](").append(api).append("/catalog/details?op={key}): Reflection details (sysadmin only).\n");
+        md.append("- [Operation source (UI)](").append(api).append("/catalog/details/source?op={key}&class={candidates}&fromBundle={bundleId}&scope=method&decompiler=vineflower): UI decompiler endpoint (sysadmin only).\n\n");
+
+        md.append("## Optional\n\n");
+        md.append("- [Complete Agent Reference](").append(ui).append("/llms-full.txt): Extended guide with curl examples, MCP client config, and error recovery hints.\n");
+        md.append("- [REST API Browser UI](").append(ui).append("): Interactive web UI with search, live request runner, response viewer, clickable Java types, and tabbed decompiler.\n");
+        md.append("- [Classic UI](").append(base).append("/plugins/servlet/restbrowser): Original WADL-based REST API Browser page.\n");
+        md.append("- [Echo request headers](").append(api).append("/echo): Returns the request headers seen by the server (with secret headers redacted).\n");
+
+        return md.toString();
+    }
+
+    private static void appendHeader(StringBuilder md, ApplicationProperties appProps, PluginAccessor pluginAccessor,
+                                     CatalogService catalog, boolean licensed, boolean sysadmin) {
         md.append("# REST API Browser\n\n");
         if (licensed) {
-            String product = safe(applicationProperties.getDisplayName());
-            String version = safe(applicationProperties.getVersion());
-            String ownVersion = pluginVersion();
+            String product = safe(appProps.getDisplayName());
+            String version = safe(appProps.getVersion());
+            String ownVersion = LocalBeans.pluginVersion(pluginAccessor);
             CatalogSnapshot snap = catalog.peek();
             md.append("> Live REST API catalog, OpenAPI 3.1 exporter, Java/OSGi inspector, on-demand decompiler (CFR 0.152 & Vineflower 1.11.1), and MCP server running on ");
             md.append(product.isEmpty() ? "this Atlassian Data Center instance" : (version.isEmpty() ? product : product + " " + version));
@@ -204,13 +223,9 @@ public class LlmsTxtServlet extends HttpServlet {
         md.append(" and can be disabled via `-D").append(OperationSource.ENABLED_PROPERTY).append("=false`.\n\n");
     }
 
-    private String canonicalOrRelativeBase() {
-        String canonical = safe(applicationProperties.getBaseUrl(UrlMode.CANONICAL));
-        return !canonical.isEmpty() ? canonical : safe(applicationProperties.getBaseUrl(UrlMode.RELATIVE));
-    }
-
-    private String pluginVersion() {
-        return LocalBeans.pluginVersion(pluginAccessor);
+    private static String canonicalOrRelativeBase(ApplicationProperties appProps) {
+        String canonical = safe(appProps.getBaseUrl(UrlMode.CANONICAL));
+        return !canonical.isEmpty() ? canonical : safe(appProps.getBaseUrl(UrlMode.RELATIVE));
     }
 
     private static String safe(String s) {

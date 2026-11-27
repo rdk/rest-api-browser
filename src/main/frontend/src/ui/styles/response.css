@@ -211,9 +211,86 @@
 .rab-n-code-raw .rab-n-vrow { right: auto; min-width: 100%; }
 .rab-n-code-pretty .rab-n-line,
 .rab-n-code-raw .rab-n-line { width: max-content; min-width: 100%; padding-right: 12px; }
-.rab-n-code-pretty .rab-n-line { padding-left: 8px; }
+.rab-n-code-pretty .rab-n-fold {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  width: 24px;
+  padding-left: 8px;
+  background: var(--rab-code-bg);
+}
+.rab-n-code-pretty .rab-n-line.match .rab-n-fold { background: var(--rab-find-match); }
+.rab-n-code-pretty .rab-n-line.current .rab-n-fold { background: var(--rab-find-current); }
 .rab-n-code-pretty .rab-n-code-text,
 .rab-n-code-raw .rab-n-code-text { flex: none; overflow: visible; }
+.rab-n-code-pretty.is-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 2px 6px 2px 0;
+}
+.rab-n-code-pretty.is-wrap .rab-n-line {
+  width: 100%;
+  height: auto;
+  min-height: 20px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.rab-n-code-pretty.is-wrap .rab-n-code-text { flex: 1; min-width: 0; }
+.rab-n-view-full-btn {
+  margin-left: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.rab-n-fullval-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--rab-z-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: color-mix(in srgb, var(--ds-blanket, var(--rab-text)) 48%, transparent);
+}
+.rab-n-fullval-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(860px, calc(100vw - 40px));
+  height: min(620px, calc(100vh - 40px));
+  border-radius: var(--rab-radius-lg);
+  border: 1px solid var(--rab-border);
+  background: var(--rab-surface);
+  color: var(--rab-text);
+  box-shadow: var(--rab-shadow-overlay);
+  overflow: hidden;
+}
+.rab-n-fullval-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--rab-border);
+  background: var(--rab-sunken);
+  flex: none;
+}
+.rab-n-fullval-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--rab-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rab-n-fullval-title code { font-family: var(--rab-mono); font-size: 12px; }
+.rab-n-fullval-text {
+  flex: 1;
+  min-height: 0;
+  margin: 10px 12px 12px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .rab-n-folded {
   color: var(--rab-subtlest);
   background: var(--rab-neutral);

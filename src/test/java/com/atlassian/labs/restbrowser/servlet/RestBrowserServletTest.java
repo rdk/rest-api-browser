@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.io.Writer;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -30,8 +31,10 @@ import static java.util.Objects.requireNonNull;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -86,23 +89,31 @@ public class RestBrowserServletTest {
         verify(unlicensedResp).sendError(HttpServletResponse.SC_FORBIDDEN,
                 "A product license is required to use REST API Browser.");
 
+        doAnswer(inv -> {
+            inv.<Writer>getArgument(2).write("<!--browser-->");
+            return null;
+        }).when(renderer).render(eq("/templates/browser.vm"), anyMap(), any(Writer.class));
+
         UserKey licensed = new UserKey("alice");
         when(userManager.getRemoteUserKey(request)).thenReturn(licensed);
         when(userManager.isLicensed(licensed)).thenReturn(true);
         HttpServletResponse licensedResp = mock(HttpServletResponse.class);
-        PrintWriter licensedWriter = new PrintWriter(new StringWriter());
+        StringWriter licensedOut = new StringWriter();
+        PrintWriter licensedWriter = new PrintWriter(licensedOut);
         when(licensedResp.getWriter()).thenReturn(licensedWriter);
         servlet.doGet(request, licensedResp);
         verify(licensedResp).setHeader("Cache-Control", "private, no-store");
-        verify(renderer).render(eq("/templates/browser.vm"), anyMap(), eq(licensedWriter));
+        verify(renderer).render(eq("/templates/browser.vm"), anyMap(), any(Writer.class));
+        assertEquals("<!--browser-->", licensedOut.toString());
 
         System.setProperty(RequiresLoginServlet.RAB_ANONYMOUS, "true");
         when(userManager.getRemoteUserKey(request)).thenReturn(null);
         HttpServletResponse anonAllowedResp = mock(HttpServletResponse.class);
-        PrintWriter anonWriter = new PrintWriter(new StringWriter());
+        StringWriter anonOut = new StringWriter();
+        PrintWriter anonWriter = new PrintWriter(anonOut);
         when(anonAllowedResp.getWriter()).thenReturn(anonWriter);
         servlet.doGet(request, anonAllowedResp);
-        verify(renderer).render(eq("/templates/browser.vm"), anyMap(), eq(anonWriter));
+        assertEquals("<!--browser-->", anonOut.toString());
     }
 
     @Test

@@ -46,11 +46,11 @@ Which release to install depends on the product's version:
   Java 21), so the fork should run on them too. Fisheye and Crucible were not moved to it. The next major versions
   (Jira 12, Confluence 11, Bitbucket 11, Bamboo 13, Crowd 8) move to Spring 7 and Jakarta EE 11, so the fork may not
   run on them.
-- **Confluence 10** needs 4.1.1 or later: 4.0.5 and 4.1.0 answer 500 there. Even then the sidebar is empty while "Show
-  only public APIs" is checked: Confluence 10.2.20 cannot describe 26 of its REST modules, its core REST API
-  `/rest/api` among them, because it does not ship JAXB's `txw2`. Copying `txw2-4.0.5.jar`
-  (`org.glassfish.jaxb:txw2:4.0.5` on Maven Central) into `confluence/WEB-INF/lib` and restarting fixes that, but
-  Atlassian does not support this change.
+- **Confluence 10** needs 4.1.1 or later: 4.0.5 and 4.1.0 answer 500 there. Confluence 10.2.20 does not ship JAXB's
+  `txw2`, so 26 of its REST modules (including `/rest/api`) cannot render WADL documents and fail with 500. Since
+  4.4.0, when classic WADL requests fail, the sidebar shows those modules with a link to inspect them in the new UI.
+  Copying `txw2-4.0.5.jar` (`org.glassfish.jaxb:txw2:4.0.5` on Maven Central) into `confluence/WEB-INF/lib` and restarting
+  restores full WADL generation as well, though Atlassian does not support this change.
 - **Atlassian's 3.2.8** (July 2024) is Atlassian's last release. It is in Atlassian's Maven repository but no longer on
   the Marketplace. Its range starts at the oldest versions its build declares as supported and ends at the Platform 7
   versions, which Atlassian's archived repository assigns to its `3.2.x` branch. Atlassian never released a final
@@ -93,12 +93,15 @@ It works differently: the server builds a catalog of the product's REST API from
 `/rest/restbrowser/1/catalog`), so the browser fetches and parses no WADL. That is why it works on Confluence 10, where
 the classic page's public list is empty. It reads OpenAPI / Swagger annotations (`@Operation`, `@Parameter`) into
 summaries, descriptions and parameter hints, supports URL-encoded form parameters (`@FormParam`) and multipart file
-uploads (`@MultipartFormParam`), and adds search, a history of sent requests, **Copy as curl** and deep links
-that prefill a request without sending it. System administrators also get clickable Java input/output/parameter types
-with rich hover cards (OSGi bundle wiring, plugin ownership and timestamps, classloader, bytecode info), a **Java**
-tab per operation with virtualized on-demand method and full class decompilation (focusing the method declaration
-header), a draggable/resizable/maximizable persistent tabbed decompiler window with in-place CFR 0.152 / Vineflower
-1.11.1 switching and undoable tab closing (disable decompilation with `-Drest.api.browser.decompile=false`). See
+uploads (`@MultipartFormParam`), JSON response formatting with long-line **View full** modal and **Wrap** toggle, search,
+a history of sent requests, **Copy as curl**, per-module **OpenAPI 3.1** downloads (operation header and pinned
+module card), **Generate example** DTO JSON payloads on the **Body** tab, and deep links that prefill a request
+without sending it. System administrators also get clickable Java input/output/parameter types with rich hover cards
+(OSGi bundle wiring, plugin ownership and timestamps, classloader, bytecode info), a **Java** tab per operation with
+virtualized on-demand method and full class decompilation (focusing the method declaration header), and a
+draggable/resizable/maximizable persistent tabbed decompiler window with CFR 0.152 / Vineflower 1.11.1 switching,
+in-dialog **Impls**, **Callers**, **Grep**, and **Files** bundle intelligence panels with inline text/XML preview, and
+undoable tab closing (disable decompilation with `-Drest.api.browser.decompile=false`). See
 [Agent API, OpenAPI 3.1 & MCP](#agent-api-openapi-31--mcp) and [docs/NEW-UI-PLAN.md](docs/NEW-UI-PLAN.md).
 
 **Modules that have not started.** Confluence starts a REST module only on the first request to it, on each node of a
@@ -106,9 +109,11 @@ cluster, so right after a node starts most of its modules cannot be read yet, Co
 The list shows them as *not started · start*. Selecting one sends an OPTIONS request to a path the module does not
 have, which starts the module on that node (Jersey usually answers it with a 404; the request passes the module's
 filters like any other). The plugin then checks that the module runs and reads that module alone, without rebuilding
-the catalog (`POST /rest/restbrowser/1/catalog/started`). A few modules start only for their own kind of login (OAuth
-tokens); they show *did not start*. On Jira the catalog can start a module itself, through the product's servlet module
-manager, so this does not come up there.
+the catalog (`POST /rest/restbrowser/1/catalog/started`). Modules that only initialize for their own authentication
+channel (such as token-auth endpoints returning 401/403) are remembered on that node as *needs its own login* (`409` on
+`/catalog/started`) so they do not keep re-prompting, and background catalog build failures retry automatically with
+bounded backoff. On Jira the catalog can start a module itself, through the product's servlet module manager, so this
+does not come up there.
 
 Hover a module or an operation for a card that explains its marks and, for a module that could not be read, the
 reason; hover the response's status code for what it means and what to try.
@@ -136,8 +141,10 @@ cookies, Basic auth, or Jira/Confluence Personal Access Tokens (`Authorization: 
     (`/code/graph?preset=domain`), and Vineflower 1.11.1 / CFR 0.152 decompilation (`/code/source`). Most read
     endpoints support `ETag` / `If-None-Match` (`304`) and `format=markdown` (`Accept: text/markdown`).
 - **Built-in Read-Only MCP Server (`POST /rest/restbrowser/1/mcp`)**:
-  - Streamable HTTP JSON-RPC 2.0 exposing 4 catalog tools for licensed users and 16 read-only tools total for system
-    administrators over PAT authentication:
+  - Streamable HTTP JSON-RPC 2.0 exposing read-only `tools/*` (4 catalog tools for licensed users, 16 tools for system
+    administrators), `resources/*` (`rab://llms.txt`, `rab://llms-full.txt`, `rab://catalog/summary`, `rab://openapi/self`,
+    plus URI templates for module OpenAPI specs and sysadmin class/source/plugin inspection), and `prompts/*` workflows
+    over PAT authentication:
 
 ```json
 {
@@ -195,6 +202,7 @@ creates a draft release with it.
 mvn -B clean package -DskipTests
 src/test/product/product.sh start
 python src/test/product/smoke.py --expect-version 11.3.13
+python src/test/product/mcp_pat_check.py             # MCP tools, resources, prompts over PAT auth
 node src/test/product/ui.js
 node src/test/product/ui_next.js                   # the new UI, OpenAPI 3.1, MCP & /code/* API
 src/test/product/product.sh stop

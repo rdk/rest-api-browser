@@ -301,7 +301,17 @@ export function OperationView({
               <ParamsTab params={visibleParams} values={draft.values} onValues={setValues} regexes={regexes} opKey={op.key} onOpenClass={onOpenClass} />
             )}
             {tab === 'body' && (
-              <BodyTab op={op} values={draft.values} onValues={setValues} hasForm={hasForm} formActive={formActive} onOpenParams={() => setTab('params')} onOpenClass={onOpenClass} />
+              <BodyTab
+                baseUrl={summary.baseUrl}
+                sysadmin={summary.sysadmin}
+                op={op}
+                values={draft.values}
+                onValues={setValues}
+                hasForm={hasForm}
+                formActive={formActive}
+                onOpenParams={() => setTab('params')}
+                onOpenClass={onOpenClass}
+              />
             )}
             {tab === 'java' && (
               <JavaTab

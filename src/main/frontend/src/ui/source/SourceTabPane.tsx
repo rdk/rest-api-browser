@@ -8,11 +8,20 @@ import { matchOutlineEndpoints } from '../../core/restoutline';
 import type { OpenTabRequest, SourceNavEntry, SourceTab } from '../../core/sourcetabs';
 import type { Module, Operation } from '../../core/types';
 import { tipProps } from '../../core/uitips';
-import { isInsideInert } from '../../lib/overlay';
+import { ESCAPE_PRIORITY, isInsideInert, useEscape } from '../../lib/overlay';
 import { CopyButton } from '../bits';
 import { FindBox } from '../response/ResponseToolbar';
 import type { Step } from '../response/useFind';
 import { ClassOutline } from './ClassOutline';
+import {
+  BundleResourcesPanel,
+  CallersPanel,
+  GrepPanel,
+  ImplementationsPanel,
+  ResourcePreviewPane,
+  SourcePanelTabs,
+  type SourcePanelMode,
+} from './CodeIntelPanels';
 import { DecompilerLink, DecompilerToggle, PrettyToggle } from './DecompilerControls';
 import { SourceCode } from './SourceCodeView';
 
@@ -229,6 +238,55 @@ export function SourceTabPane({
 
   const fqcn = src?.class ?? tab.id;
   const activeCopy = src ? displaySource : '';
+  const bundleId = src?.bundleId !== undefined && src.bundleId >= 0 ? src.bundleId : tab.fromBundle;
+  const pluginKey = useMemo(() => {
+    if (!tab.opKey || !operations || !modulesById) return undefined;
+    const matchedOp = operations.find((o) => o.key === tab.opKey);
+    return matchedOp ? modulesById.get(matchedOp.module)?.plugin?.key : undefined;
+  }, [tab.opKey, operations, modulesById]);
+  const [panelMode, setPanelMode] = useState<SourcePanelMode>('outline');
+  const [selectedResource, setSelectedResource] = useState<string | null>(null);
+  const handlePanelMode = useCallback((mode: SourcePanelMode) => {
+    setPanelMode(mode);
+    if (mode !== 'resources') setSelectedResource(null);
+  }, []);
+  useEscape(!!selectedResource, () => {
+    setSelectedResource(null);
+    return true;
+  }, ESCAPE_PRIORITY.MODAL + 1);
+
+  const sidePanelBody = panelMode === 'implementations' ? (
+    <ImplementationsPanel
+      baseUrl={baseUrl}
+      fqcn={fqcn}
+      bundleId={bundleId}
+      opKey={tab.opKey}
+      onOpenClass={onOpenClass}
+    />
+  ) : panelMode === 'callers' ? (
+    <CallersPanel
+      baseUrl={baseUrl}
+      fqcn={fqcn}
+      defaultMethod={tab.focusMethod}
+      bundleId={bundleId}
+      opKey={tab.opKey}
+      onOpenClass={onOpenClass}
+    />
+  ) : panelMode === 'grep' ? (
+    <GrepPanel
+      baseUrl={baseUrl}
+      bundleId={bundleId}
+      onOpenClass={onOpenClass}
+    />
+  ) : panelMode === 'resources' ? (
+    <BundleResourcesPanel
+      baseUrl={baseUrl}
+      bundleId={bundleId}
+      pluginKey={pluginKey}
+      selectedPath={selectedResource}
+      onSelectPath={setSelectedResource}
+    />
+  ) : undefined;
 
   return (
     <>
@@ -324,6 +382,8 @@ export function SourceTabPane({
             onOutlineWidth={onOutlineWidth}
             onJump={jumpTo}
             splitRef={splitRef}
+            topSlot={<SourcePanelTabs mode={panelMode} onChange={handlePanelMode} />}
+            overrideBody={sidePanelBody}
           />
         )}
         <div
@@ -333,7 +393,15 @@ export function SourceTabPane({
           aria-labelledby={tabButtonId}
           aria-label={classLabel(fqcn)}
         >
-          {loading ? (
+          {selectedResource ? (
+            <ResourcePreviewPane
+              baseUrl={baseUrl}
+              bundleId={bundleId}
+              pluginKey={pluginKey}
+              path={selectedResource}
+              onClose={() => setSelectedResource(null)}
+            />
+          ) : loading ? (
             <div class="rab-n-pad rab-n-subtle" role="status" data-testid="dialog-loading">
               <span class="rab-n-spinner" aria-hidden="true" /> Decompiling {classLabel(fqcn)} with {decompiler === 'vineflower' ? 'Vineflower' : 'CFR'}…
             </div>

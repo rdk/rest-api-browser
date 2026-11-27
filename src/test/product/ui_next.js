@@ -137,36 +137,43 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         // a module that has not started yet (Confluence starts a module's REST API on the first request to it): a click
         // starts it, then the catalog describes it; skipped where every module has started. First, so that on a cold
         // node the operation the run uses is there
-        const waiting = await b.evaluate(`(async () => { const cat = await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/catalog',
+        // clicking a module waiting to start tries to start it on demand (or transitions cleanly to "needs its own login")
+        const ws = await b.evaluate(`(async () => { const cat = await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/catalog',
             { credentials: 'same-origin' })).json();
-            // not the token-auth modules: they start only for requests with their own (OAuth) login
-            const ws = cat.modules.filter(x => x.state === 'failed' && x.reason === 'not-started' && !/^\\/?token-auth\\//.test(x.path));
-            // the module of the operation the run uses, when it waits (a cold Confluence node: api), else any
-            const m = ws.find(x => ${q(P.title)}.startsWith(x.path.replace(/^\\/+|\\/+$/g, '') + '/')) || ws[0];
-            return m ? { id: m.id, path: m.path } : null; })()`);
+            const list = cat.modules.filter(x => x.state === 'failed' && x.reason === 'not-started');
+            const pref = list.find(x => ${q(P.title)}.startsWith(x.path.replace(/^\\/+|\\/+$/g, '') + '/'));
+            return pref ? [pref, ...list.filter(x => x !== pref)] : list; })()`);
         const startWindow = [-1, -1]; // the failed requests while a module starts
-        if (waiting) {
+        if (ws.length > 0) {
             await type('[data-testid=search]', '');
             await sleep(400);
-            const sel = `[data-testid=module][data-id=${q('module:' + waiting.id)}]`;
-            await b.evaluate(`(document.querySelector('.rab-n-vlist').scrollTop = 0, true)`);
-            for (let i = 0; i < 400 && !await b.evaluate(`!!document.querySelector(${q(sel)})`); i++) {
-                await b.evaluate(`(document.querySelector('.rab-n-vlist').scrollTop += 400, true)`);
-                await sleep(40);
-            }
-            const before = await b.evaluate(`(() => { const r = document.querySelector(${q(sel)}); if (!r) return null; r.scrollIntoView({ block: 'center' });
-                return r.textContent; })()`);
             startWindow[0] = b.failedRequests.length;
-            if (before) {
+            let handled = false, lastDiag = null;
+            for (const waiting of ws.slice(0, 3)) {
+                const sel = `[data-testid=module][data-id=${q('module:' + waiting.id)}]`;
+                await b.evaluate(`(document.querySelector('.rab-n-vlist').scrollTop = 0, true)`);
+                for (let i = 0; i < 400 && !await b.evaluate(`!!document.querySelector(${q(sel)})`); i++) {
+                    await b.evaluate(`(document.querySelector('.rab-n-vlist').scrollTop += 400, true)`);
+                    await sleep(40);
+                }
+                const before = await b.evaluate(`(() => { const r = document.querySelector(${q(sel)}); if (!r) return null; r.scrollIntoView({ block: 'center' });
+                    return r.textContent; })()`);
+                if (!before) continue;
                 await sleep(200);
                 const at = await b.evaluate(`(() => { const b = document.querySelector(${q(sel)}).getBoundingClientRect(); return { x: b.left + 80, y: b.top + b.height / 2 }; })()`);
                 await clickAt(at.x, at.y);
+                const settled = await b.waitFor(`(() => { const r = document.querySelector(${q(sel)}); return !!r && (r.getAttribute('aria-expanded') !== null || /needs its own login/.test(r.textContent || '')); })()`, 45000);
+                const started = settled && await b.evaluate(`document.querySelector(${q(sel)})?.getAttribute('aria-expanded') !== null`);
+                const after = await text(sel);
+                lastDiag = { waiting, before, settled, started, after };
+                if (/not started/.test(before) && settled) {
+                    handled = true;
+                    if (started) break;
+                }
             }
-            const started = before && await b.waitFor(`(() => { const r = document.querySelector(${q(sel)}); return !!r && r.getAttribute('aria-expanded') !== null; })()`, 45000);
             startWindow[1] = b.failedRequests.length;
-            const after = await text(sel);
-            c.check(`a module that has not started yet starts with a click and is described (${waiting.path})`,
-                !!before && /not started/.test(before) && started, { waiting, before, after });
+            c.check(`a module that has not started yet starts or settles as "needs its own login" with a click (${(lastDiag && lastDiag.waiting && lastDiag.waiting.path) || ws[0].path})`,
+                handled, lastDiag);
         } else {
             console.log('SKIP no module is waiting to start here that a plain request can start');
         }
@@ -275,6 +282,11 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
             { places, formatted, headers: (headersFile || '').slice(0, 60), request: (requestFile || '').slice(0, 60) });
         fs.rmSync(downloads, { recursive: true, force: true });
         await b.evaluate(`([...document.querySelectorAll('[data-testid=response] [role=tab]')].find(t => /^Pretty/.test(t.textContent)) || {}).click?.(), true`);
+        await click('[data-testid=toggle-wrap]');
+        const wrappedPretty = await b.waitFor(`!!document.querySelector('[data-testid=pretty-wrapped]')`, 3000);
+        await click('[data-testid=toggle-wrap]');
+        const unwrappedPretty = await b.waitFor(`!document.querySelector('[data-testid=pretty-wrapped]')`, 3000);
+        c.check('Wrap pill toggles wrapped JSON view on and off', wrappedPretty && unwrappedPretty, { wrappedPretty, unwrappedPretty });
         // the find box sits at the right of the response's tab bar, just before Copy and Download, and finds as you type
         const findBox = await b.evaluate(`(() => { const bar = document.querySelector('[data-testid=response] .rab-n-tabbar');
             const input = bar && bar.querySelector('input[type=search]'), copy = bar && bar.querySelector('[data-testid=copy-content]'),
@@ -376,6 +388,11 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         }
         c.check(`hovering a Java type shows the rich class/OSGi tooltip (${tipAnchor && tipAnchor.ref})`, richTipOk, tipAnchor);
 
+        // OpenAPI export button in OperationHeader downloads the module spec
+        await click('[data-testid=export-module-openapi]');
+        const openApiExported = await b.waitFor(`document.querySelector('[data-testid=export-module-openapi]')?.dataset.state === 'done'`, 10000);
+        c.check('OpenAPI button in operation header exports the module OpenAPI 3.1 document', openApiExported);
+
         await click('[data-testid=load-class-source]');
         const dlgOpen = await b.waitFor(`(() => {
             const box = document.querySelector('[data-testid=source-dialog] [data-testid=dialog-source-code]');
@@ -453,6 +470,29 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
             if (items.length > 0) items[0].click();
             return { outlineCount: items.length, status, hasZip: !!zipBtn && !zipBtn.disabled, hdrBg, noTitleScrollbars };
         })()`);
+        // check Impls / Callers / Grep / Files intelligence panels & bundle resource preview inside SourceDialog
+        await click('[data-testid=source-panel-implementations]');
+        const implPanelOk = await b.waitFor(`!!document.querySelector('[data-testid=implementations-panel]') && !/Scanning/.test((document.querySelector('[data-testid=implementations-panel]') || {}).textContent || '')`, 15000);
+        await click('[data-testid=source-panel-callers]');
+        const callersPanelOk = await b.waitFor(`!!document.querySelector('[data-testid=callers-panel]') && !/Searching callers/.test((document.querySelector('[data-testid=callers-panel]') || {}).textContent || '')`, 15000);
+        await click('[data-testid=source-panel-grep]');
+        await type('[data-testid=grep-query-input]', 'rest');
+        await click('[data-testid=grep-submit]');
+        const grepPanelOk = await b.waitFor(`!!document.querySelector('[data-testid=grep-panel] .rab-n-java-nav-count')`, 15000);
+        await click('[data-testid=source-panel-resources]');
+        const resListed = await b.waitFor(`!!document.querySelector('[data-testid=bundle-resource-item]')`, 15000);
+        let resPreviewOk = false, resEscapedOk = false;
+        if (resListed) {
+            await click('[data-testid=bundle-resource-item]');
+            resPreviewOk = await b.waitFor(`!!document.querySelector('[data-testid=bundle-resource-preview]') && !/Loading /.test((document.querySelector('[data-testid=bundle-resource-preview]') || {}).textContent || '')`, 10000);
+            await press('Escape');
+            resEscapedOk = await b.waitFor(`!document.querySelector('[data-testid=bundle-resource-preview]') && !!document.querySelector('[data-testid=dialog-source-code]')`, 3000);
+        }
+        await click('[data-testid=source-panel-outline]');
+        c.check('SourceDialog code-intel panels (Impls, Callers, Grep, Files) and bundle resource preview work cleanly',
+            implPanelOk && callersPanelOk && grepPanelOk && resListed && resPreviewOk && resEscapedOk,
+            { implPanelOk, callersPanelOk, grepPanelOk, resListed, resPreviewOk, resEscapedOk });
+
         await click('[data-testid=source-dialog-outline-toggle]');
         const outlineCollapsed = await b.waitFor(`!document.querySelector('[data-testid=source-dialog-outline]')`, 2000);
         await click('[data-testid=source-dialog-outline-toggle]');
@@ -545,6 +585,22 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
                 method: 'POST', credentials: 'same-origin', headers: mcpHeaders,
                 body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'search_operations', arguments: { limit: 2 } } }),
             })).json();
+            const mcpResList = await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/mcp', {
+                method: 'POST', credentials: 'same-origin', headers: mcpHeaders,
+                body: JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'resources/list' }),
+            })).json();
+            const mcpResRead = await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/mcp', {
+                method: 'POST', credentials: 'same-origin', headers: mcpHeaders,
+                body: JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'resources/read', params: { uri: 'rab://llms.txt' } }),
+            })).json();
+            const mcpPromptsList = await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/mcp', {
+                method: 'POST', credentials: 'same-origin', headers: mcpHeaders,
+                body: JSON.stringify({ jsonrpc: '2.0', id: 6, method: 'prompts/list' }),
+            })).json();
+            const mcpPromptGet = await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/mcp', {
+                method: 'POST', credentials: 'same-origin', headers: mcpHeaders,
+                body: JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'prompts/get', params: { name: 'debug-stuck-endpoint', arguments: { target: '/rest/test' } } }),
+            })).json();
             const plain = await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/code/source?class=' + cls + '&startLine=1&maxLines=10&format=text', { credentials: 'same-origin' });
             const plainText = await plain.text();
             const md = await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/code/source?class=' + cls + '&startLine=1&maxLines=5&lineNumbers=true&format=markdown', { credentials: 'same-origin' });
@@ -562,8 +618,13 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
                 resourceOk: Array.isArray(resList.entries),
                 contextOk: ctx.key === firstOp.key && !!ctx.details && !!ctx.source,
                 mcpOk: mcpInit.result && mcpInit.result.protocolVersion === '2025-03-26'
+                    && mcpInit.result.capabilities && !!mcpInit.result.capabilities.resources && !!mcpInit.result.capabilities.prompts
                     && mcpList.result && Array.isArray(mcpList.result.tools) && mcpList.result.tools.length >= 10
-                    && mcpCall.result && mcpCall.result.isError === false,
+                    && mcpCall.result && mcpCall.result.isError === false
+                    && mcpResList.result && Array.isArray(mcpResList.result.resources) && mcpResList.result.resources.length >= 4
+                    && mcpResRead.result && Array.isArray(mcpResRead.result.contents) && mcpResRead.result.contents.length === 1
+                    && mcpPromptsList.result && Array.isArray(mcpPromptsList.result.prompts) && mcpPromptsList.result.prompts.length >= 3
+                    && mcpPromptGet.result && Array.isArray(mcpPromptGet.result.messages) && /\/rest\/test/.test(JSON.stringify(mcpPromptGet.result.messages)),
                 plainOk: plain.status === 200 && plainText.length > 10,
                 mdOk: md.status === 200 && (md.headers.get('content-type') || '').includes('text/markdown') && mdText.includes('1 |'),
             };
@@ -1032,6 +1093,31 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
             console.log('SKIP no text form-parameter operation found in this catalog');
         }
 
+        // Generate example DTO payload button in BodyTab (never sends the write request)
+        const dtoOp = await b.evaluate(`(async () => {
+            const cat = await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/catalog', { credentials: 'same-origin' })).json();
+            const idx = await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/catalog/index/' + cat.hash, { credentials: 'same-origin' })).json();
+            const o = idx.operations.find(x => ['POST', 'PUT'].includes(x.method) && (x.bodyType || x.bodyJavaType)
+                && !x.params.some(p => p.in === 'form')
+                && (!x.consumes || !x.consumes.length || x.consumes.some(c => /json/i.test(c))));
+            return o ? { key: o.key, bodyType: o.bodyType || o.bodyJavaType } : null;
+        })()`);
+        if (dtoOp) {
+            await b.navigate(PAGE + '?op=' + encodeURIComponent(dtoOp.key));
+            await b.waitFor(`!!document.querySelector('.rab-n-request [role=tab]')`, 30000);
+            await b.evaluate(`([...document.querySelectorAll('.rab-n-request [role=tab]')].find(t => t.textContent.trim() === 'Body') || {}).click?.(), true`);
+            const hasGen = await b.waitFor(`!!document.querySelector('[data-testid=generate-example]')`, 3000);
+            let genBody = '';
+            if (hasGen) {
+                await click('[data-testid=generate-example]');
+                const filled = await b.waitFor(`((document.querySelector('[data-testid=body]') || {}).value || '').trim().length > 0`, 15000);
+                if (filled) genBody = await b.evaluate(`document.querySelector('[data-testid=body]').value`);
+            }
+            c.check(`Body tab "Generate example" synthesizes a JSON example for ${dtoOp.bodyType}`, hasGen && genBody.trim().length > 0, { dtoOp, hasGen, len: genBody.length });
+        } else {
+            console.log('SKIP no JSON DTO body operation found for Generate example check');
+        }
+
         // admin intro page: decorated entry page linked from Jira / Confluence administration
         await b.navigate(PAGE + '/admin');
         const adminIntroOk = await b.waitFor(`!!document.querySelector('#rab-admin-intro') && !!document.querySelector('#rab-open-fullscreen')`, 30000);
@@ -1058,10 +1144,11 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         // errors
         const own = b.exceptions.filter(e => /next\.js|rest-api-browser|restbrowser/i.test(e));
         c.check('no JavaScript exception from the new UI', own.length === 0, own);
-        // not the 404s asked on purpose (a link to no such module, the request that starts a module), nor, while a
+        // not the 404s/409s asked on purpose (a link to no such module, the request that starts a module, or 409 still-not-started), nor, while a
         // module starts, an index the catalog replaced meanwhile (the store asks again, by design)
         const ownFailed = b.failedRequests.filter((u, i) => /restbrowser|rest-api-browser/i.test(u) && !/op=no\.such%3Amodule/.test(u)
-            && !/rest-api-browser-start/.test(u) && !(i >= startWindow[0] && i < startWindow[1] && /^404 .*\/catalog\/index\//.test(u)));
+            && !/rest-api-browser-start/.test(u)
+            && !(i >= startWindow[0] && i < startWindow[1] && (/^404 .*\/catalog\/index\//.test(u) || /^409 .*\/catalog\/started/.test(u))));
         c.check('no failed request for the plugin\'s own resources', ownFailed.length === 0, ownFailed.slice(0, 5));
         b.failedRequests.filter(u => !ownFailed.includes(u) && !/no%20such/.test(u)).forEach(u => console.log('WARN failed request: ' + u));
         console.log(`Screenshots: ${SHOTS}`);

@@ -42,7 +42,9 @@ angular.module('RAB')
 
             var compiledPublicAPIRe = new RegExp("("+PUBLIC_APIS.join("|")+")");
             var resources = [];
+            var failedServices = [];
             var loadedServices = {};
+            var failedKeys = {};
 
             function isServiceLoaded(service) {
                 return !!loadedServices[service.relativeResource];
@@ -50,6 +52,21 @@ angular.module('RAB')
 
             function isServicePublic(serviceName) {
                 return PUBLIC_APIS.length > 0 && compiledPublicAPIRe.test(serviceName);
+            }
+
+            function recordFailedService(service) {
+                var rel = service && service.relativeResource;
+                if (!rel || failedKeys[rel]) {
+                    return;
+                }
+                failedKeys[rel] = true;
+                failedServices.push({
+                    relativeResource: rel,
+                    path: service.path || '',
+                    wadl: service.wadl || '',
+                    'public': !!isServicePublic(rel)
+                });
+                $rootScope.failedWadlServices = failedServices.slice();
             }
 
             return function(publicOnly) {
@@ -70,10 +87,11 @@ angular.module('RAB')
                     dfd.notify(newResources);
                 };
 
-                // Handle the good and bad (bad are effectively skipped)
+                // Handle the good and bad (failed WADLs are surfaced via failedWadlServices so the sidebar can link to the new UI)
                 var handledWADL = function() {
                     resolvedCount++;
                     if (resolvedCount === services.length) {
+                        $rootScope.failedWadlServices = failedServices.slice();
                         dfd.resolve(resources);
                     }
                 };
@@ -81,9 +99,15 @@ angular.module('RAB')
                 if (services.length) {
                     _.each(services, function(service) {
                         loadedServices[service.relativeResource] = true;
-                        processWADL(service).done(resolvedWADL).always(handledWADL);
+                        processWADL(service)
+                            .done(resolvedWADL)
+                            .fail(function() {
+                                recordFailedService(service);
+                            })
+                            .always(handledWADL);
                     });
                 } else {
+                    $rootScope.failedWadlServices = failedServices.slice();
                     dfd.resolve(resources);
                 }
 

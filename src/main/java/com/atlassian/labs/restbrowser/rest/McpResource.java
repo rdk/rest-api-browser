@@ -12,7 +12,8 @@ import com.atlassian.labs.restbrowser.catalog.OperationDetails.Result;
 import com.atlassian.labs.restbrowser.catalog.OperationSource;
 import com.atlassian.labs.restbrowser.json.Json;
 import com.atlassian.labs.restbrowser.json.JsonParser;
-import com.atlassian.labs.restbrowser.json.JsonParser.JsonParseException;
+import com.atlassian.labs.restbrowser.servlet.AdminIntroServlet;
+import com.atlassian.labs.restbrowser.servlet.LlmsTxtServlet;
 import com.atlassian.labs.restbrowser.spring.LocalBeans;
 import com.atlassian.plugin.PluginAccessor;
 import com.atlassian.sal.api.ApplicationProperties;
@@ -33,6 +34,8 @@ import jakarta.ws.rs.core.Response;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -136,6 +139,11 @@ public class McpResource {
             case "ping" -> rpcResultResponse(id, "{}");
             case "tools/list" -> rpcResultResponse(id, buildToolsList(sysadmin));
             case "tools/call" -> handleToolCall(id, req.get("params"), sysadmin, request);
+            case "resources/list" -> rpcResultResponse(id, buildResourcesList());
+            case "resources/templates/list" -> rpcResultResponse(id, buildResourceTemplatesList(sysadmin));
+            case "resources/read" -> handleResourceRead(id, req.get("params"), sysadmin, request);
+            case "prompts/list" -> rpcResultResponse(id, buildPromptsList(sysadmin));
+            case "prompts/get" -> handlePromptGet(id, req.get("params"), sysadmin);
             default -> rpcErrorResponse(id, -32601, "Method not found: " + method);
         };
     }
@@ -178,27 +186,14 @@ public class McpResource {
                         : CatalogQuery.resolveUrlJson(snap, strArg(args, "method"), url, intArg(args, "limit", 10));
                 yield rpcToolText(id, text, false);
             }
-            case "get_catalog_summary" -> {
-                CatalogSnapshot snap = catalog.current(request.getServletContext());
-                boolean admin = sysadmin || RestAuth.isAdmin(userManager, RestAuth.remoteUser(userManager, request));
-                String summary = snap.summary(
-                        applicationProperties.getDisplayName(),
-                        applicationProperties.getVersion(),
-                        applicationProperties.getBuildNumber(),
-                        applicationProperties.getBaseUrl(UrlMode.RELATIVE),
-                        admin, sysadmin);
-                yield rpcToolText(id, summary, false);
-            }
+            case "get_catalog_summary" -> rpcToolText(id, buildCatalogSummary(sysadmin, request), false);
             case "export_module_openapi" -> {
                 String module = strArg(args, "module");
                 if (module == null || module.isBlank()) {
                     yield rpcToolResult(id, new Result(400, "{\"error\":\"missing-module\",\"hint\":\"Pass module key.\"}"));
                 }
-                CatalogSnapshot snap = catalog.current(request.getServletContext());
-                boolean withSchemas = sysadmin && boolArg(args, "includeSchemas", true);
-                String spec = OpenApiExporter.moduleSpecJson(snap, module,
-                        applicationProperties.getBaseUrl(UrlMode.RELATIVE),
-                        withSchemas, intArg(args, "schemaDepth", 2), withSchemas ? source : null);
+                String spec = exportModuleOpenApiJson(module, sysadmin,
+                        intArg(args, "schemaDepth", 2), boolArg(args, "includeSchemas", true), request);
                 if (spec == null) {
                     yield rpcToolResult(id, new Result(404, "{\"error\":\"unknown-module\"}"));
                 }
@@ -318,15 +313,294 @@ public class McpResource {
                 .field("protocolVersion", PROTOCOL_VERSION)
                 .name("capabilities").beginObject()
                 .name("tools").beginObject().field("listChanged", false).endObject()
+                .name("resources").beginObject().field("subscribe", false).field("listChanged", false).endObject()
+                .name("prompts").beginObject().field("listChanged", false).endObject()
                 .endObject()
                 .name("serverInfo").beginObject()
                 .field("name", "rest-api-browser")
-                .field("version", ver.isEmpty() ? "4.3.3-SNAPSHOT" : ver)
+                .field("version", ver.isEmpty() ? "4.4.0" : ver)
                 .endObject()
                 .field("instructions", sysadmin
-                        ? "Read-only Atlassian REST & JVM inspection tools enabled. Start with search_operations, resolve_url, or investigate_operation_context."
-                        : "Read-only Atlassian REST catalog tools enabled (system administrator role unlocks Java bytecode and source tools).")
+                        ? "Read-only Atlassian REST & JVM inspection tools, resources, and prompts enabled. Start with search_operations, resolve_url, or investigate_operation_context."
+                        : "Read-only Atlassian REST catalog tools, resources, and prompts enabled (system administrator role unlocks Java bytecode and source tools).")
                 .endObject().toString();
+    }
+
+    private String buildCatalogSummary(boolean sysadmin, HttpServletRequest request) {
+        CatalogSnapshot snap = catalog.current(request.getServletContext());
+        boolean admin = sysadmin || RestAuth.isAdmin(userManager, RestAuth.remoteUser(userManager, request));
+        return snap.summary(
+                applicationProperties.getDisplayName(),
+                applicationProperties.getVersion(),
+                applicationProperties.getBuildNumber(),
+                applicationProperties.getBaseUrl(UrlMode.RELATIVE),
+                admin, sysadmin);
+    }
+
+    private String exportModuleOpenApiJson(String module, boolean sysadmin, int schemaDepth, boolean includeSchemas,
+                                           HttpServletRequest request) {
+        CatalogSnapshot snap = catalog.current(request.getServletContext());
+        boolean withSchemas = sysadmin && includeSchemas;
+        return OpenApiExporter.moduleSpecJson(snap, module,
+                applicationProperties.getBaseUrl(UrlMode.RELATIVE),
+                withSchemas, schemaDepth, withSchemas ? source : null);
+    }
+
+    private String canonicalOrRelativeBase() {
+        String base = applicationProperties.getBaseUrl(UrlMode.CANONICAL);
+        if (base == null || base.isBlank()) {
+            base = applicationProperties.getBaseUrl(UrlMode.RELATIVE);
+        }
+        if (base == null) {
+            return "";
+        }
+        int end = base.length();
+        while (end > 0 && base.charAt(end - 1) == '/') {
+            end--;
+        }
+        return base.substring(0, end);
+    }
+
+    private static String buildResourcesList() {
+        Json j = new Json().beginObject().name("resources").beginArray();
+        resourceEntry(j, "rab://llms.txt", "llms-txt",
+                "Compact llmstxt.org Markdown discovery guide for all REST API Browser endpoints.", "text/markdown");
+        resourceEntry(j, "rab://llms-full.txt", "llms-full-txt",
+                "Complete Markdown agent reference with curl examples, MCP client config, and error recovery hints.", "text/markdown");
+        resourceEntry(j, "rab://catalog/summary", "catalog-summary",
+                "Current REST catalog hash, product metadata, completeness progress, and modules.", "application/json");
+        resourceEntry(j, "rab://openapi/self", "openapi-self",
+                "OpenAPI 3.1.0 specification of REST API Browser's own agent and catalog endpoints.", "application/json");
+        return j.endArray().endObject().toString();
+    }
+
+    private static void resourceEntry(Json j, String uri, String name, String description, String mimeType) {
+        j.beginObject()
+                .field("uri", uri)
+                .field("name", name)
+                .field("description", description)
+                .field("mimeType", mimeType)
+                .endObject();
+    }
+
+    private static String buildResourceTemplatesList(boolean sysadmin) {
+        Json j = new Json().beginObject().name("resourceTemplates").beginArray();
+        templateEntry(j, "rab://catalog/openapi/{module}", "module-openapi",
+                "OpenAPI 3.1.0 specification for an indexed REST module (URL-encoded module ID).", "application/json");
+        if (sysadmin) {
+            templateEntry(j, "rab://code/class/{fqcn}", "class-metadata",
+                    "Class reflection metadata, fields, enums, bytecode outline, and OSGi bundle/plugin ownership.", "application/json");
+            templateEntry(j, "rab://code/source/{fqcn}", "class-source",
+                    "Decompiled Java class source (Vineflower default with CFR fallback diagnostics).", "application/json");
+            templateEntry(j, "rab://code/plugin/{pluginKey}", "plugin-metadata",
+                    "Atlassian plugin metadata, dependencies, modules, and backing OSGi bundle.", "application/json");
+        }
+        return j.endArray().endObject().toString();
+    }
+
+    private static void templateEntry(Json j, String uriTemplate, String name, String description, String mimeType) {
+        j.beginObject()
+                .field("uriTemplate", uriTemplate)
+                .field("name", name)
+                .field("description", description)
+                .field("mimeType", mimeType)
+                .endObject();
+    }
+
+    private Response handleResourceRead(Object id, Object rawParams, boolean sysadmin, HttpServletRequest request) {
+        if (!(rawParams instanceof Map<?, ?> params)) {
+            return rpcErrorResponse(id, -32602, "Invalid params: expected object");
+        }
+        Object rawUri = params.get("uri");
+        if (!(rawUri instanceof String uri) || uri.isBlank()) {
+            return rpcErrorResponse(id, -32602, "Invalid params: missing resource uri");
+        }
+        return switch (uri) {
+            case "rab://llms.txt" -> rpcResourceText(id, uri, "text/markdown",
+                    LlmsTxtServlet.renderGuide(applicationProperties, pluginAccessor, catalog, true, sysadmin, false));
+            case "rab://llms-full.txt" -> rpcResourceText(id, uri, "text/markdown",
+                    LlmsTxtServlet.renderGuide(applicationProperties, pluginAccessor, catalog, true, sysadmin, true));
+            case "rab://catalog/summary" -> rpcResourceText(id, uri, "application/json",
+                    buildCatalogSummary(sysadmin, request));
+            case "rab://openapi/self" -> rpcResourceText(id, uri, "application/json",
+                    OpenApiExporter.selfSpecJson(canonicalOrRelativeBase(), LocalBeans.pluginVersion(pluginAccessor), sysadmin));
+            default -> handleTemplateResourceRead(id, uri, sysadmin, request);
+        };
+    }
+
+    private Response handleTemplateResourceRead(Object id, String uri, boolean sysadmin, HttpServletRequest request) {
+        if (uri.startsWith("rab://catalog/openapi/")) {
+            String mod = decodeSegment(uri.substring("rab://catalog/openapi/".length()));
+            if (mod == null) {
+                return rpcErrorResponse(id, -32602, "Invalid module identifier in resource URI");
+            }
+            String spec = exportModuleOpenApiJson(mod, sysadmin, 2, true, request);
+            if (spec == null) {
+                return rpcErrorResponse(id, -32002, "Resource not found: unknown module " + mod);
+            }
+            return rpcResourceText(id, uri, "application/json", spec);
+        }
+        if (uri.startsWith("rab://code/")) {
+            if (!sysadmin) {
+                return rpcErrorResponse(id, -32003, "Forbidden: system administrator privileges required for " + uri);
+            }
+            if (source == null) {
+                return rpcErrorResponse(id, -32002, "Resource unavailable: code inspector disabled");
+            }
+            Result res;
+            if (uri.startsWith("rab://code/class/")) {
+                String fqcn = decodeSegment(uri.substring("rab://code/class/".length()));
+                if (fqcn == null) {
+                    return rpcErrorResponse(id, -32602, "Invalid class name in resource URI");
+                }
+                res = source.inspectClass(null, fqcn, -1L, false, true, false);
+            } else if (uri.startsWith("rab://code/source/")) {
+                String fqcn = decodeSegment(uri.substring("rab://code/source/".length()));
+                if (fqcn == null) {
+                    return rpcErrorResponse(id, -32602, "Invalid class name in resource URI");
+                }
+                res = source.decompile(null, fqcn, -1L, "class", "vineflower", null, 1, 500, false, true);
+            } else if (uri.startsWith("rab://code/plugin/")) {
+                String key = decodeSegment(uri.substring("rab://code/plugin/".length()));
+                if (key == null) {
+                    return rpcErrorResponse(id, -32602, "Invalid plugin key in resource URI");
+                }
+                res = source.inspectPlugin(key, false);
+            } else {
+                return rpcErrorResponse(id, -32002, "Resource not found: " + uri);
+            }
+            if (res.status() >= 400) {
+                return rpcErrorResponse(id, -32002, "Resource not found: " + uri);
+            }
+            return rpcResourceText(id, uri, "application/json", res.json());
+        }
+        return rpcErrorResponse(id, -32002, "Resource not found: " + uri);
+    }
+
+    private static String decodeSegment(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            String decoded = URLDecoder.decode(raw, StandardCharsets.UTF_8);
+            return decoded.isBlank() ? null : decoded;
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    private static Response rpcResourceText(Object id, String uri, String mimeType, String text) {
+        String out = new Json().beginObject()
+                .name("contents").beginArray()
+                .beginObject()
+                .field("uri", uri)
+                .field("mimeType", mimeType)
+                .field("text", text == null ? "" : text)
+                .endObject()
+                .endArray()
+                .endObject().toString();
+        return rpcResultResponse(id, out);
+    }
+
+    private static String buildPromptsList(boolean sysadmin) {
+        Json j = new Json().beginObject().name("prompts").beginArray();
+        promptEntry(j, "explore-endpoint-payload",
+                "Document a REST endpoint's permissions, parameters, and request/response DTO payload.",
+                "query", "Search keyword or /rest/... path (optional)");
+        if (sysadmin) {
+            promptEntry(j, "debug-stuck-endpoint",
+                    "Investigate why a REST endpoint is slow or stuck (read-only).",
+                    "target", "Endpoint URL, operation key, or thread-dump symptom (optional)");
+            promptEntry(j, "trace-rest-error",
+                    "Trace an unexpected REST error message or status code back to bytecode and handlers.",
+                    "error", "Error text, message fragment, or HTTP status symptom (optional)");
+        }
+        return j.endArray().endObject().toString();
+    }
+
+    private static void promptEntry(Json j, String name, String description, String argName, String argDescription) {
+        j.beginObject()
+                .field("name", name)
+                .field("description", description)
+                .name("arguments").beginArray()
+                .beginObject()
+                .field("name", argName)
+                .field("description", argDescription)
+                .field("required", false)
+                .endObject()
+                .endArray()
+                .endObject();
+    }
+
+    private Response handlePromptGet(Object id, Object rawParams, boolean sysadmin) {
+        if (!(rawParams instanceof Map<?, ?> params)) {
+            return rpcErrorResponse(id, -32602, "Invalid params: expected object");
+        }
+        Object rawName = params.get("name");
+        if (!(rawName instanceof String name) || name.isBlank()) {
+            return rpcErrorResponse(id, -32602, "Invalid params: missing prompt name");
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> args = params.get("arguments") instanceof Map<?, ?> m
+                ? (Map<String, Object>) m : Map.of();
+        String base = canonicalOrRelativeBase();
+        String apiBase = base + "/rest/restbrowser/1";
+        String uiBase = base + "/plugins/servlet/rest-api-browser";
+
+        String description;
+        String promptText;
+        switch (name) {
+            case "explore-endpoint-payload" -> {
+                description = "Document a REST endpoint's permissions, parameters, and DTO payload.";
+                promptText = substitutePlaceholder(
+                        AdminIntroServlet.buildPromptExplorePayload(apiBase),
+                        "<PASTE KEYWORD OR /rest/... URL HERE>",
+                        strArg(args, "query"));
+            }
+            case "debug-stuck-endpoint" -> {
+                if (!sysadmin) {
+                    return rpcErrorResponse(id, -32003, "Forbidden: system administrator privileges required for " + name);
+                }
+                description = "Investigate why a REST endpoint is slow or stuck (read-only).";
+                promptText = substitutePlaceholder(
+                        AdminIntroServlet.buildPromptDebugStuck(apiBase, uiBase),
+                        "<PASTE REQUEST URL / THREAD DUMP SYMPTOM HERE>",
+                        strArg(args, "target"));
+            }
+            case "trace-rest-error" -> {
+                if (!sysadmin) {
+                    return rpcErrorResponse(id, -32003, "Forbidden: system administrator privileges required for " + name);
+                }
+                description = "Trace an unexpected REST error message or status code back to bytecode and handlers.";
+                promptText = substitutePlaceholder(
+                        AdminIntroServlet.buildPromptTraceError(apiBase),
+                        "<PASTE ERROR STRING / LOG FRAGMENT HERE>",
+                        strArg(args, "error"));
+            }
+            default -> {
+                return rpcErrorResponse(id, -32602, "Unknown prompt: " + name);
+            }
+        }
+        String out = new Json().beginObject()
+                .field("description", description)
+                .name("messages").beginArray()
+                .beginObject()
+                .field("role", "user")
+                .name("content").beginObject()
+                .field("type", "text")
+                .field("text", promptText)
+                .endObject()
+                .endObject()
+                .endArray()
+                .endObject().toString();
+        return rpcResultResponse(id, out);
+    }
+
+    private static String substitutePlaceholder(String template, String placeholder, String value) {
+        if (value == null || value.isBlank()) {
+            return template;
+        }
+        return template.replace(placeholder, value.trim());
     }
 
     private static String buildToolsList(boolean sysadmin) {

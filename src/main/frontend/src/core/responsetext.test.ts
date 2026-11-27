@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PROXY, addedHeaders, downloadOf, indexIn, textOf, type ResponseData } from './responsetext';
+import { PROXY, addedHeaders, downloadOf, extractPrettyLineMeta, indexIn, textOf, type ResponseData } from './responsetext';
 
 function makeResult(partial: Partial<ResponseData> = {}): ResponseData {
   return {
@@ -78,5 +78,14 @@ describe('responsetext', () => {
     expect(indexIn([2, 5, 9, 14], 14)).toBe(3);
     expect(indexIn([2, 5, 9, 14], 7)).toBe(-1);
     expect(indexIn([], 1)).toBe(-1);
+  });
+
+  it('extracts JSON property keys and trimmed text losslessly', () => {
+    expect(extractPrettyLineMeta('  "avatar": "data:image/png;base64,AAA",'))
+      .toEqual({ key: 'avatar', text: '"avatar": "data:image/png;base64,AAA",' });
+    expect(extractPrettyLineMeta('  "a\\"b": 9007199254740993'))
+      .toEqual({ key: 'a"b', text: '"a\\"b": 9007199254740993' });
+    expect(extractPrettyLineMeta('    "just-an-array-element"'))
+      .toEqual({ text: '"just-an-array-element"' });
   });
 });
