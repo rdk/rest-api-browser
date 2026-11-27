@@ -9,7 +9,8 @@ target/
 node_modules
 .DS_Store
 src/test/product/shots/
-src/test/product/__pycache__/
+__pycache__/
+*.py[cod]
 src/test/product/local.env
 src/test/product/test-results/
 src/test/product/playwright-report/
