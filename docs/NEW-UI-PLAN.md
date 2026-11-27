@@ -1,6 +1,6 @@
 # New UI: plan
 
-Status: implemented and shipped (steps 0–3 complete: Jersey runtime model, `/catalog` & `/code` REST APIs, CFR & Vineflower decompilation, Preact + TypeScript UI at `/plugins/servlet/rest-api-browser`, `llms.txt`, and `src/test/product` checks). The classic AngularJS UI stays at `/plugins/servlet/restbrowser`.
+Status: implemented and shipped (steps 0–3 plus the agent REST/MCP suite complete: Jersey runtime model, `/catalog` & `/code` REST APIs, OpenAPI 3.1 export, built-in read-only `/mcp` server, CFR 0.152 & Vineflower 1.11.1 decompilation, Preact + TypeScript UI at `/plugins/servlet/rest-api-browser`, decorated admin intro page at `/plugins/servlet/rest-api-browser/admin`, `llms.txt` / `llms-full.txt`, and `src/test/product` checks; see [AGENT-API.md](AGENT-API.md)). The classic AngularJS UI stays at `/plugins/servlet/restbrowser`.
 
 **[verify]** marks an assumption about the Atlassian platform that the step 0 spike confirms or refutes.
 
@@ -129,6 +129,8 @@ POST /catalog/started?module=        licensed, XSRF-checked: read one module aga
                                      204 already read, 404, 409 still-not-started | not-waiting-to-start
 ```
 
+In addition to the core UI endpoints above, the shipped API includes `/catalog/operations`, `/catalog/resolve`, `/catalog/openapi`, `/catalog/index/current`, `/openapi` (`/openapi.json`), `/mcp`, and `/code/*`; see [AGENT-API.md](AGENT-API.md) for the complete reference.
+
 **Caching of `index/{hash}`**:
 - **The node's current complete hash:** `Cache-Control: private, max-age=31536000, immutable`. `private`, so no
   proxy ever serves it to someone else.
@@ -170,8 +172,9 @@ Operation { key, moduleId, method, pathTemplate, consumes[], produces[], handler
 ### 2.3 Frontend
 
 TypeScript and Preact, one bundle and one CSS file, built by Vite from Maven with a pinned Node version. Nothing
-built is committed. The page is its own servlet page (`/plugins/servlet/restbrowser/next`), with no inline data
-(CSP).
+built is committed. The full-screen app lives on its own servlet page (`/plugins/servlet/rest-api-browser`, with
+`/plugins/servlet/restbrowser/next` redirecting), with no inline data (CSP); administration sidebar links open the
+product-decorated landing page at `/plugins/servlet/rest-api-browser/admin`.
 
 Three stores and a router, wired directly into the shell. There is no plugin mechanism for frontend features:
 with a handful of first-party features it would only add indirection.

@@ -32,6 +32,12 @@
         <url-pattern>/rest-api-browser/llms-full.txt</url-pattern>
     </servlet>
 
+    <servlet name="REST API Browser Admin Intro" key="rest-browser-admin-servlet"
+           class="com.atlassian.labs.restbrowser.servlet.AdminIntroServlet">
+        <description>Serves the decorated administration entry page with launch button, agent links, and prompts.</description>
+        <url-pattern>/rest-api-browser/admin</url-pattern>
+    </servlet>
+
     <rest-migration key="rest-migration-key">
         <rest-v2/>
     </rest-migration>
@@ -44,6 +50,12 @@
     <web-resource key="next-assets">
         <resource name="next.css" type="download" location="assets/next/next.css"/>
         <resource name="next.js" type="download" location="assets/next/next.js"/>
+    </web-resource>
+
+    <web-resource key="admin-assets">
+        <dependency>com.atlassian.auiplugin:ajs</dependency>
+        <resource name="admin-intro.css" type="download" location="assets/admin/admin-intro.css"/>
+        <resource name="admin-intro.js" type="download" location="assets/admin/admin-intro.js"/>
     </web-resource>
 
     <!--
@@ -116,7 +128,7 @@
               application="jira">
         <description key="restapi-browser.description">REST API Browser</description>
         <label key="restapi-browser.label"/>
-        <link linkId="restapi-browser-link">/plugins/servlet/restbrowser</link>
+        <link linkId="restapi-browser-link">/plugins/servlet/rest-api-browser/admin</link>
     </web-item>
 
     <web-item name="REST API Browser" i18n-name-key="restapi-browser.name-confluence" key="rest-browser-link-confluence"
@@ -124,7 +136,7 @@
               application="confluence">
         <description key="restapi-browser.description">REST API Browser</description>
         <label key="restapi-browser.label"/>
-        <link linkId="restapi-browser-link">/plugins/servlet/restbrowser</link>
+        <link linkId="restapi-browser-link">/plugins/servlet/rest-api-browser/admin</link>
     </web-item>
 
     <web-item name="REST API Browser" i18n-name-key="restapi-browser.name-crowd" key="rest-browser-link-crowd"
@@ -132,7 +144,7 @@
               application="crowd">
         <description key="restapi-browser.description">REST API Browser</description>
         <label key="restapi-browser.label"/>
-        <link linkId="restapi-browser-link">/plugins/servlet/restbrowser</link>
+        <link linkId="restapi-browser-link">/plugins/servlet/rest-api-browser/admin</link>
     </web-item>
 
     <web-item name="REST API Browser" i18n-name-key="restapi-browser.name-fisheye" key="rest-browser-link-fisheye"
@@ -149,7 +161,7 @@
         <description key="restapi-browser.description.bitbucket">Discover the Bitbucket Server REST APIs</description>
         <tooltip key="bitbucket.web.admin.settings.rab.tooltip">Interact and browse the REST resources bundled with Bitbucket Server.</tooltip>
         <label key="restapi-browser.label"/>
-        <link linkId="restapi-browser-link">/plugins/servlet/restbrowser</link>
+        <link linkId="restapi-browser-link">/plugins/servlet/rest-api-browser/admin</link>
     </web-item>
 
     <web-item name="REST API Browser" key="rest-browser-link-bamboo"
@@ -157,7 +169,7 @@
               application="bamboo">
         <description key="restapi-browser.description">REST API Browser</description>
         <label key="restapi-browser.label"/>
-        <link linkId="restapi-browser-link">/plugins/servlet/restbrowser</link>
+        <link linkId="restapi-browser-link">/plugins/servlet/rest-api-browser/admin</link>
     </web-item>
 
     <web-item name="REST API Browser" key="rest-browser-link-devtoolbar"

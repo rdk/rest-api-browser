@@ -565,6 +565,26 @@ def main():
     check('anonymous GET %s is sent to the login page' % SERVLET,
           s in (301, 302, 303) and 'login' in loc.lower() and 'restbrowser' in urllib.parse.unquote(loc), (s, loc))
 
+    # ---- admin intro entry page (/plugins/servlet/rest-api-browser/admin)
+    s_adm, adm_page, h_adm = j.call('GET', '/plugins/servlet/rest-api-browser/admin?os_authType=basic',
+                                    headers={'Accept': 'text/html'})
+    check('GET /plugins/servlet/rest-api-browser/admin as %s answers 200 text/html' % a.user,
+          s_adm == 200 and 'text/html' in h_adm.get('content-type', ''),
+          (s_adm, h_adm.get('content-type'), h_adm.get('location')))
+    check('the admin intro page renders launch CTA, agent links, and debug prompt',
+          'id="rab-admin-intro"' in adm_page
+          and 'id="rab-open-fullscreen"' in adm_page
+          and '/plugins/servlet/rest-api-browser"' in adm_page
+          and 'llms.txt' in adm_page and 'llms-full.txt' in adm_page
+          and 'openapi.json' in adm_page and '/rest/restbrowser/1/mcp' in adm_page
+          and 'id="rab-prompt-stuck"' in adm_page,
+          adm_page[:300])
+    s_adm_an, _, h_adm_an = j.call('GET', '/plugins/servlet/rest-api-browser/admin',
+                                   auth=False, headers={'Accept': 'text/html'})
+    loc_adm = h_adm_an.get('location', '')
+    check('anonymous GET /plugins/servlet/rest-api-browser/admin is sent to login',
+          s_adm_an in (301, 302, 303) and 'login' in loc_adm.lower(), (s_adm_an, loc_adm))
+
     # ---- the new UI and its catalog API
     new_ui(j, a, P)
 

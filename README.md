@@ -65,14 +65,20 @@ plugin key, so it replaces Atlassian's REST API Browser if that is installed.
 
 ## Usage
 
-Open `<base URL>/plugins/servlet/restbrowser` (or `<base URL>/restbrowser`) and log in; the product's administration
-pages link to it too. The sidebar lists the REST resources of the product and its apps; **Show only public APIs**, on by
-default, limits it to the product's public APIs. Select a resource to see its methods, fill in the parameters and
-**Send** the request as the logged-in user.
+Clicking **REST API Browser** in the Jira or Confluence administration menu opens the decorated Admin Intro page at
+`<base URL>/plugins/servlet/rest-api-browser/admin`, which provides a prominent launch button for the full-screen UI,
+live agent/MCP URLs, MCP client configuration, and ready-to-copy debugging prompts.
 
-The [new UI (preview)](#new-ui-preview) is at `<base URL>/plugins/servlet/rest-api-browser` (with an
-[llmstxt.org](https://llmstxt.org/) agent guide at `<base URL>/plugins/servlet/rest-api-browser/llms.txt`; the legacy
-`/plugins/servlet/restbrowser/next` URL redirects there).
+You can also open the full-screen [new UI (preview)](#new-ui-preview) directly at
+`<base URL>/plugins/servlet/rest-api-browser` (the legacy `/plugins/servlet/restbrowser/next` URL redirects there), or
+the classic UI at `<base URL>/plugins/servlet/restbrowser` (`<base URL>/restbrowser`). In the classic UI, the sidebar
+lists the REST resources of the product and its apps (**Show only public APIs**, on by default, limits it to public
+APIs), and **Send** executes the request as the logged-in user.
+
+For automation and AI agents, the plugin serves [llmstxt.org](https://llmstxt.org/) guides at
+`<base URL>/plugins/servlet/rest-api-browser/llms.txt` and `llms-full.txt`, OpenAPI 3.1.0 at
+`/rest/restbrowser/1/openapi.json`, and a built-in read-only MCP endpoint at `/rest/restbrowser/1/mcp`; see
+[Agent API, OpenAPI 3.1 & MCP](#agent-api-openapi-31--mcp).
 
 Users who are not logged in are sent to the login page. Starting the product with `-Drest.api.browser.anonymous=true`
 lets them use the classic page too, so anyone who can reach the product can open it. The new UI ignores that switch:
@@ -92,9 +98,8 @@ that prefill a request without sending it. System administrators also get clicka
 with rich hover cards (OSGi bundle wiring, plugin ownership and timestamps, classloader, bytecode info), a **Java**
 tab per operation with virtualized on-demand method and full class decompilation (focusing the method declaration
 header), a draggable/resizable/maximizable persistent tabbed decompiler window with in-place CFR 0.152 / Vineflower
-1.11.1 switching and undoable tab closing, plus an agent-friendly code & traversal REST API under
-`/rest/restbrowser/1/code/*` documented in `<base URL>/plugins/servlet/rest-api-browser/llms.txt` (disable decompilation
-with `-Drest.api.browser.decompile=false`). Plan and status: [docs/NEW-UI-PLAN.md](docs/NEW-UI-PLAN.md).
+1.11.1 switching and undoable tab closing (disable decompilation with `-Drest.api.browser.decompile=false`). See
+[Agent API, OpenAPI 3.1 & MCP](#agent-api-openapi-31--mcp) and [docs/NEW-UI-PLAN.md](docs/NEW-UI-PLAN.md).
 
 **Modules that have not started.** Confluence starts a REST module only on the first request to it, on each node of a
 cluster, so right after a node starts most of its modules cannot be read yet, Confluence's own `/rest/api` included.
@@ -107,6 +112,47 @@ manager, so this does not come up there.
 
 Hover a module or an operation for a card that explains its marks and, for a module that could not be read, the
 reason; hover the response's status code for what it means and what to try.
+
+## Agent API, OpenAPI 3.1 & MCP
+
+Alongside the web UI, the plugin exposes a token-efficient API for AI agents and scripts using standard browser
+cookies, Basic auth, or Jira/Confluence Personal Access Tokens (`Authorization: Bearer <token>`):
+
+- **Discovery & OpenAPI 3.1.0**:
+  - `/plugins/servlet/rest-api-browser/admin` renders the product-decorated admin onboarding page with the full-screen UI
+    launch button, live URLs tailored to the instance, MCP JSON config, and copyable example prompts.
+  - `/plugins/servlet/rest-api-browser/llms.txt` and `llms-full.txt` provide quick and detailed bootstrap guides
+    (`@AnonymousSiteAccess` — generic guide anonymously, instance metadata for licensed callers).
+  - `/rest/restbrowser/1/openapi` (also `/openapi.json`) serves a role-filtered OpenAPI 3.1.0 spec of REST API
+    Browser's own endpoints; `/rest/restbrowser/1/catalog/openapi?module={id}` generates an OpenAPI 3.1.0 spec on
+    demand for any indexed REST module (with DTO schemas for sysadmins).
+- **Catalog & Code Intelligence (`/rest/restbrowser/1/*`)**:
+  - **Catalog** (`@LicensedOnly`): server-side scored search (`/catalog/operations`, including `?usesClass=` and
+    `?format=markdown`), JAX-RS template URL matching (`/catalog/resolve?url=...`), and `/catalog/index/current`.
+  - **Code & OSGi** (`@SystemAdminOnly`): one-shot `POST /code/context` (metadata + DTO schemas + decompiled handler +
+    OSGi implementations), Draft 2020-12 JSON Schema & examples (`/code/schema`), bytecode outlines and inline
+    service hints (`/code/class`), live OSGi implementations (`/code/implementations`), constant-pool callers and grep
+    (`/code/callers`, `/code/grep`), safe bundle resource reader (`/code/resource`), typed BFS reference graphs
+    (`/code/graph?preset=domain`), and Vineflower 1.11.1 / CFR 0.152 decompilation (`/code/source`). Most read
+    endpoints support `ETag` / `If-None-Match` (`304`) and `format=markdown` (`Accept: text/markdown`).
+- **Built-in Read-Only MCP Server (`POST /rest/restbrowser/1/mcp`)**:
+  - Streamable HTTP JSON-RPC 2.0 exposing 4 catalog tools for licensed users and 16 read-only tools total for system
+    administrators over PAT authentication:
+
+```json
+{
+  "mcpServers": {
+    "rest-api-browser": {
+      "url": "https://your-instance/rest/restbrowser/1/mcp",
+      "headers": {
+        "Authorization": "Bearer <PERSONAL_ACCESS_TOKEN>"
+      }
+    }
+  }
+}
+```
+
+Full endpoint parameters, MCP tool inventory, caching rules, and `curl` examples: [docs/AGENT-API.md](docs/AGENT-API.md).
 
 ## Open work
 
@@ -150,6 +196,7 @@ mvn -B clean package -DskipTests
 src/test/product/product.sh start
 python src/test/product/smoke.py --expect-version 11.3.13
 node src/test/product/ui.js
+node src/test/product/ui_next.js                   # the new UI, OpenAPI 3.1, MCP & /code/* API
 src/test/product/product.sh stop
 ```
 

@@ -5,7 +5,7 @@
     <parent>
         <groupId>com.atlassian.pom</groupId>
         <artifactId>public-pom</artifactId>
-        <version>6.2.5</version>
+        <version>6.3.9</version>
     </parent>
 
     <groupId>com.atlassian.labs</groupId>
@@ -62,6 +62,7 @@
         <skipTests>false</skipTests>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
+        <maven.compiler.release>21</maven.compiler.release>
         <atlassian.plugin.key>${project.groupId}.${project.artifactId}</atlassian.plugin.key>
 
         <bamboo.eldest-supported.version>9.2.16</bamboo.eldest-supported.version>
@@ -73,7 +74,7 @@
         <fecru.latest.version>4.8.10-20220620091927</fecru.latest.version>
         <jira.eldest-supported.version>9.4.22</jira.eldest-supported.version>
 
-        <platform.version>8.0.0</platform.version>
+        <platform.version>8.0.19</platform.version>
         <refapp.version>${platform.version}</refapp.version>
 
         <!-- Override this to test in a different product -->
@@ -126,7 +127,7 @@
         <dependency>
             <groupId>com.atlassian.plugins</groupId>
             <artifactId>atlassian-plugins-osgi-javaconfig</artifactId>
-            <version>0.6.1</version>
+            <version>0.7.0</version>
             <scope>compile</scope>
         </dependency>
         <dependency>

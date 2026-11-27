@@ -42,7 +42,8 @@ public class ImportedPlatformServices {
     /** Optional: not every product exports it; the catalog then falls back to the plugin's own flags. */
     @Bean
     public PluginMetadataManager pluginMetadataManager() {
-        return importOsgiService(PluginMetadataManager.class, defaultOptions().optional().withTimeout(Duration.ofSeconds(1)));
+        return importOsgiService(PluginMetadataManager.class,
+                defaultOptions().optional_DANGEROUS_ReadTheJavadocs().withTimeout(Duration.ofSeconds(1)));
     }
 
     @Bean

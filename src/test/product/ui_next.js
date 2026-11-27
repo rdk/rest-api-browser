@@ -1032,6 +1032,29 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
             console.log('SKIP no text form-parameter operation found in this catalog');
         }
 
+        // admin intro page: decorated entry page linked from Jira / Confluence administration
+        await b.navigate(PAGE + '/admin');
+        const adminIntroOk = await b.waitFor(`!!document.querySelector('#rab-admin-intro') && !!document.querySelector('#rab-open-fullscreen')`, 30000);
+        const adminCheck = adminIntroOk ? await b.evaluate(`(() => {
+            const cta = document.querySelector('#rab-open-fullscreen');
+            const mcp = document.querySelector('#rab-mcp-config');
+            const stuck = document.querySelector('#rab-prompt-stuck');
+            const chrome = !!(document.querySelector('#header, #admin-nav, #admin-menu, .aui-header, .aui-page-panel-nav, .acs-side-bar'));
+            return {
+                ctaHref: cta ? cta.getAttribute('href') : null,
+                ctaTarget: cta ? cta.getAttribute('target') : null,
+                ctaWidth: cta ? Math.round(cta.getBoundingClientRect().width) : 0,
+                mcpHasUrl: !!(mcp && mcp.textContent && mcp.textContent.includes('/rest/restbrowser/1/mcp')),
+                stuckHasSteps: !!(stuck && stuck.textContent && stuck.textContent.includes('investigate_operation_context')),
+                chrome,
+            };
+        })()`) : { error: 'admin intro not rendered' };
+        c.check('administration intro page (/rest-api-browser/admin) renders product chrome, full-screen launch button, MCP config, and stuck-endpoint prompt',
+            adminIntroOk && typeof adminCheck.ctaHref === 'string' && adminCheck.ctaHref.endsWith('/plugins/servlet/rest-api-browser')
+            && adminCheck.ctaTarget === '_blank' && adminCheck.ctaWidth > 80 && adminCheck.mcpHasUrl && adminCheck.stuckHasSteps && adminCheck.chrome,
+            adminCheck);
+        await b.shot(path.join(SHOTS, `${PRODUCT}-admin-intro.png`));
+
         // errors
         const own = b.exceptions.filter(e => /next\.js|rest-api-browser|restbrowser/i.test(e));
         c.check('no JavaScript exception from the new UI', own.length === 0, own);

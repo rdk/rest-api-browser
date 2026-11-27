@@ -1,0 +1,238 @@
+.rab-admin {
+    color: var(--ds-text, #172b4d);
+    max-width: 1180px;
+    padding: 8px 4px 28px;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.rab-admin-hero {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px 24px;
+    padding: 22px 24px;
+    margin-bottom: 18px;
+    background: var(--ds-surface-raised, #ffffff);
+    border: 1px solid var(--ds-border, #dfe1e6);
+    border-radius: 8px;
+    box-shadow: var(--ds-shadow-raised, 0 1px 2px rgba(9, 30, 66, 0.08));
+}
+
+.rab-admin-hero-main {
+    flex: 1 1 520px;
+    min-width: 0;
+}
+
+.rab-admin-eyebrow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.rab-admin-title {
+    margin: 0 4px 0 0;
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 1.25;
+    color: var(--ds-text, #172b4d);
+}
+
+.rab-admin-lead {
+    margin: 0;
+    color: var(--ds-text-subtle, #44546f);
+    max-width: 78ch;
+}
+
+.rab-admin-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+}
+
+.rab-admin .rab-admin-cta.aui-button-primary {
+    display: inline-flex;
+    align-items: center;
+    min-height: 40px;
+    padding: 0 18px;
+    font-size: 14px;
+    font-weight: 600;
+    background: var(--ds-background-brand-bold, #0c66e4);
+    color: var(--ds-text-inverse, #ffffff);
+    border-color: transparent;
+}
+
+.rab-admin .rab-admin-cta.aui-button-primary:hover,
+.rab-admin .rab-admin-cta.aui-button-primary:focus {
+    background: var(--ds-background-brand-bold-hovered, #0055cc);
+    color: var(--ds-text-inverse, #ffffff);
+    text-decoration: none;
+}
+
+.rab-admin .rab-admin-secondary {
+    display: inline-flex;
+    align-items: center;
+    min-height: 40px;
+}
+
+.rab-admin-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+    gap: 18px;
+    margin-bottom: 18px;
+}
+
+.rab-admin-grid-compact {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 14px;
+    margin-bottom: 0;
+}
+
+@media (max-width: 980px) {
+    .rab-admin-grid,
+    .rab-admin-grid-compact {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.rab-admin-card {
+    background: var(--ds-surface-raised, #ffffff);
+    border: 1px solid var(--ds-border, #dfe1e6);
+    border-radius: 8px;
+    padding: 18px 20px;
+    margin-bottom: 18px;
+    min-width: 0;
+}
+
+.rab-admin-prompts {
+    margin-bottom: 0;
+}
+
+.rab-admin-card h2 {
+    margin: 0 0 8px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--ds-text, #172b4d);
+}
+
+.rab-admin-card h3 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ds-text, #172b4d);
+}
+
+.rab-admin-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.rab-admin-muted {
+    color: var(--ds-text-subtle, #44546f);
+    margin: 0 0 12px;
+    font-size: 13px;
+}
+
+.rab-admin-note {
+    margin: 10px 0 0;
+}
+
+.rab-admin-table {
+    margin: 0;
+    width: 100%;
+    table-layout: fixed;
+}
+
+.rab-admin-table th:first-child,
+.rab-admin-table td:first-child {
+    width: 28%;
+}
+
+.rab-admin-table th:last-child,
+.rab-admin-table td:last-child {
+    width: 84px;
+    text-align: right;
+}
+
+@media (min-width: 820px) {
+    .rab-admin-table code {
+        white-space: nowrap;
+    }
+}
+
+.rab-admin-table td {
+    vertical-align: middle;
+    word-break: break-word;
+}
+
+.rab-admin code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 12px;
+    background: var(--ds-background-neutral, rgba(9, 30, 66, 0.06));
+    color: var(--ds-text, #172b4d);
+    padding: 2px 5px;
+    border-radius: 3px;
+}
+
+.rab-admin-table a {
+    color: var(--ds-link, #0c66e4);
+}
+
+.rab-admin-code,
+.rab-admin-prompt {
+    margin: 0;
+    padding: 12px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--ds-border, #dfe1e6);
+    background: var(--ds-surface-sunken, #f4f5f7);
+    color: var(--ds-text, #172b4d);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.rab-admin-code {
+    overflow-x: auto;
+    white-space: pre;
+}
+
+.rab-admin-prompt {
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.rab-prompt-box {
+    border: 1px solid var(--ds-border, #dfe1e6);
+    border-radius: 6px;
+    padding: 14px;
+    background: var(--ds-surface, #ffffff);
+    min-width: 0;
+}
+
+.rab-prompt-featured {
+    border-left: 3px solid var(--ds-background-brand-bold, #0c66e4);
+}
+
+.rab-copy-btn.is-copied {
+    font-weight: 600;
+    color: var(--ds-text-success, #216e4e);
+}
+
+.rab-sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
