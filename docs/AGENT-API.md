@@ -122,6 +122,7 @@ All 16 tools accept an optional `maxChars` integer (`200..200000`) to cap return
 - `explore-endpoint-payload` (all licensed users, optional `query`) — document a REST endpoint's permissions, parameters, and DTO payload
 - `debug-stuck-endpoint` (`@SystemAdminOnly`, optional `target`) — read-only investigation workflow for slow/stuck REST endpoints
 - `trace-rest-error` (`@SystemAdminOnly`, optional `error`) — trace an unexpected REST error string back to bytecode callers and handlers
+- `dual-profile-and-decompile` (`@SystemAdminOnly`, optional `target`, advertised when Live Scalpel is enabled) — combined Live Scalpel runtime trace + REST API Browser bytecode workflow
 
 ## Content Negotiation, ETag Caching & Error Recovery
 

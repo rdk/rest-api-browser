@@ -175,7 +175,7 @@
 
       <section id="rab-companion-card" class="rab-admin-card">
         <div class="rab-admin-card-head">
-          <div class="rab-admin-eyebrow" style="margin-bottom:0">
+          <div class="rab-admin-eyebrow rab-admin-eyebrow-tight">
             <h2>Companion Workflow: Live Scalpel + REST API Browser (Dual-MCP)</h2>
             #if($hasLiveScalpel)
             <span class="aui-lozenge aui-lozenge-success" data-rab-companion-pill="detected">Live Scalpel detected on this instance</span>
@@ -190,7 +190,7 @@
           with live Java decompilation and OSGi resource inspection from <strong>REST API Browser</strong>:
         </p>
         <pre id="rab-dual-mcp-config" class="rab-admin-code">$dualMcpConfigJson</pre>
-        <article class="rab-prompt-box" style="margin-top:12px">
+        <article class="rab-prompt-box rab-prompt-box-spaced">
           <div class="rab-admin-card-head">
             <h3>Combined Runtime &rarr; Bytecode &rarr; Verify Prompt</h3>
             <button type="button" class="aui-button rab-copy-btn" data-copy-target="rab-prompt-dual" aria-label="Copy combined workflow prompt">Copy prompt</button>

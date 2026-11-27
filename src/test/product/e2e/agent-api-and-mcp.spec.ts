@@ -14,6 +14,16 @@ test.describe('Agent REST APIs, OpenAPI 3.1, and MCP protocol', () => {
     expect(llmsFull.status()).toBe(200);
     expect(await llmsFull.text()).toContain('Full Agent Reference');
 
+    const brief1 = await rabApi.get(product.url('/rest/restbrowser/1/catalog/brief?top=5'));
+    expect(brief1.status()).toBe(200);
+    expect(await brief1.text()).toContain('top modules');
+    const briefTag = brief1.headers()['etag'];
+    expect(briefTag).toBeTruthy();
+    const brief304 = await rabApi.get(product.url('/rest/restbrowser/1/catalog/brief?top=5'), {
+      headers: { 'If-None-Match': briefTag },
+    });
+    expect(brief304.status()).toBe(304);
+
     for (const p of ['/rest/restbrowser/1/openapi', '/rest/restbrowser/1/openapi.json']) {
       const res = await rabApi.get(product.url(p));
       expect(res.status()).toBe(200);
@@ -79,7 +89,17 @@ test.describe('Agent REST APIs, OpenAPI 3.1, and MCP protocol', () => {
     const resList = (await (await postMcp({ jsonrpc: '2.0', id: 3, method: 'resources/list' })).json()) as {
       result: { resources: Array<{ uri: string }> };
     };
-    expect(resList.result.resources.map((r) => r.uri)).toContain('rab://llms.txt');
+    const uris = resList.result.resources.map((r) => r.uri);
+    expect(uris).toContain('rab://llms.txt');
+    expect(uris).toContain('rab://catalog/brief');
+
+    const briefTool = (await (await postMcp({
+      jsonrpc: '2.0',
+      id: 31,
+      method: 'tools/call',
+      params: { name: 'get_catalog_summary', arguments: { format: 'brief', maxChars: 240 } },
+    })).json()) as { result: { content: Array<{ text: string }> } };
+    expect(briefTool.result.content[0].text.length).toBeLessThanOrEqual(240);
 
     const resRead = (await (await postMcp({
       jsonrpc: '2.0',

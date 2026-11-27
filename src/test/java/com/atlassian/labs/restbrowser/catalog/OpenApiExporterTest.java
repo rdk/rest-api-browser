@@ -33,6 +33,7 @@ public class OpenApiExporterTest {
                 OpenApiExporter.selfSpecJson("https://example.test/jira/", "4.3.3-SNAPSHOT", false));
         assertEquals("3.1.0", licensedOnly.get("openapi"));
         Map<String, Object> licensedPaths = (Map<String, Object>) licensedOnly.get("paths");
+        assertTrue(licensedPaths.containsKey("/catalog/brief"));
         assertTrue(licensedPaths.containsKey("/catalog/operations"));
         assertTrue(licensedPaths.containsKey("/catalog/openapi"));
         assertTrue(licensedPaths.containsKey("/openapi"));
@@ -41,6 +42,10 @@ public class OpenApiExporterTest {
         assertFalse(licensedPaths.containsKey("/code/resource"));
         assertFalse(licensedPaths.containsKey("/code/class"));
 
+        Map<String, Object> briefGet = (Map<String, Object>) ((Map<String, Object>) licensedPaths.get("/catalog/brief")).get("get");
+        List<Map<String, Object>> briefParams = (List<Map<String, Object>>) briefGet.get("parameters");
+        assertEquals("integer", ((Map<String, Object>) briefParams.get(0).get("schema")).get("type"));
+
         Map<String, Object> sysadmin = JsonParser.parseObject(
                 OpenApiExporter.selfSpecJson("https://example.test/jira/", "4.3.3-SNAPSHOT", true));
         Map<String, Object> adminPaths = (Map<String, Object>) sysadmin.get("paths");
@@ -48,6 +53,12 @@ public class OpenApiExporterTest {
         assertTrue(adminPaths.containsKey("/code/resource"));
         assertTrue(adminPaths.containsKey("/code/class"));
         assertTrue(adminPaths.containsKey("/catalog/refresh"));
+        Map<String, Object> ctxPost = (Map<String, Object>) ((Map<String, Object>) adminPaths.get("/code/context")).get("post");
+        List<Map<String, Object>> ctxParams = (List<Map<String, Object>>) ctxPost.get("parameters");
+        Map<String, Object> maxCharsParam = ctxParams.stream()
+                .filter(p -> "maxChars".equals(p.get("name")))
+                .findFirst().orElseThrow();
+        assertEquals("integer", ((Map<String, Object>) maxCharsParam.get("schema")).get("type"));
     }
 
     @Test

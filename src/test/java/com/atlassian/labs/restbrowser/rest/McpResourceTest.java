@@ -154,6 +154,22 @@ public class McpResourceTest {
                 ((Map<String, Object>) JsonParser.parseObject((String) promptsResp.getEntity()).get("result")).get("prompts");
         assertEquals(3, prompts.size());
 
+        // When Live Scalpel is enabled, sysadmin sees dual-profile-and-decompile prompt
+        when(plugins.isPluginEnabled(com.atlassian.labs.restbrowser.spring.LocalBeans.LIVE_SCALPEL_KEY)).thenReturn(true);
+        Response dualPromptsResp = resource.rpc(bytes("{\"jsonrpc\":\"2.0\",\"id\":29,\"method\":\"prompts/list\"}"), request);
+        List<Map<String, Object>> dualPrompts = (List<Map<String, Object>>)
+                ((Map<String, Object>) JsonParser.parseObject((String) dualPromptsResp.getEntity()).get("result")).get("prompts");
+        assertEquals(4, dualPrompts.size());
+        assertTrue(dualPrompts.stream().anyMatch(p -> "dual-profile-and-decompile".equals(p.get("name"))));
+
+        Response dualPromptGet = resource.rpc(bytes(
+                "{\"jsonrpc\":\"2.0\",\"id\":30,\"method\":\"prompts/get\",\"params\":{\"name\":\"dual-profile-and-decompile\",\"arguments\":{\"target\":\"/rest/api/2/search\"}}}"), request);
+        Map<String, Object> dpRes = (Map<String, Object>) JsonParser.parseObject((String) dualPromptGet.getEntity()).get("result");
+        String dpText = String.valueOf(((Map<String, Object>) ((List<Map<String, Object>>) dpRes.get("messages")).get(0).get("content")).get("text"));
+        assertTrue(dpText.contains("/rest/api/2/search"));
+        assertTrue(dpText.contains("scalpel_trace"));
+        assertTrue(dpText.contains("decompile_source"));
+
         Response debugPrompt = resource.rpc(bytes(
                 "{\"jsonrpc\":\"2.0\",\"id\":25,\"method\":\"prompts/get\",\"params\":{\"name\":\"debug-stuck-endpoint\",\"arguments\":{\"target\":\"/rest/api/2/issue\"}}}"), request);
         Map<String, Object> pRes = (Map<String, Object>) JsonParser.parseObject((String) debugPrompt.getEntity()).get("result");
@@ -207,6 +223,10 @@ public class McpResourceTest {
         Response forbiddenPrompt = resource.rpc(bytes(
                 "{\"jsonrpc\":\"2.0\",\"id\":54,\"method\":\"prompts/get\",\"params\":{\"name\":\"debug-stuck-endpoint\"}}"), request);
         assertEquals(-32003L, ((Map<String, Object>) JsonParser.parseObject((String) forbiddenPrompt.getEntity()).get("error")).get("code"));
+
+        Response forbiddenDualPrompt = resource.rpc(bytes(
+                "{\"jsonrpc\":\"2.0\",\"id\":55,\"method\":\"prompts/get\",\"params\":{\"name\":\"dual-profile-and-decompile\"}}"), request);
+        assertEquals(-32003L, ((Map<String, Object>) JsonParser.parseObject((String) forbiddenDualPrompt.getEntity()).get("error")).get("code"));
 
         Response forbiddenTool = resource.rpc(bytes(
                 "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{\"name\":\"inspect_class\",\"arguments\":{\"class\":\"" + cls + "\"}}}"), request);

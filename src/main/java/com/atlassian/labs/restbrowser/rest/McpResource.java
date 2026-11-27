@@ -143,7 +143,8 @@ public class McpResource {
             case "resources/list" -> rpcResultResponse(id, buildResourcesList());
             case "resources/templates/list" -> rpcResultResponse(id, buildResourceTemplatesList(sysadmin));
             case "resources/read" -> handleResourceRead(id, req.get("params"), sysadmin, request);
-            case "prompts/list" -> rpcResultResponse(id, buildPromptsList(sysadmin));
+            case "prompts/list" -> rpcResultResponse(id,
+                    buildPromptsList(sysadmin, sysadmin && LocalBeans.isLiveScalpelEnabled(pluginAccessor)));
             case "prompts/get" -> handlePromptGet(id, req.get("params"), sysadmin);
             default -> rpcErrorResponse(id, -32601, "Method not found: " + method);
         };
@@ -325,7 +326,7 @@ public class McpResource {
                 .endObject()
                 .name("serverInfo").beginObject()
                 .field("name", "rest-api-browser")
-                .field("version", ver.isEmpty() ? "4.4.0" : ver)
+                .field("version", ver.isEmpty() ? "unknown" : ver)
                 .endObject()
                 .field("instructions", sysadmin
                         ? "Read-only Atlassian REST & JVM inspection tools, resources, and prompts enabled. Start with search_operations, resolve_url, or investigate_operation_context."
@@ -527,7 +528,7 @@ public class McpResource {
         return rpcResultResponse(id, out);
     }
 
-    private static String buildPromptsList(boolean sysadmin) {
+    private static String buildPromptsList(boolean sysadmin, boolean liveScalpel) {
         Json j = new Json().beginObject().name("prompts").beginArray();
         promptEntry(j, "explore-endpoint-payload",
                 "Document a REST endpoint's permissions, parameters, and request/response DTO payload.",
@@ -539,6 +540,11 @@ public class McpResource {
             promptEntry(j, "trace-rest-error",
                     "Trace an unexpected REST error message or status code back to bytecode and handlers.",
                     "error", "Error text, message fragment, or HTTP status symptom (optional)");
+            if (liveScalpel) {
+                promptEntry(j, "dual-profile-and-decompile",
+                        "Diagnose a slow or failing REST endpoint across Live Scalpel runtime traces and REST API Browser bytecode.",
+                        "target", "Target /rest/... URL or symptom (optional)");
+            }
         }
         return j.endArray().endObject().toString();
     }
@@ -601,6 +607,16 @@ public class McpResource {
                         AdminIntroServlet.buildPromptTraceError(apiBase),
                         "<PASTE ERROR STRING / LOG FRAGMENT HERE>",
                         strArg(args, "error"));
+            }
+            case "dual-profile-and-decompile" -> {
+                if (!sysadmin) {
+                    return rpcErrorResponse(id, -32003, "Forbidden: system administrator privileges required for " + name);
+                }
+                description = "Diagnose a slow or failing REST endpoint across Live Scalpel runtime traces and REST API Browser bytecode.";
+                promptText = substitutePlaceholder(
+                        AdminIntroServlet.buildPromptDualWorkflow(apiBase, base + "/rest/scalpel/1"),
+                        "<PASTE /rest/... URL HERE>",
+                        strArg(args, "target"));
             }
             default -> {
                 return rpcErrorResponse(id, -32602, "Unknown prompt: " + name);

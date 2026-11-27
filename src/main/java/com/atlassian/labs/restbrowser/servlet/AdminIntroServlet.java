@@ -86,10 +86,10 @@ public class AdminIntroServlet extends RequiresLoginServlet {
         final String productName = nonNull(applicationProperties.getDisplayName());
         final String productVersion = nonNull(applicationProperties.getVersion());
         final String pluginVersion = LocalBeans.pluginVersion(pluginAccessor);
-        final boolean hasLiveScalpel = LocalBeans.isLiveScalpelEnabled(pluginAccessor);
-        final String nodeId = nonNull(LocalBeans.clusterNodeId());
         final UserKey user = RestAuth.remoteUser(userManager, request);
         final boolean isSysadmin = RestAuth.isSystemAdmin(userManager, user);
+        final boolean hasLiveScalpel = isSysadmin && LocalBeans.isLiveScalpelEnabled(pluginAccessor);
+        final String nodeId = nonNull(LocalBeans.clusterNodeId());
 
         final DecoratorMeta meta = decoratorMeta(productName);
         final CatalogSnapshot snap = catalog.peek();
@@ -166,6 +166,7 @@ public class AdminIntroServlet extends RequiresLoginServlet {
         return "{\n"
                 + "  \"mcpServers\": {\n"
                 + "    \"rest-api-browser\": {\n"
+                + "      \"type\": \"http\",\n"
                 + "      \"url\": \"" + escapedUrl + "\",\n"
                 + "      \"headers\": {\n"
                 + "        \"Authorization\": \"Bearer <PERSONAL_ACCESS_TOKEN>\"\n"

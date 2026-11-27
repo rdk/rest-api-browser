@@ -33,6 +33,14 @@
     margin-bottom: 8px;
 }
 
+.rab-admin-eyebrow-tight {
+    margin-bottom: 0;
+}
+
+.rab-prompt-box-spaced {
+    margin-top: 12px;
+}
+
 .rab-admin-title {
     margin: 0 4px 0 0;
     font-size: 22px;

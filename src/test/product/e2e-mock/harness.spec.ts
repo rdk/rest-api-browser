@@ -22,6 +22,10 @@ test.beforeAll(async () => {
   server = http.createServer((req, res) => {
     const reqUrl = new URL(req.url || '/', 'http://127.0.0.1');
     const cleanRel = decodeURIComponent(reqUrl.pathname).replace(/^\/+/, '');
+    if (cleanRel === 'favicon.ico') {
+      res.writeHead(204).end();
+      return;
+    }
     const resolved = path.resolve(REPO_ROOT, cleanRel);
     if (resolved !== REPO_ROOT && !resolved.startsWith(REPO_ROOT + path.sep)) {
       res.writeHead(403).end('Forbidden');
@@ -60,9 +64,14 @@ function harnessUrl(query = ''): string {
   return `${baseOrigin}/src/test/harness/index.html${query ? `?${query}` : ''}`;
 }
 
-function trackPageErrors(page: Page): string[] {
+function trackPageErrors(page: Page, includeConsole = true): string[] {
   const errs: string[] = [];
   page.on('pageerror', (e) => errs.push(String(e)));
+  if (includeConsole) {
+    page.on('console', (m) => {
+      if (m.type() === 'error') errs.push(m.text());
+    });
+  }
   return errs;
 }
 
@@ -77,7 +86,9 @@ test.describe('Offline mock harness UI & code intelligence', () => {
     // Open GET serverInfo
     await page.locator('[data-testid="op"][data-path="api/2/serverInfo"]').click();
     await expect(page.getByTestId('operation-path')).toHaveText('api/2/serverInfo');
-    await expect(page.getByTestId('trace-in-scalpel')).toHaveAttribute('href', '/ctx/plugins/servlet/live-scalpel#traces');
+    const scalpelLink = page.getByTestId('trace-in-scalpel');
+    await expect(scalpelLink).toHaveAttribute('href', '/ctx/plugins/servlet/live-scalpel#traces');
+    await expect(scalpelLink).toHaveCSS('text-decoration-line', 'none');
 
     // Send live mock GET
     await page.getByTestId('send').click();
@@ -206,18 +217,40 @@ test.describe('Offline mock harness UI & code intelligence', () => {
     await page.keyboard.press('Escape');
     await expect(page.locator('.rab-n-topbar')).not.toHaveAttribute('inert', '');
 
+    // Verify browser popstate restores supportedOnly state
+    await page.evaluate(() => {
+      history.pushState(null, '', '?supportedOnly=1');
+      history.pushState(null, '', '?supportedOnly=0');
+      history.pushState(null, '', '?supportedOnly=1');
+    });
+    await page.goBack();
+    await expect(supportedBtn).toHaveAttribute('aria-pressed', 'false');
+    await page.goBack();
+    await expect(supportedBtn).toHaveAttribute('aria-pressed', 'true');
+
     expect(errors).toEqual([]);
   });
 
-  test('handles ?fail=login-required and ?scalpel=0 cleanly', async ({ page }) => {
-    const errors = trackPageErrors(page);
+  test('handles ?fail=login-required, ?fail=system-admin-only, ?fail=network, and ?scalpel=0 cleanly', async ({ page }) => {
+    const errors = trackPageErrors(page, false);
 
     await page.goto(harnessUrl('scalpel=0'));
     await page.locator('[data-testid="op"][data-path="api/2/serverInfo"]').click();
     await expect(page.getByTestId('operation-path')).toHaveText('api/2/serverInfo');
     await expect(page.getByTestId('trace-in-scalpel')).toHaveCount(0);
 
+    // Non-sysadmin cannot open SourceDialog via deep-link, see Trace in Scalpel, or open the Java tab
+    await page.goto(harnessUrl('fail=system-admin-only&class=com.example.ServerInfoResource'));
+    await expect(page.getByTestId('search')).toBeVisible();
+    await expect(page.getByTestId('source-dialog')).toHaveCount(0);
+    await page.locator('[data-testid="op"][data-path="api/2/serverInfo"]').click();
+    await expect(page.getByTestId('trace-in-scalpel')).toHaveCount(0);
+    await expect(page.locator('.rab-n-request [role="tab"]', { hasText: 'Java' })).toHaveCount(0);
+
     await page.goto(harnessUrl('fail=login-required'));
+    await expect(page.locator('[data-testid="status"] .rab-n-error')).toBeVisible();
+
+    await page.goto(harnessUrl('fail=network'));
     await expect(page.locator('[data-testid="status"] .rab-n-error')).toBeVisible();
 
     expect(errors).toEqual([]);

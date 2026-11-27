@@ -73,6 +73,13 @@ body.rab-next-page :is(#header, #main-header, #footer, #sidebar-container) {
 }
 .rab-n-button:active:not(:disabled) { transform: translateY(0.5px); }
 .rab-n-button:disabled { opacity: 0.48; cursor: not-allowed; box-shadow: none; }
+.rab-n a.rab-n-button, .rab-n a.rab-n-button:link, .rab-n a.rab-n-button:visited {
+  color: var(--rab-text);
+  text-decoration: none;
+}
+.rab-n a.rab-n-button:hover, .rab-n a.rab-n-button:focus {
+  text-decoration: none;
+}
 
 /* Primary and write-method gradient Send button */
 .rab-n-send {

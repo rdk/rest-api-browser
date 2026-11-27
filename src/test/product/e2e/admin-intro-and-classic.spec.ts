@@ -13,6 +13,9 @@ test.describe('Admin Intro landing page and Classic WADL UI', () => {
 
     await expect(rabPage.locator('#rab-mcp-config')).toContainText('/rest/restbrowser/1/mcp');
     await expect(rabPage.locator('#rab-prompt-stuck')).toContainText('investigate_operation_context');
+    await expect(rabPage.locator('#rab-safety-card')).toBeVisible();
+    await expect(rabPage.locator('#rab-companion-card')).toBeVisible();
+    await expect(rabPage.locator('#rab-dual-mcp-config')).toContainText('/rest/scalpel/1/mcp');
 
     const hasChrome = await rabPage.evaluate(() =>
       !!document.querySelector('#header, #admin-nav, #admin-menu, .aui-header, .aui-page-panel-nav, .acs-side-bar'),

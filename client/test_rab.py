@@ -181,6 +181,57 @@ class RabClientTests(unittest.TestCase):
             os.environ.clear()
             os.environ.update(old)
 
+    def test_from_env_precedence_and_search_graph_cli_flags(self) -> None:
+        old = os.environ.copy()
+        try:
+            os.environ["RAB_URL"] = self.base_url
+            os.environ["RAB_USER"] = "envuser"
+            os.environ["RAB_PASSWORD"] = "envpass"
+
+            # Explicit CLI token overrides RAB_USER/RAB_PASSWORD without ValueError
+            RecordingHandler.next_response = (200, "text/plain", "ok\n", {})
+            with redirect_stdout(io.StringIO()):
+                rc = rab.main(["--token", "cli-pat", "brief"])
+            self.assertEqual(rc, 0)
+            self.assertEqual(RecordingHandler.requests[0]["headers"]["authorization"], "Bearer cli-pat")
+
+            # Explicit CLI user/password overrides RAB_TOKEN
+            os.environ["RAB_TOKEN"] = "env-pat"
+            RecordingHandler.next_response = (200, "text/plain", "ok\n", {})
+            with redirect_stdout(io.StringIO()):
+                rc2 = rab.main(["--user", "cliuser", "--password", "clipass", "brief"])
+            self.assertEqual(rc2, 0)
+            expected_basic = "Basic " + base64.b64encode(b"cliuser:clipass").decode("ascii")
+            self.assertEqual(RecordingHandler.requests[1]["headers"]["authorization"], expected_basic)
+
+            # When both RAB_TOKEN and RAB_USER exist without CLI flags, RAB_TOKEN wins cleanly
+            c = rab.RabClient.from_env()
+            self.assertEqual(c._auth_header, "Bearer env-pat")
+
+            # search --deprecated & graph extra flags
+            RecordingHandler.next_response = (200, "text/markdown", "# ops\n", {})
+            with redirect_stdout(io.StringIO()):
+                rc3 = rab.main(["search", "issue", "--deprecated", "true"])
+            self.assertEqual(rc3, 0)
+            qs3 = urllib.parse.parse_qs(urllib.parse.urlparse(RecordingHandler.requests[2]["path"]).query)
+            self.assertEqual(qs3["deprecated"], ["true"])
+
+            RecordingHandler.next_response = (200, "application/json", '{"nodes":[]}', {})
+            with redirect_stdout(io.StringIO()):
+                rc4 = rab.main([
+                    "graph", "--class", "com.example.Demo", "--include-sources",
+                    "--decompiler", "cfr", "--include-jdk", "--exclude-libraries",
+                ])
+            self.assertEqual(rc4, 0)
+            qs4 = urllib.parse.parse_qs(urllib.parse.urlparse(RecordingHandler.requests[3]["path"]).query)
+            self.assertEqual(qs4["includeSources"], ["true"])
+            self.assertEqual(qs4["decompiler"], ["cfr"])
+            self.assertEqual(qs4["includeJdk"], ["true"])
+            self.assertEqual(qs4["excludeLibraries"], ["true"])
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
 
 if __name__ == "__main__":
     unittest.main()

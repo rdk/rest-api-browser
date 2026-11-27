@@ -347,7 +347,8 @@ public final class OpenApiExporter {
     private static String guessSelfParamType(String name) {
         if ("limit".equals(name) || "offset".equals(name) || "fromBundle".equals(name) || "bundleId".equals(name)
                 || "depth".equals(name) || "maxNodes".equals(name) || "startLine".equals(name)
-                || "maxLines".equals(name) || "schemaDepth".equals(name)) {
+                || "maxLines".equals(name) || "schemaDepth".equals(name) || "top".equals(name)
+                || "maxChars".equals(name)) {
             return "integer";
         }
         if ("deprecated".equals(name) || "includeMeta".equals(name) || "includeJdk".equals(name)

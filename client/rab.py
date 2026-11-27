@@ -117,11 +117,31 @@ class RabClient:
         ca_file: Optional[str] = None,
         timeout: float = 60.0,
     ) -> "RabClient":
+        if token is not None and (user is not None or password is not None):
+            raise ValueError("Do not mix token and user/password")
+        if token is not None:
+            eff_token: Optional[str] = token
+            eff_user: Optional[str] = None
+            eff_password: Optional[str] = None
+        elif user is not None or password is not None:
+            eff_token = None
+            eff_user = user if user is not None else os.environ.get("RAB_USER")
+            eff_password = password if password is not None else os.environ.get("RAB_PASSWORD")
+        else:
+            env_token = os.environ.get("RAB_TOKEN")
+            if env_token:
+                eff_token = env_token
+                eff_user = None
+                eff_password = None
+            else:
+                eff_token = None
+                eff_user = os.environ.get("RAB_USER")
+                eff_password = os.environ.get("RAB_PASSWORD")
         return cls(
             base_url if base_url is not None else os.environ.get("RAB_URL", ""),
-            user=user if user is not None else os.environ.get("RAB_USER"),
-            password=password if password is not None else os.environ.get("RAB_PASSWORD"),
-            token=token if token is not None else os.environ.get("RAB_TOKEN"),
+            user=eff_user,
+            password=eff_password,
+            token=eff_token,
             insecure=insecure,
             ca_file=ca_file if ca_file is not None else os.environ.get("SSL_CERT_FILE"),
             timeout=timeout,
@@ -684,6 +704,7 @@ def build_parser() -> argparse.ArgumentParser:
     ps.add_argument("--module", default="")
     ps.add_argument("--plugin", default="")
     ps.add_argument("--access", default="")
+    ps.add_argument("--deprecated", choices=("true", "false"), default=None)
     ps.add_argument("--uses-class", default="")
     ps.add_argument("--limit", type=int, default=25)
     ps.add_argument("--offset", type=int, default=0)
@@ -768,6 +789,10 @@ def build_parser() -> argparse.ArgumentParser:
     pgraph.add_argument("--preset", default="domain")
     pgraph.add_argument("--edge-kinds", default="")
     pgraph.add_argument("--package-prefix", default="")
+    pgraph.add_argument("--include-sources", action="store_true")
+    pgraph.add_argument("--decompiler", choices=("vineflower", "cfr"), default="vineflower")
+    pgraph.add_argument("--include-jdk", action="store_true")
+    pgraph.add_argument("--exclude-libraries", action="store_true")
 
     pres = sub.add_parser("resource", help="List or read non-binary OSGi bundle resources")
     pres.add_argument("--bundle-id", type=int, default=None)
@@ -820,6 +845,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 module=args.module,
                 plugin=args.plugin,
                 access=args.access,
+                deprecated=(None if args.deprecated is None else args.deprecated == "true"),
                 uses_class=args.uses_class,
                 limit=args.limit,
                 offset=args.offset,
@@ -930,7 +956,11 @@ def main(argv: Optional[List[str]] = None) -> int:
                 max_nodes=args.max_nodes,
                 preset=args.preset,
                 edge_kinds=args.edge_kinds,
+                include_jdk=args.include_jdk,
+                exclude_libraries=args.exclude_libraries,
                 package_prefix=args.package_prefix,
+                include_sources=args.include_sources,
+                decompiler=args.decompiler,
             )
         elif args.cmd == "resource":
             out = client.resource(

@@ -178,6 +178,8 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
   );
 
   const [selectedKey, setSelectedKey] = useState<string | undefined>(routeState.current.op);
+  const sysadminRef = useRef(false);
+  sysadminRef.current = !!summary?.sysadmin;
   const deepLinkedClass = useRef(false);
   useEffect(() => {
     const st = routeState.current;
@@ -196,6 +198,16 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
   useEffect(() => {
     const onPop = () => {
       const state = (routeState.current = parseState(location.search));
+      if (state.supportedOnly !== undefined) setSupportedOnly(state.supportedOnly);
+      if (sysadminRef.current && state.className) {
+        onOpenClass({
+          target: state.className,
+          candidates: [state.className],
+          focusMethod: state.method,
+          focusLine: state.line,
+          fromBundle: state.fromBundle,
+        });
+      }
       const refill = !!state.op && (Object.keys(state.path).length > 0 || Object.keys(state.q).length > 0
         || Object.keys(state.h).length > 0 || Object.keys(state.form ?? {}).length > 0);
       if (state.op !== selectedRef.current || refill) runner.abort();
@@ -207,7 +219,7 @@ export function App({ baseUrl, classicUrl, product, version, siteUrl, user }: Pr
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
-  }, [runner]);
+  }, [runner, onOpenClass]);
 
   const selectedRef = useRef(selectedKey);
   selectedRef.current = selectedKey;

@@ -134,6 +134,7 @@ public class AdminIntroServletTest {
         Map<String, Object> mcpCfg = JsonParser.parseObject((String) ctx.get("mcpConfigJson"));
         Map<String, Object> servers = (Map<String, Object>) mcpCfg.get("mcpServers");
         Map<String, Object> rab = (Map<String, Object>) servers.get("rest-api-browser");
+        assertEquals("http", rab.get("type"));
         assertEquals("https://example.test/jira/rest/restbrowser/1/mcp", rab.get("url"));
 
         String stuck = (String) ctx.get("promptDebugStuck");
@@ -154,6 +155,14 @@ public class AdminIntroServletTest {
         String dualPrompt = (String) ctx.get("promptDualWorkflow");
         assertTrue(dualPrompt.contains("scalpel_trace"));
         assertTrue(dualPrompt.contains("decompile_source"));
+
+        // Non-sysadmin Admin does not see sysadmin-only Live Scalpel companion flags/links
+        UserKey plainAdmin = new UserKey("plainadmin");
+        HttpServletRequest plainAdminReq = mock(HttpServletRequest.class);
+        when(userManager.getRemoteUserKey(plainAdminReq)).thenReturn(plainAdmin);
+        when(userManager.isAdmin(plainAdmin)).thenReturn(true);
+        when(userManager.isSystemAdmin(plainAdmin)).thenReturn(false);
+        assertEquals(Boolean.FALSE, servlet.getContext(plainAdminReq).get("hasLiveScalpel"));
     }
 
     @Test
@@ -191,6 +200,7 @@ public class AdminIntroServletTest {
         assertTrue(vm.contains("id=\"rab-mcp-config\""));
         assertTrue(vm.contains("id=\"rab-prompt-stuck\""));
         assertFalse("admin-intro.vm must remain CSP-clean with no inline <script>", vm.contains("<script"));
+        assertFalse("admin-intro.vm must avoid inline style attributes", vm.contains("style=\""));
 
         String xml;
         try (InputStream in = AdminIntroServlet.class.getResourceAsStream("/atlassian-plugin.xml")) {
