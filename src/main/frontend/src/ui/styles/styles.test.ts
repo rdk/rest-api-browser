@@ -90,4 +90,25 @@ describe('ui/styles', () => {
     const inBadge = opCss.match(/\.rab-n-in\s*\{([^}]*)\}/)?.[1] ?? '';
     expect(inBadge).toMatch(/white-space:\s*nowrap\b/);
   });
+
+  it('hides host AUI flag banners on /next and keeps overlay z-index layers above AUI flags', () => {
+    const baseCss = stripComments(readStyle('base.css'));
+    expect(baseCss).toMatch(/body:has\(#rab-next\)\s*:is\([^)]*#aui-flag-container/);
+    expect(baseCss).toMatch(/body\.rab-next-page\s*:is\([^)]*#aui-flag-container/);
+
+    const tokensCss = stripComments(readStyle('tokens.css'));
+    const readZ = (name: string) => {
+      const m = tokensCss.match(new RegExp(`--rab-z-${name}:\\s*(\\d+)\\s*;`));
+      expect(m, `--rab-z-${name}`).not.toBeNull();
+      return Number(m![1]);
+    };
+    const maxZ = readZ('max');
+    const modalZ = readZ('modal');
+    const classTipZ = readZ('classtip');
+    const uiTipZ = readZ('uitip');
+    expect(maxZ).toBeGreaterThan(4000);
+    expect(modalZ).toBeGreaterThan(maxZ);
+    expect(classTipZ).toBeGreaterThan(modalZ);
+    expect(uiTipZ).toBeGreaterThan(classTipZ);
+  });
 });

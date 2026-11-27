@@ -200,10 +200,10 @@
   --rab-z-card: 100;
   --rab-z-tip: 400;
   --rab-z-menu: 450;
-  --rab-z-max: 500;
-  --rab-z-modal: 600;
-  --rab-z-classtip: 700;
-  --rab-z-uitip: 800;
+  --rab-z-max: 4500;
+  --rab-z-modal: 4600;
+  --rab-z-classtip: 4700;
+  --rab-z-uitip: 4800;
 
   position: relative;
   display: flex;

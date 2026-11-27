@@ -8,8 +8,8 @@
 }
 
 /* Host product chrome hiding on the full-page app route (this bundle loads on /next only) */
-body:has(#rab-next) :is(#header, #main-header, #footer, #sidebar-container),
-body.rab-next-page :is(#header, #main-header, #footer, #sidebar-container) {
+body:has(#rab-next) :is(#header, #main-header, #footer, #sidebar-container, #aui-flag-container),
+body.rab-next-page :is(#header, #main-header, #footer, #sidebar-container, #aui-flag-container) {
   display: none !important;
 }
 :has(> #rab-next) { padding: 0 !important; }
