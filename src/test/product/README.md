@@ -56,7 +56,8 @@ src/test/product/product.sh stop                   # or keep it running for the 
 
 For the Playwright suite (`src/test/product`), use `npm run test:headed` (or `RAB_HEADED=1 npm test`) to watch a real
 Chrome/Edge window, `npm run test:ui` for the interactive Playwright UI, `npm run typecheck` to check TypeScript specs,
-and `npm run report` to open the HTML report (failures also retain a Playwright trace in `test-results/`).
+and `npm run report` to open the HTML report (failures also retain a Playwright trace in `test-results/`). Before
+adding or editing Playwright specs, follow [docs/PLAYWRIGHT-GUIDELINES.md](../../../docs/PLAYWRIGHT-GUIDELINES.md).
 
 The SDK starts the product in dev mode, where the page loads its scripts one by one. To check what a production
 instance serves, the bundle `rest-api-browser.min.js`, run the same outside dev mode:

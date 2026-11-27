@@ -3,10 +3,11 @@
 | Where | What |
 |---|---|
 | [GUIDELINES.md](GUIDELINES.md) | Rules for changing the code: state and listeners, keyboard and accessibility, data fidelity, secrets, CSS and skins. |
+| [PLAYWRIGHT-GUIDELINES.md](PLAYWRIGHT-GUIDELINES.md) | Agent guidelines for writing Playwright E2E tests in `src/test/product/e2e/`: Jira/Confluence rules, locators, auto-waiting, error gating, and pitfalls to avoid. |
 | [NEW-UI-PLAN.md](NEW-UI-PLAN.md) | The new UI's design: goals, the server-side catalog, the API, the page, the steps and their status. |
 | [AGENT-API.md](AGENT-API.md) | Agent & automation REST API reference: discovery (`llms.txt`, `llms-full.txt`, OpenAPI 3.1), `/catalog/*`, `/code/*`, and the read-only `/mcp` server. |
 | [todo/](todo/) | One file per open item of [TODO.md](../TODO.md); [todo/README.md](todo/README.md) has the conventions. |
-| [../src/test/product/README.md](../src/test/product/README.md) | Testing against real products: `product.sh`, `smoke.py`, `mcp_pat_check.py`, `ui.js`, `ui_next.js`. |
+| [../src/test/product/README.md](../src/test/product/README.md) | Testing against real products: `product.sh`, `smoke.py`, `mcp_pat_check.py`, Playwright (`e2e/*.spec.ts`), and zero-dependency `ui.js` / `ui_next.js`. |
 
 Conventions for everything here:
 

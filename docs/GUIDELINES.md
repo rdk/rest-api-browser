@@ -6,7 +6,8 @@ helper or a CSS token behind it; use those rather than solving the same problem 
 ## Code layout
 
 - Logic that can be pure goes into `src/main/frontend/src/core/` or `src/main/frontend/src/lib/` with a unit test (vitest); `ui/` renders it. A fix
-  gets a test that fails without it: a unit test, or a check in `src/test/product/ui_next.js` for behaviour in the page.
+  gets a test that fails without it: a unit test, a Playwright E2E spec in `src/test/product/e2e/` (following
+  [PLAYWRIGHT-GUIDELINES.md](PLAYWRIGHT-GUIDELINES.md)), or a check in `src/test/product/ui_next.js` for behaviour in the page.
 - What a tab shows, copies and downloads comes from one function (`textOf` in `core/responsetext.ts`), so the three never
   differ.
 
@@ -87,5 +88,7 @@ helper or a CSS token behind it; use those rather than solving the same problem 
 
 ## Before a commit
 
-`cd src/main/frontend && npx tsc --noEmit -p . && npx vitest run`, then `mvn -B package`. For changes to the page,
-also run `ui_next.js` on Jira and Confluence (see `src/test/product/README.md`).
+`cd src/main/frontend && npx tsc --noEmit -p . && npx vitest run`, `cd src/test/product && npm run typecheck`,
+then `mvn -B package`. For changes to the page or product tests, run Playwright (`src/test/product/e2e/`, see
+[PLAYWRIGHT-GUIDELINES.md](PLAYWRIGHT-GUIDELINES.md)) and `ui_next.js` on Jira and Confluence (see
+[src/test/product/README.md](../src/test/product/README.md)).
