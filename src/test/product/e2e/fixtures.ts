@@ -9,6 +9,8 @@ export interface ProductProfile {
   contextPath: string;
   search: string;
   title: string;
+  templated: string;
+  param: string;
   coreName: string;
   coreRe: RegExp;
   answerRe: RegExp;
@@ -46,6 +48,8 @@ export function getProductConfig(): {
       contextPath,
       search: 'serverInfo',
       title: 'api/2/serverInfo',
+      templated: 'api/2/issue/{issueIdOrKey}',
+      param: 'issueIdOrKey',
       coreName: 'api/2',
       coreRe: /^api\/2\//,
       answerRe: /"baseUrl"|"version"/,
@@ -59,6 +63,8 @@ export function getProductConfig(): {
       contextPath,
       search: 'user current',
       title: 'api/user/current',
+      templated: 'api/content/{id}',
+      param: 'id',
       coreName: 'api',
       coreRe: /^api\//,
       answerRe: /"username"|"userKey"/,

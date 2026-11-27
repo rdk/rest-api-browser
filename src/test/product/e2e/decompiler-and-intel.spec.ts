@@ -60,6 +60,20 @@ test.describe('Java tab, tabbed decompiler, and code intelligence panels', () =>
     await refLink.click();
     await expect(dlg.getByTestId('source-dialog-tab')).toHaveCount(2, { timeout: 20_000 });
 
+    // ZIP export downloads a valid archive covering the open decompiler tabs
+    const zipBtn = dlg.getByTestId('source-dialog-download-zip');
+    await expect(zipBtn).toBeEnabled();
+    const [zipDownload] = await Promise.all([
+      rabPage.waitForEvent('download'),
+      zipBtn.click(),
+    ]);
+    const zipPath = await zipDownload.path();
+    expect(zipPath).toBeTruthy();
+    const zipBytes = await (await import('node:fs/promises')).readFile(zipPath!);
+    expect(zipBytes.length).toBeGreaterThan(100);
+    expect(zipBytes[0]).toBe(0x50);
+    expect(zipBytes[1]).toBe(0x4b);
+
     // Escape minimizes dialog while preserving tabs in topbar Classes badge
     await rabPage.keyboard.press('Escape');
     await expect(dlg).toHaveCount(0);
