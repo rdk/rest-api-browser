@@ -1,2 +1,8 @@
-# Shell scripts keep LF line endings, also in a Windows checkout with core.autocrlf=true (bash fails on CRLF)
+# Normalize line endings across Windows/Linux checkouts
+* text=auto eol=lf
 *.sh text eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.png binary
+*.jar binary
+*.zip binary

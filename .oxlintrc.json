@@ -1,0 +1,9 @@
+{
+  "$schema": "./src/main/frontend/node_modules/oxlint/configuration_schema.json",
+  "rules": {
+    "eslint/no-empty-pattern": "off",
+    "unicorn/no-new-array": "off",
+    "unicorn/no-useless-spread": "off",
+    "unicorn/no-useless-fallback-in-spread": "off"
+  }
+}

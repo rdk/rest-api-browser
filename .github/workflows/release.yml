@@ -34,6 +34,8 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             echo "Release $GITHUB_REF_NAME already exists; skipping create."
           else
-            gh release create "$GITHUB_REF_NAME" "target/rest-api-browser-$GITHUB_REF_NAME.jar" \
+            gh release create "$GITHUB_REF_NAME" \
+              "target/rest-api-browser-$GITHUB_REF_NAME.jar" \
+              "client/rab.py" \
               --draft --title "$GITHUB_REF_NAME" --notes "Built by GitHub Actions from $GITHUB_SHA."
           fi

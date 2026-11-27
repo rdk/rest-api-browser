@@ -22,8 +22,9 @@ Put each check at the lowest layer that genuinely exercises the behaviour:
   downloaded artifacts, multi-overlay keyboard/focus choreography, tabbed decompiler/code intelligence panels, and live
   `/rest/restbrowser/1/*` + `/mcp` contracts.
 - **Zero-dependency CDP scripts ([src/test/product/ui.js](../src/test/product/ui.js), [src/test/product/ui_next.js](../src/test/product/ui_next.js), [src/test/product/cdp.js](../src/test/product/cdp.js))**:
-  kept for restricted/offline hosts that only have Node 22+ and Chrome/Edge without npm packages. Do not delete or
-  break `cdp.js` / `ui.js` / `ui_next.js`, and build new modular E2E specs in Playwright.
+  frozen as emergency fallbacks for restricted/offline hosts that only have Node 22+ and Chrome/Edge without npm
+  packages. Keep them working (`node --check`), and build all new browser E2E tests in Playwright (`e2e-mock/` + `e2e/`)
+  without duplicating new scenarios into `ui_next.js`.
 
 ---
 

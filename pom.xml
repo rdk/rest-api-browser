@@ -10,7 +10,7 @@
 
     <groupId>com.atlassian.labs</groupId>
     <artifactId>rest-api-browser</artifactId>
-    <version>4.4.1-SNAPSHOT</version>
+    <version>4.5.0-SNAPSHOT</version>
     <packaging>atlassian-plugin</packaging>
 
     <name>REST API Browser</name>
@@ -64,15 +64,6 @@
         <maven.compiler.target>21</maven.compiler.target>
         <maven.compiler.release>21</maven.compiler.release>
         <atlassian.plugin.key>${project.groupId}.${project.artifactId}</atlassian.plugin.key>
-
-        <bamboo.eldest-supported.version>9.2.16</bamboo.eldest-supported.version>
-        <bitbucket.eldest-supported.version>8.9.17</bitbucket.eldest-supported.version>
-        <!-- Test with a Plat 7 product that's compiled against the eldest version to
-                catch unexpected incompatibility -->
-        <confluence.latest.version>9.0.0-m135</confluence.latest.version>
-        <crowd.eldest-supported.version>6.0.0</crowd.eldest-supported.version>
-        <fecru.latest.version>4.8.10-20220620091927</fecru.latest.version>
-        <jira.eldest-supported.version>9.4.22</jira.eldest-supported.version>
 
         <platform.version>8.0.19</platform.version>
         <refapp.version>${platform.version}</refapp.version>
@@ -390,36 +381,6 @@
                         </pluginArtifact>
                     </pluginArtifacts>
                     <products>
-                        <product>
-                            <id>bamboo</id>
-                            <version>${bamboo.eldest-supported.version}</version>
-                            <ajpPort>8010</ajpPort>
-                        </product>
-                        <product>
-                            <id>bitbucket</id>
-                            <version>${bitbucket.eldest-supported.version}</version>
-                            <ajpPort>8011</ajpPort>
-                        </product>
-                        <product>
-                            <id>confluence</id>
-                            <version>${confluence.latest.version}</version>
-                            <ajpPort>8012</ajpPort>
-                        </product>
-                        <product>
-                            <id>crowd</id>
-                            <version>${crowd.eldest-supported.version}</version>
-                            <ajpPort>8013</ajpPort>
-                        </product>
-                        <product>
-                            <id>fecru</id>
-                            <version>${fecru.latest.version}</version>
-                            <ajpPort>8014</ajpPort>
-                        </product>
-                        <product>
-                            <id>jira</id>
-                            <version>${jira.eldest-supported.version}</version>
-                            <ajpPort>8015</ajpPort>
-                        </product>
                         <product>
                             <id>refapp</id>
                             <version>${refapp.version}</version>

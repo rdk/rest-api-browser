@@ -5,11 +5,14 @@
   "type": "module",
   "scripts": {
     "build": "tsc --noEmit && vite build",
+    "lint": "oxlint -c ../../../.oxlintrc.json --deny-warnings src",
+    "lint:all": "node -e \"const p = require('path'), cp = require('child_process'); cp.execFileSync(process.execPath, [p.resolve('node_modules/oxlint/bin/oxlint'), '--deny-warnings', 'src/main/frontend/src', 'src/test/product/e2e', 'src/test/product/e2e-mock'], { cwd: p.resolve('../../..'), stdio: 'inherit' })\"",
     "test": "vitest run"
   },
   "devDependencies": {
     "@preact/preset-vite": "2.10.6",
     "jsdom": "31.0.1",
+    "oxlint": "^1.95.0",
     "preact": "11.2.0",
     "typescript": "7.0.2",
     "vite": "8.3.8",

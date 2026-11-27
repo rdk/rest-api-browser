@@ -1,6 +1,0 @@
-product: DC Core Platform
-team: DC Core Platform - Backend
-fileAllSnykTicketsNow: true
-lowerSeverityPaths:
-  - path: src/test/**
-    reasoning: This is a test directory

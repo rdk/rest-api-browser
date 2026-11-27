@@ -1,6 +1,7 @@
-# New UI: plan
+# New UI: plan (archived)
 
-Status: implemented and shipped (steps 0–3 plus the agent REST/MCP suite complete: Jersey runtime model, `/catalog` & `/code` REST APIs, OpenAPI 3.1 export, built-in read-only `/mcp` server, CFR 0.152 & Vineflower 1.11.1 decompilation, Preact + TypeScript UI at `/plugins/servlet/rest-api-browser`, decorated admin intro page at `/plugins/servlet/rest-api-browser/admin`, `llms.txt` / `llms-full.txt`, and `src/test/product` checks; see [AGENT-API.md](AGENT-API.md)). The classic AngularJS UI stays at `/plugins/servlet/restbrowser`.
+> [!NOTE]
+> **Historical design document** from the pre-implementation planning phase (`[verify]` notes below reflect original spike questions). For the current architecture, code map, and testing layout, see [ARCHITECTURE.md](ARCHITECTURE.md) and [AGENT-API.md](AGENT-API.md). The new UI and all agent/MCP surfaces are implemented and shipped, while the classic AngularJS UI stays at `/plugins/servlet/restbrowser`.
 
 **[verify]** marks an assumption about the Atlassian platform that the step 0 spike confirms or refutes.
 

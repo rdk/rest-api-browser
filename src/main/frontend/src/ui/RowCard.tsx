@@ -4,7 +4,7 @@ import type { Module, Operation } from '../core/types';
 import { download, MethodBadge, PathText, PinHint, useFlash } from './bits';
 import { accessFact, moduleFact, originLabel, paramSummary, sourceLabel, stabilityLabel, type Fact } from '../core/facts';
 import { fetchModuleOpenApi, moduleOpenApiFilename } from '../core/openapi';
-import { KIND_TEXT, cardLabel, moduleReason } from '../core/explain';
+import { cardLabel, moduleReason } from '../core/explain';
 
 export type CardTarget = { kind: 'op'; op: Operation; module?: Module } | { kind: 'module'; module: Module; count: number };
 

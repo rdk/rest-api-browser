@@ -44,7 +44,7 @@ describe('routes robustness', () => {
     const mm = createMatcher(summary([module('m', 'api/2')]), index([
       op('m', 'GET', 'a/{x: (?i)abc}'),
       op('m', 'GET', 'b/{x: [a-z]++}'),
-      op('m', 'GET', 'c/{x: \p{Alnum}+}/{y}'),
+      op('m', 'GET', 'c/{x: \\p{Alnum}+}/{y}'),
       op('m', 'GET', 'ok/{id}'),
     ]));
     expect(mm.match('/rest/api/2/ok/1')?.values.id).toBe('1');
