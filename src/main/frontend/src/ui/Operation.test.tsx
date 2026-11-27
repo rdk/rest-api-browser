@@ -56,7 +56,12 @@ describe('ui/OperationView', () => {
       </div>,
       document.body,
     );
-    await new Promise((r) => setTimeout(r, 20));
+    const waitUntil = async (fn: () => boolean, ms = 500) => {
+      const end = Date.now() + ms;
+      while (Date.now() < end && !fn()) await new Promise((r) => setTimeout(r, 15));
+      return fn();
+    };
+    await waitUntil(() => !!document.querySelector('[data-testid=params]'));
 
     expect(document.querySelector('[data-testid=params]')).not.toBeNull();
     expect(document.querySelector('[data-testid=body]')).toBeNull();
@@ -67,12 +72,13 @@ describe('ui/OperationView', () => {
     // Invalid int marks input aria-invalid="true"
     const pathInput = document.querySelector('input[name=issueIdOrKey]') as HTMLInputElement;
     setInput(pathInput, 'not-an-int');
-    await new Promise((r) => setTimeout(r, 20));
+    await waitUntil(() => (document.querySelector('input[name=issueIdOrKey]') as HTMLInputElement)?.getAttribute('aria-invalid') === 'true');
     expect((document.querySelector('input[name=issueIdOrKey]') as HTMLInputElement).getAttribute('aria-invalid')).toBe('true');
 
     // Valid int clears warning and enables Send / Copy curl + Undo / Redo / Reset
     setInput(pathInput, '42');
-    await new Promise((r) => setTimeout(r, 20));
+    await waitUntil(() => !document.querySelector('[data-testid=params-warn]')
+      && (document.querySelector('[data-testid=live-url]')?.textContent?.includes('/rest/api/2/issue/42') ?? false));
     expect(document.querySelector('[data-testid=params-warn]')).toBeNull();
     expect(document.querySelector('[data-testid=live-url]')?.textContent).toContain('/rest/api/2/issue/42');
     expect((document.querySelector('[data-testid=send]') as HTMLButtonElement).disabled).toBe(false);
@@ -80,19 +86,19 @@ describe('ui/OperationView', () => {
 
     // Separate step: edit query parameter, then reset, undo, redo
     setInput(document.querySelector('input[name=expand]') as HTMLInputElement, 'names');
-    await new Promise((r) => setTimeout(r, 20));
+    await waitUntil(() => document.querySelector('[data-testid=live-url]')?.textContent?.includes('expand=names') ?? false);
     expect(document.querySelector('[data-testid=live-url]')?.textContent).toContain('expand=names');
 
     (document.querySelector('[data-testid=form-reset]') as HTMLButtonElement).click();
-    await new Promise((r) => setTimeout(r, 20));
+    await waitUntil(() => (document.querySelector('input[name=issueIdOrKey]') as HTMLInputElement)?.value === '');
     expect((document.querySelector('input[name=issueIdOrKey]') as HTMLInputElement).value).toBe('');
 
     (document.querySelector('[data-testid=form-undo]') as HTMLButtonElement).click();
-    await new Promise((r) => setTimeout(r, 20));
+    await waitUntil(() => (document.querySelector('input[name=issueIdOrKey]') as HTMLInputElement)?.value === '42');
     expect((document.querySelector('input[name=issueIdOrKey]') as HTMLInputElement).value).toBe('42');
 
     (document.querySelector('[data-testid=form-redo]') as HTMLButtonElement).click();
-    await new Promise((r) => setTimeout(r, 20));
+    await waitUntil(() => (document.querySelector('input[name=issueIdOrKey]') as HTMLInputElement)?.value === '');
     expect((document.querySelector('input[name=issueIdOrKey]') as HTMLInputElement).value).toBe('');
 
     // POST preserves controlled tab='body' and sets aria-invalid on malformed JSON
@@ -114,12 +120,12 @@ describe('ui/OperationView', () => {
       </div>,
       document.body,
     );
-    await new Promise((r) => setTimeout(r, 20));
+    await waitUntil(() => !!document.querySelector('[data-testid=body]'));
 
     const bodyArea = document.querySelector('[data-testid=body]') as HTMLTextAreaElement;
     expect(bodyArea).not.toBeNull();
     setInput(bodyArea, '{bad json');
-    await new Promise((r) => setTimeout(r, 20));
+    await waitUntil(() => document.querySelector('[data-testid=body]')?.getAttribute('aria-invalid') === 'true');
     expect((document.querySelector('[data-testid=body]') as HTMLTextAreaElement).getAttribute('aria-invalid')).toBe('true');
     expect(document.querySelector('[data-testid=json-check]')?.classList.contains('is-warn')).toBe(true);
   });
@@ -154,7 +160,10 @@ describe('ui/OperationView', () => {
       </div>,
       document.body,
     );
-    await new Promise((r) => setTimeout(r, 20));
+    const end = Date.now() + 500;
+    while (Date.now() < end && !document.querySelector('[data-testid=params]')) {
+      await new Promise((r) => setTimeout(r, 15));
+    }
 
     const grid = document.querySelector('[data-testid=params]') as HTMLElement;
     expect(grid).not.toBeNull();

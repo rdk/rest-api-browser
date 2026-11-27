@@ -86,7 +86,7 @@ const check = (name, ok, detail) => c.check(name, ok, detail);
                 publicLoaded && !!fallback && /Open in the new UI/.test(fallback.ctaText)
                 && /\/plugins\/servlet\/rest-api-browser$/.test(fallback.ctaHref) && fallback.ctaTarget === '_blank', fallback);
             check(`the fallback list links ${P.name}'s ${P.coreName} module to the new UI`,
-                !!fallback && fallback.items.some(it => P.core.test(it.text) && /\/plugins\/servlet\/rest-api-browser$/.test(it.href) && it.target === '_blank'), fallback);
+                !!fallback && fallback.items.some(it => (it.text === P.coreName || P.core.test(it.text + '/')) && /\/plugins\/servlet\/rest-api-browser$/.test(it.href) && it.target === '_blank'), fallback);
         }
         console.log(`Public resources in the sidebar: ${publicCount}`);
         await shot(PRODUCT + '-1-public-apis');

@@ -387,7 +387,7 @@ def new_ui(j, a, P):
          {'jsonrpc': '2.0', 'id': 104, 'method': 'prompts/get', 'params': {'name': 'explore-endpoint-payload', 'arguments': {'query': 'ping'}}},
          lambda d: 'ping' in (((((d or {}).get('result') or {}).get('messages') or [{}])[0].get('content') or {}).get('text', ''))),
     ):
-        s_mcp, raw_mcp, _ = j.call('POST', '/rest/restbrowser/1/mcp', headers=mcp_headers, data=json.dumps(payload).encode('utf-8'))
+        s_mcp, raw_mcp, _ = j.call('POST', '/rest/restbrowser/1/mcp', headers=mcp_headers, body=json.dumps(payload).encode('utf-8'))
         try:
             parsed_mcp = json.loads(raw_mcp) if raw_mcp else {}
         except ValueError:

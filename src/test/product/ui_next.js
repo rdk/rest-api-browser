@@ -624,7 +624,7 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
                     && mcpResList.result && Array.isArray(mcpResList.result.resources) && mcpResList.result.resources.length >= 4
                     && mcpResRead.result && Array.isArray(mcpResRead.result.contents) && mcpResRead.result.contents.length === 1
                     && mcpPromptsList.result && Array.isArray(mcpPromptsList.result.prompts) && mcpPromptsList.result.prompts.length >= 3
-                    && mcpPromptGet.result && Array.isArray(mcpPromptGet.result.messages) && /\/rest\/test/.test(JSON.stringify(mcpPromptGet.result.messages)),
+                    && mcpPromptGet.result && Array.isArray(mcpPromptGet.result.messages) && JSON.stringify(mcpPromptGet.result.messages).includes('/rest/test'),
                 plainOk: plain.status === 200 && plainText.length > 10,
                 mdOk: md.status === 200 && (md.headers.get('content-type') || '').includes('text/markdown') && mdText.includes('1 |'),
             };
@@ -1097,9 +1097,14 @@ const ODD = 'no such?#%&$&', ODD_ENCODED = 'no%20such%3F%23%25%26%24%26';
         const dtoOp = await b.evaluate(`(async () => {
             const cat = await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/catalog', { credentials: 'same-origin' })).json();
             const idx = await (await fetch(${q(CONTEXT)} + '/rest/restbrowser/1/catalog/index/' + cat.hash, { credentials: 'same-origin' })).json();
-            const o = idx.operations.find(x => ['POST', 'PUT'].includes(x.method) && (x.bodyType || x.bodyJavaType)
-                && !x.params.some(p => p.in === 'form')
-                && (!x.consumes || !x.consumes.length || x.consumes.some(c => /json/i.test(c))));
+            const o = idx.operations.find(x => {
+                const bt = x.bodyJavaType || x.bodyType || '';
+                return ['POST', 'PUT'].includes(x.method) && bt
+                    && !['java.', 'javax.', 'jakarta.', 'byte['].some(p => bt.startsWith(p))
+                    && !['String', 'Object', 'Map', 'InputStream'].includes(bt)
+                    && !x.params.some(p => p.in === 'form')
+                    && (!x.consumes || !x.consumes.length || x.consumes.some(c => /json/i.test(c)));
+            });
             return o ? { key: o.key, bodyType: o.bodyType || o.bodyJavaType } : null;
         })()`);
         if (dtoOp) {

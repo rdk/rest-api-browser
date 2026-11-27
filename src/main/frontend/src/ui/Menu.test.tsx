@@ -31,9 +31,17 @@ describe('ui/Menu', () => {
       />,
       document.body,
     );
+    const waitUntil = async (fn: () => boolean, ms = 500) => {
+      const end = Date.now() + ms;
+      while (Date.now() < end && !fn()) await new Promise((r) => setTimeout(r, 15));
+      return fn();
+    };
+    const flushEffects = () => new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r, 20)));
+
     const btn = document.querySelector('[data-testid=menu-button]') as HTMLButtonElement;
     btn.click();
-    await new Promise((r) => setTimeout(r, 20));
+    await waitUntil(() => !!document.querySelector('[data-testid=menu]'));
+    await flushEffects();
 
     const menu = document.querySelector('[data-testid=menu]') as HTMLElement;
     expect(menu).not.toBeNull();
@@ -49,7 +57,8 @@ describe('ui/Menu', () => {
 
     // Escape closes the menu and restores focus to trigger button
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
-    await new Promise((r) => setTimeout(r, 20));
+    await waitUntil(() => !document.querySelector('[data-testid=menu]'));
+    await flushEffects();
     expect(document.querySelector('[data-testid=menu]')).toBeNull();
     expect(document.activeElement).toBe(btn);
   });

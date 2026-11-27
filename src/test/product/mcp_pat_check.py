@@ -172,7 +172,7 @@ def main():
             m_contents = ((mr or {}).get('result') or {}).get('contents') if isinstance(mr, dict) else None
             m_txt = m_contents[0].get('text', '') if isinstance(m_contents, list) and m_contents else ''
             check('PAT resources/read(module OpenAPI) returns OpenAPI 3.1 JSON',
-                  s_mr == 200 and '"openapi": "3.1.0"' in m_txt or '"openapi":"3.1.0"' in m_txt, (s_mr, m_txt[:120]))
+                  s_mr == 200 and ('"openapi": "3.1.0"' in m_txt or '"openapi":"3.1.0"' in m_txt), (s_mr, m_txt[:120]))
 
         s_pl, pl = rpc(9, 'prompts/list')
         prompts = ((pl or {}).get('result') or {}).get('prompts') if isinstance(pl, dict) else None
