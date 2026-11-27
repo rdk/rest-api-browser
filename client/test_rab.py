@@ -232,6 +232,35 @@ class RabClientTests(unittest.TestCase):
             os.environ.clear()
             os.environ.update(old)
 
+    def test_resolve_cli_does_not_clobber_base_url(self) -> None:
+        old = os.environ.copy()
+        try:
+            for k in ("RAB_URL", "RAB_USER", "RAB_PASSWORD", "RAB_TOKEN"):
+                os.environ.pop(k, None)
+
+            RecordingHandler.next_response = (200, "text/markdown", "# resolved\n", {})
+            with redirect_stdout(io.StringIO()):
+                rc1 = rab.main(["--url", self.base_url, "resolve", "/rest/api/2/serverInfo", "--method", "GET"])
+            self.assertEqual(rc1, 0)
+            p1 = urllib.parse.urlparse(RecordingHandler.requests[0]["path"])
+            self.assertEqual(p1.path, "/jira/rest/restbrowser/1/catalog/resolve")
+            qs1 = urllib.parse.parse_qs(p1.query)
+            self.assertEqual(qs1["url"], ["/rest/api/2/serverInfo"])
+            self.assertEqual(qs1["method"], ["GET"])
+
+            os.environ["RAB_URL"] = self.base_url
+            RecordingHandler.next_response = (200, "text/markdown", "# resolved\n", {})
+            with redirect_stdout(io.StringIO()):
+                rc2 = rab.main(["resolve", "/rest/api/2/serverInfo"])
+            self.assertEqual(rc2, 0)
+            p2 = urllib.parse.urlparse(RecordingHandler.requests[1]["path"])
+            self.assertEqual(p2.path, "/jira/rest/restbrowser/1/catalog/resolve")
+            qs2 = urllib.parse.parse_qs(p2.query)
+            self.assertEqual(qs2["url"], ["/rest/api/2/serverInfo"])
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
 
 if __name__ == "__main__":
     unittest.main()

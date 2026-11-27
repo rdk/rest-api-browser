@@ -711,7 +711,7 @@ def build_parser() -> argparse.ArgumentParser:
     ps.add_argument("--fields", choices=("compact", "full"), default="compact")
 
     pr = sub.add_parser("resolve", help="Match a concrete URL to JAX-RS operation keys")
-    pr.add_argument("url", help="Path or full URL (e.g. /rest/api/2/issue/PROJ-1)")
+    pr.add_argument("target_url", metavar="url", help="Path or full URL (e.g. /rest/api/2/issue/PROJ-1)")
     pr.add_argument("--method", default="")
     pr.add_argument("--limit", type=int, default=10)
 
@@ -853,7 +853,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 as_json=args.as_json,
             )
         elif args.cmd == "resolve":
-            out = client.resolve(args.url, method=args.method, limit=args.limit, as_json=args.as_json)
+            out = client.resolve(args.target_url, method=args.method, limit=args.limit, as_json=args.as_json)
         elif args.cmd == "openapi":
             out = client.openapi(
                 module=args.module, include_schemas=not args.no_schemas, schema_depth=args.depth
