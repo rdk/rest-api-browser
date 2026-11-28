@@ -66,10 +66,6 @@
         <atlassian.plugin.key>${project.groupId}.${project.artifactId}</atlassian.plugin.key>
 
         <platform.version>8.0.19</platform.version>
-        <refapp.version>${platform.version}</refapp.version>
-
-        <!-- Override this to test in a different product -->
-        <product>refapp</product>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <!-- For ease of testing -->
@@ -197,32 +193,16 @@
         </dependency>
 
         <dependency>
-            <groupId>com.atlassian.refapp</groupId>
-            <artifactId>atlassian-refapp-pageobjects</artifactId>
-            <version>${refapp.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.atlassian.selenium</groupId>
-            <artifactId>atlassian-pageobjects-api</artifactId>
-            <version>4.0.1</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
             <version>4.13.2</version>
             <scope>test</scope>
         </dependency>
+        <!-- legacy javax.inject.Inject classloader test in OperationDetailsTest -->
         <dependency>
-            <groupId>org.apache.httpcomponents</groupId>
-            <artifactId>httpclient</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.hamcrest</groupId>
-            <artifactId>hamcrest-library</artifactId>
-            <version>1.3</version>
+            <groupId>javax.inject</groupId>
+            <artifactId>javax.inject</artifactId>
+            <version>1</version>
             <scope>test</scope>
         </dependency>
         <!-- a JAX-RS RuntimeDelegate, so unit tests can build jakarta.ws.rs.core.Response -->
@@ -242,7 +222,7 @@
 
     <build>
         <resources>
-            <!-- Maven's default, minus what npm install leaves in assets/rab and vendor docs/demos/tests -->
+            <!-- Exclude Classic UI Grunt metadata/node_modules while keeping packaged Classic UI runtime assets -->
             <resource>
                 <directory>src/main/resources</directory>
                 <excludes>
@@ -250,47 +230,7 @@
                     <exclude>assets/rab/package-lock.json</exclude>
                     <exclude>assets/rab/package.json</exclude>
                     <exclude>assets/rab/Gruntfile.js</exclude>
-                    <exclude>assets/rab/vendor/**/demo/**</exclude>
-                    <exclude>assets/rab/vendor/**/test/**</exclude>
-                    <exclude>assets/rab/vendor/**/doc/**</exclude>
-                    <exclude>assets/rab/vendor/**/index.html</exclude>
-                    <exclude>assets/rab/vendor/**/*.html</exclude>
-                    <exclude>assets/rab/vendor/**/*test*.js</exclude>
-                    <exclude>assets/rab/vendor/**/.*</exclude>
-                    <exclude>assets/rab/vendor/**/bin/**</exclude>
-                    <exclude>assets/rab/vendor/**/gruntFile.js</exclude>
-                    <exclude>assets/rab/vendor/**/bower.json</exclude>
-                    <exclude>assets/rab/vendor/**/package.json</exclude>
-                    <exclude>assets/rab/vendor/**/README.md</exclude>
-                    <exclude>assets/rab/vendor/**/CONTRIBUTING.md</exclude>
-                    <exclude>assets/rab/vendor/codemirror-3.15/lib/codemirror.js</exclude>
-                    <exclude>assets/rab/vendor/codemirror-3.15/keymap/**</exclude>
-                    <exclude>assets/rab/vendor/codemirror-3.15/mode/**</exclude>
-                    <exclude>assets/rab/vendor/codemirror-3.15/theme/**</exclude>
-                    <exclude>assets/rab/vendor/codemirror-3.15/addon/comment/**</exclude>
-                    <exclude>assets/rab/vendor/codemirror-3.15/addon/display/**</exclude>
-                    <exclude>assets/rab/vendor/codemirror-3.15/addon/hint/**</exclude>
-                    <exclude>assets/rab/vendor/codemirror-3.15/addon/lint/**</exclude>
-                    <exclude>assets/rab/vendor/codemirror-3.15/addon/merge/**</exclude>
-                    <exclude>assets/rab/vendor/codemirror-3.15/addon/mode/**</exclude>
-                    <exclude>assets/rab/vendor/codemirror-3.15/addon/runmode/**</exclude>
-                    <exclude>assets/rab/vendor/codemirror-3.15/addon/scroll/**</exclude>
-                    <exclude>assets/rab/vendor/codemirror-3.15/addon/selection/**</exclude>
-                    <exclude>assets/rab/vendor/codemirror-3.15/addon/tern/**</exclude>
-                    <exclude>assets/rab/vendor/codemirror-3.15/addon/wrap/**</exclude>
-                    <exclude>assets/rab/vendor/ui-utils/modules/**</exclude>
-                    <exclude>assets/rab/images/**</exclude>
                 </excludes>
-            </resource>
-            <!-- Explicitly keep the subset of vendor/image files referenced by atlassian-plugin.xml and app.css -->
-            <resource>
-                <directory>src/main/resources</directory>
-                <includes>
-                    <include>assets/rab/vendor/codemirror-3.15/theme/neat.css</include>
-                    <include>assets/rab/vendor/ui-utils/modules/unique/unique.js</include>
-                    <include>assets/rab/images/getting-started.png</include>
-                    <include>assets/rab/images/code.png</include>
-                </includes>
             </resource>
         </resources>
         <plugins>
@@ -380,31 +320,11 @@
                             <artifactId>atlassian-pretty-urls-plugin</artifactId>
                         </pluginArtifact>
                     </pluginArtifacts>
-                    <products>
-                        <product>
-                            <id>refapp</id>
-                            <version>${refapp.version}</version>
-                            <ajpPort>8016</ajpPort>
-                        </product>
-                    </products>
-                    <server>localhost</server>
                     <systemPropertyVariables>
-                        <product>${product}</product>
                         <rest.api.browser.anonymous>${rest.api.browser.anonymous}</rest.api.browser.anonymous>
                         <!-- Stop UPM connecting to Marketplace, too noisy in the logs -->
                         <upm.pac.disable>true</upm.pac.disable>
                     </systemPropertyVariables>
-                    <testGroups>
-                        <testGroup>
-                            <id>all-its</id>
-                            <productIds>
-                                <productId>${product}</productId>
-                            </productIds>
-                            <includes>
-                                <include>it/**/*Test.java</include>
-                            </includes>
-                        </testGroup>
-                    </testGroups>
                 </configuration>
             </plugin>
         </plugins>

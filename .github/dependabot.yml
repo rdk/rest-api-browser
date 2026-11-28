@@ -8,6 +8,14 @@ updates:
       maven-dependencies:
         patterns:
           - "*"
+    ignore:
+      - dependency-name: "com.atlassian.platform.dependencies:*"
+      - dependency-name: "com.atlassian.pom:*"
+      - dependency-name: "com.atlassian.annotations:*"
+      - dependency-name: "com.atlassian.maven.plugins:*"
+      - dependency-name: "com.atlassian.plugins:*"
+      - dependency-name: "org.glassfish.jersey.*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "npm"
     directory: "/src/main/frontend"

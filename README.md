@@ -197,8 +197,7 @@ first build also needs network access: the frontend-maven-plugin downloads Node 
 packages of the new UI. `src/main/frontend` holds its TypeScript sources (`npm test`, `npm run build` there).
 
 ```bash
-mvn -B clean package -DskipTests   # target/rest-api-browser-<version>.jar
-mvn -B verify                      # also runs the integration test against the refapp
+mvn -B clean package               # builds target/rest-api-browser-<version>.jar and runs unit tests
 ```
 
 GitHub Actions builds every push. Pushing a tag such as `4.0.5` (the version in `pom.xml`) builds that jar and
@@ -206,7 +205,7 @@ creates a draft release with it.
 
 ## Testing
 
-`mvn verify` runs the integration test against the refapp, and the CI workflow plus local `npm run test:mock` exercise
+The CI workflow and local `npm run test:mock` exercise
 the built Preact UI without a running Jira/Confluence server via the offline browser harness
 ([`src/test/harness/index.html`](src/test/harness/index.html)) and
 [`src/test/product/e2e-mock/`](src/test/product/e2e-mock/harness.spec.ts). To check the plugin on a real Jira Data

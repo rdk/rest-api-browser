@@ -19,7 +19,6 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
-      # the integration test (mvn verify) needs a browser and a refapp: run it locally, see README.md
       # unit tests: the Java ones and the new UI's (npm test through frontend-maven-plugin)
       - run: mvn -B -ntp package
       - name: JS/TS lint, syntax & Python client tests

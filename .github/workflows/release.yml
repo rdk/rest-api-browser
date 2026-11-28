@@ -27,6 +27,24 @@ jobs:
             exit 1
           fi
       - run: mvn -B -ntp package
+      - name: JS/TS lint, syntax & Python client tests
+        run: |
+          if [ -d "$GITHUB_WORKSPACE/target/node" ]; then export PATH="$GITHUB_WORKSPACE/target/node:$PATH"; fi
+          npm --prefix src/main/frontend run lint:all
+          node --check src/main/resources/assets/admin/admin-intro.js
+          node --check src/test/harness/mock.js
+          node --check src/test/product/cdp.js
+          node --check src/test/product/ui.js
+          node --check src/test/product/ui_next.js
+          python3 -B -m py_compile src/test/product/smoke.py src/test/product/mcp_pat_check.py client/rab.py client/test_rab.py
+          python3 -B -m unittest discover -s client -v
+      - name: Offline mock Playwright E2E
+        run: |
+          if [ -d "$GITHUB_WORKSPACE/target/node" ]; then export PATH="$GITHUB_WORKSPACE/target/node:$PATH"; fi
+          cd src/test/product
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm ci
+          npm run typecheck
+          npm run test:mock
       - name: Create a draft release with the jar
         env:
           GH_TOKEN: ${{ github.token }}
