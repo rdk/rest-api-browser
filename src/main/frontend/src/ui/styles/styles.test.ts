@@ -6,7 +6,7 @@ const stripComments = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, '');
 
 describe('ui/styles', () => {
   it('hides modal title-bar tabstrip scrollbars and avoids negative-bottom overhang', () => {
-    const css = stripComments(readStyle('java.css'));
+    const css = stripComments(readStyle('source-dialog.css'));
 
     const tabstrip = css.match(/\.rab-n-modal-tabstrip\s*\{([^}]*)\}/)?.[1] ?? '';
     expect(tabstrip).toMatch(/overflow-x:\s*auto\b/);
@@ -66,8 +66,8 @@ describe('ui/styles', () => {
     expect(skinsCss).toMatch(/\[data-color-mode="dark"\]\s*\.rab-n\[data-skin="navy"\][^}]*--rab-on-brand:\s*var\(--rab-on-bold\)/);
     expect(skinsCss).not.toMatch(/\.rab-n\[data-skin="navy"\]\s+\.rab-n-brand-mark\s*\{[^}]*#[0-9a-f]/i);
 
-    const javaCss = stripComments(readStyle('java.css'));
-    expect(javaCss).toMatch(/\.rab-n-modal-bar\s+\.rab-n-find\s+input\s*\{[^}]*border-color:\s*var\(--rab-border\)/);
+    const dialogCss = stripComments(readStyle('source-dialog.css'));
+    expect(dialogCss).toMatch(/\.rab-n-modal-bar\s+\.rab-n-find\s+input\s*\{[^}]*border-color:\s*var\(--rab-border\)/);
   });
 
   it('lays out the params form with CSS Grid + subgrid and non-collapsing name column', () => {
