@@ -33,7 +33,7 @@ import java.util.jar.Manifest;
 public final class VineflowerEngine implements DecompilerEngine {
 
     public static final String ID = "vineflower";
-    public static final String DISPLAY_NAME = "Vineflower 1.11.1";
+    public static final String DISPLAY_NAME = "Vineflower 1.12.0";
     private static final String MAX_METHOD_SECONDS = "30";
 
     static {

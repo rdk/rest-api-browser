@@ -7,6 +7,7 @@ import org.osgi.framework.Bundle;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.net.URI;
 import java.net.URL;
 import java.net.URLConnection;
 import java.net.URLStreamHandler;
@@ -95,7 +96,7 @@ public class OsgiBundleResourceReaderTest {
 
     private static URL inMemoryUrl(String path, String content) throws IOException {
         byte[] data = content.getBytes(StandardCharsets.UTF_8);
-        return new URL("memory", "bundle", 0, path, new URLStreamHandler() {
+        return URL.of(URI.create("memory://bundle" + path), new URLStreamHandler() {
             @Override
             protected URLConnection openConnection(URL u) {
                 return new URLConnection(u) {

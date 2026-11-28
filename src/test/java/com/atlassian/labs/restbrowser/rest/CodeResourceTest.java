@@ -121,7 +121,7 @@ public class CodeResourceTest {
         // search does not trigger catalog build
         Response searched = resource.searchClasses(cls, 5, null, request);
         assertEquals(200, searched.getStatus());
-        org.mockito.Mockito.verifyZeroInteractions(catalog);
+        org.mockito.Mockito.verifyNoInteractions(catalog);
     }
 
     @Test

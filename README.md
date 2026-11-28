@@ -25,7 +25,7 @@ administrators and app developers who need to know what an instance really offer
 
 <p align="center">
   <img src="docs/images/decompiler.png" width="760" alt="Tabbed Java decompiler window in REST API Browser 4.3.0: Vineflower 1.11.1, method outline with REST verb badges, clickable class references and inline REST endpoint links" /><br />
-  <sub>Embedded Java decompiler (since 4.3.0, sysadmin only): floating tabbed window with Vineflower 1.11.1 (default) and CFR 0.152 switching, method outline with REST verb badges, clickable class references, inline endpoint links and ZIP export.</sub>
+  <sub>Embedded Java decompiler (since 4.3.0, sysadmin only): floating tabbed window with Vineflower 1.12.0 (default) and CFR 0.152 switching, method outline with REST verb badges, clickable class references, inline endpoint links and ZIP export.</sub>
 </p>
 
 ## Compatibility
@@ -102,7 +102,7 @@ the current `nodeId` badge and a **Trace in Scalpel** deep link on operations. S
 input/output/parameter types with rich hover cards
 (OSGi bundle wiring, plugin ownership and timestamps, classloader, bytecode info), a **Java** tab per operation with
 virtualized on-demand method and full class decompilation (focusing the method declaration header), and a
-draggable/resizable/maximizable persistent tabbed decompiler window with CFR 0.152 / Vineflower 1.11.1 switching,
+draggable/resizable/maximizable persistent tabbed decompiler window with CFR 0.152 / Vineflower 1.12.0 switching,
 in-dialog **Impls**, **Callers**, **Grep**, and **Files** bundle intelligence panels with inline text/XML preview, and
 undoable tab closing (disable decompilation with `-Drest.api.browser.decompile=false`). See
 [Agent API, OpenAPI 3.1 & MCP](#agent-api-openapi-31--mcp) and [docs/NEW-UI-PLAN.md](docs/NEW-UI-PLAN.md).
@@ -142,7 +142,7 @@ cookies, Basic auth, or Jira/Confluence Personal Access Tokens (`Authorization: 
     OSGi implementations, with `maxChars` truncation budget), Draft 2020-12 JSON Schema & examples (`/code/schema`),
     bytecode outlines and inline service hints (`/code/class`), live OSGi implementations (`/code/implementations`),
     constant-pool callers and grep (`/code/callers`, `/code/grep`), safe bundle resource reader (`/code/resource`),
-    typed BFS reference graphs (`/code/graph?preset=domain`), and Vineflower 1.11.1 / CFR 0.152 decompilation
+    typed BFS reference graphs (`/code/graph?preset=domain`), and Vineflower 1.12.0 / CFR 0.152 decompilation
     (`/code/source`). Most read endpoints support `ETag` / `If-None-Match` (`304`) and `format=markdown` (`Accept:
     text/markdown`).
 - **Zero-Dependency Python Client ([`client/rab.py`](client/rab.py))**:

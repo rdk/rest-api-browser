@@ -261,6 +261,178 @@ class RabClientTests(unittest.TestCase):
             os.environ.clear()
             os.environ.update(old)
 
+    def _run_cli(self, argv, *, status=200, ctype="application/json", payload='{"ok":true}'):
+        RecordingHandler.requests.clear()
+        RecordingHandler.next_response = (status, ctype, payload, {})
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = rab.main(argv)
+        self.assertEqual(rc, 0, f"argv={argv!r}")
+        req = RecordingHandler.requests[0]
+        parsed = urllib.parse.urlparse(req["path"])
+        return buf.getvalue(), req, parsed.path, urllib.parse.parse_qs(parsed.query)
+
+    def test_remaining_cli_subcommands_dispatch_and_format(self) -> None:
+        old = os.environ.copy()
+        try:
+            os.environ["RAB_URL"] = self.base_url
+            os.environ["RAB_TOKEN"] = "cli-pat"
+
+            _, _, path, qs = self._run_cli(["catalog"])
+            self.assertEqual(path, "/jira/rest/restbrowser/1/catalog")
+            self.assertEqual(qs, {})
+
+            _, _, path, qs = self._run_cli(["openapi"])
+            self.assertEqual(path, "/jira/rest/restbrowser/1/openapi")
+            self.assertEqual(qs, {})
+
+            _, _, path, qs = self._run_cli(["openapi", "--module", "jira:api2", "--no-schemas", "--depth", "1"])
+            self.assertEqual(path, "/jira/rest/restbrowser/1/catalog/openapi")
+            self.assertEqual(qs, {"module": ["jira:api2"], "includeSchemas": ["false"], "schemaDepth": ["1"]})
+
+            _, req, path, _ = self._run_cli(
+                [
+                    "--max-chars", "900", "context",
+                    "--url", "/rest/api/2/serverInfo", "--method", "GET",
+                    "--depth", "2", "--max-lines", "50", "--no-schemas", "--no-impls", "--no-source", "--decompiler", "cfr",
+                ],
+                ctype="text/markdown",
+                payload="# ctx\n",
+            )
+            self.assertEqual(req["method"], "POST")
+            self.assertEqual(path, "/jira/rest/restbrowser/1/code/context")
+            self.assertEqual(
+                json.loads(req["body"]),
+                {
+                    "schemaDepth": 2,
+                    "maxLines": 50,
+                    "includeSchemas": False,
+                    "includeImplementations": False,
+                    "includeSource": False,
+                    "lineNumbers": True,
+                    "decompiler": "cfr",
+                    "format": "markdown",
+                    "url": "/rest/api/2/serverInfo",
+                    "method": "GET",
+                    "maxChars": 900,
+                },
+            )
+
+            _, _, path, qs = self._run_cli(
+                ["operation", "jira:api2:GET:serverInfo", "--scope", "class", "--decompiler", "cfr", "--view", "full", "--start-line", "5", "--max-lines", "20"],
+                ctype="text/markdown",
+                payload="# op\n",
+            )
+            self.assertEqual(path, "/jira/rest/restbrowser/1/code/operation")
+            self.assertEqual(
+                qs,
+                {
+                    "op": ["jira:api2:GET:serverInfo"],
+                    "scope": ["class"],
+                    "decompiler": ["cfr"],
+                    "view": ["full"],
+                    "startLine": ["5"],
+                    "maxLines": ["20"],
+                    "lineNumbers": ["true"],
+                    "format": ["markdown"],
+                },
+            )
+
+            _, _, path, qs = self._run_cli(
+                ["class", "--class", "com.example.Demo", "--from-bundle", "7", "--view", "full", "--outline", "--impls"],
+                ctype="text/markdown",
+                payload="# class\n",
+            )
+            self.assertEqual(path, "/jira/rest/restbrowser/1/code/class")
+            self.assertEqual(
+                qs,
+                {
+                    "class": ["com.example.Demo"],
+                    "fromBundle": ["7"],
+                    "view": ["full"],
+                    "outline": ["true"],
+                    "includeImplementations": ["true"],
+                    "format": ["markdown"],
+                },
+            )
+
+            _, req, path, qs = self._run_cli(
+                ["source", "--class", "com.example.Demo", "--method", "run", "--scope", "method", "--decompiler", "cfr", "--text"],
+                ctype="text/plain",
+                payload="void run() {}\n",
+            )
+            self.assertEqual(path, "/jira/rest/restbrowser/1/code/source")
+            self.assertEqual(qs["format"], ["text"])
+            self.assertEqual(req["headers"]["accept"], "text/plain")
+
+            _, _, path, qs = self._run_cli(
+                ["schema", "--class", "com.example.Dto", "--depth", "2", "--no-example"],
+                ctype="text/markdown",
+                payload="# schema\n",
+            )
+            self.assertEqual(path, "/jira/rest/restbrowser/1/code/schema")
+            self.assertEqual(qs, {"class": ["com.example.Dto"], "depth": ["2"], "includeExample": ["false"], "format": ["markdown"]})
+
+            impl_json = json.dumps(
+                {
+                    "target": "com.example.Svc",
+                    "serviceCount": 1,
+                    "implementationCount": 1,
+                    "bundleId": 5,
+                    "osgiServices": [{"serviceId": 9, "bundleId": 5, "plugin": "com.example.app", "beanName": "svc", "objectClass": ["com.example.Svc"]}],
+                    "implementations": [{"class": "com.example.SvcImpl", "via": "class", "bundleId": 5, "plugin": "com.example.app"}],
+                }
+            )
+            out, _, path, qs = self._run_cli(["impls", "--class", "com.example.Svc", "--bundle-id", "5", "--include-abstract", "--limit", "10"], payload=impl_json)
+            self.assertEqual(path, "/jira/rest/restbrowser/1/code/implementations")
+            self.assertEqual(qs, {"class": ["com.example.Svc"], "bundleId": ["5"], "includeAbstract": ["true"], "limit": ["10"]})
+            self.assertIn("SERVICE\tid=9", out)
+            self.assertIn("IMPL\tcom.example.SvcImpl", out)
+
+            out_json, _, _, _ = self._run_cli(["--json", "impls", "--class", "com.example.Svc"], payload=impl_json)
+            self.assertEqual(json.loads(out_json)["bundleId"], 5)
+
+            caller_json = json.dumps({"target": "com.example.Svc", "method": "ping", "count": 1, "scannedClasses": 4, "results": [{"class": "com.example.Web", "bundleId": 5, "plugin": "com.example.app", "calls": ["ping()"]}]})
+            out, _, path, qs = self._run_cli(["callers", "--class", "com.example.Svc", "--method", "ping", "--package-prefix", "com.example", "--limit", "15"], payload=caller_json)
+            self.assertEqual(path, "/jira/rest/restbrowser/1/code/callers")
+            self.assertEqual(qs, {"class": ["com.example.Svc"], "method": ["ping"], "packagePrefix": ["com.example"], "limit": ["15"]})
+            self.assertIn("com.example.Web", out)
+
+            grep_json = json.dumps({"query": "secretToken", "count": 1, "scannedClasses": 3, "results": [{"class": "com.example.Auth", "bundleId": 5, "plugin": "com.example.app", "matches": ["secretToken"]}]})
+            out, _, path, qs = self._run_cli(["grep", "secretToken", "--bundle-id", "5", "--plugin", "com.example.app", "--package-prefix", "com.example", "--case-sensitive", "--limit", "12"], payload=grep_json)
+            self.assertEqual(path, "/jira/rest/restbrowser/1/code/grep")
+            self.assertEqual(qs, {"q": ["secretToken"], "bundleId": ["5"], "plugin": ["com.example.app"], "packagePrefix": ["com.example"], "caseSensitive": ["true"], "includeUtf8": ["true"], "limit": ["12"]})
+            self.assertIn("com.example.Auth", out)
+
+            _, _, path, qs = self._run_cli(["resource", "--bundle-id", "42", "--prefix", "templates/", "--limit", "10"], ctype="text/markdown", payload="# files\n")
+            self.assertEqual(path, "/jira/rest/restbrowser/1/code/resource")
+            self.assertEqual(qs, {"bundleId": ["42"], "prefix": ["templates/"], "maxLines": ["200"], "lineNumbers": ["true"], "limit": ["10"], "format": ["markdown"]})
+
+            _, _, path, qs = self._run_cli(["--json", "resource", "--bundle-id", "42", "--path", "atlassian-plugin.xml", "--start-line", "1", "--max-lines", "50"])
+            self.assertEqual(path, "/jira/rest/restbrowser/1/code/resource")
+            self.assertNotIn("format", qs)
+            self.assertEqual(qs["path"], ["atlassian-plugin.xml"])
+
+            _, _, path, qs = self._run_cli(["plugin", "com.example.app", "--view", "full"])
+            self.assertEqual(path, "/jira/rest/restbrowser/1/code/plugin")
+            self.assertEqual(qs, {"key": ["com.example.app"], "view": ["full"]})
+
+            _, _, path, _ = self._run_cli(["echo"])
+            self.assertEqual(path, "/jira/rest/restbrowser/1/echo")
+
+            _, req, path, _ = self._run_cli(["mcp", "resources/read", "--uri", "rab://catalog/brief"])
+            self.assertEqual(path, "/jira/rest/restbrowser/1/mcp")
+            self.assertEqual(json.loads(req["body"])["params"], {"uri": "rab://catalog/brief"})
+
+            _, req, _, _ = self._run_cli(["mcp", "prompts/get", "--name", "explore-endpoint-payload", "--args", '{"query":"issue"}'])
+            self.assertEqual(json.loads(req["body"])["params"], {"name": "explore-endpoint-payload", "arguments": {"query": "issue"}})
+
+            _, req, _, _ = self._run_cli(["mcp", "tools/list", "--params", "{}"])
+            self.assertEqual(json.loads(req["body"])["params"], {})
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
 
 if __name__ == "__main__":
     unittest.main()

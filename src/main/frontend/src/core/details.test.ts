@@ -109,7 +109,7 @@ describe('details second review', () => {
     let lastUrl = '';
     const spy = (async (url: string) => {
       lastUrl = String(url);
-      return new Response(JSON.stringify({ format: 1, class: 'com.example.Foo', scope: 'class', decompilerId: 'vineflower', decompiler: 'Vineflower 1.11.1', bundleId: 7, source: 'class Foo {}', refs: [] }));
+      return new Response(JSON.stringify({ format: 1, class: 'com.example.Foo', scope: 'class', decompilerId: 'vineflower', decompiler: 'Vineflower 1.12.0', bundleId: 7, source: 'class Foo {}', refs: [] }));
     }) as typeof fetch;
     const vf = await fetchSource('/jira', { op: 'k', classCandidates: ['com.example.Foo'], fromBundle: 4, scope: 'class', decompiler: 'vineflower' }, spy);
     expect(vf.decompilerId).toBe('vineflower');
@@ -165,7 +165,7 @@ describe('details second review', () => {
       return new Response(JSON.stringify({
         format: 1,
         class: 'com.example.Real',
-        decompiler: 'Vineflower 1.11.1',
+        decompiler: 'Vineflower 1.12.0',
         decompilerId: 'vineflower',
         source: 'public class Real {}',
         refs: [],

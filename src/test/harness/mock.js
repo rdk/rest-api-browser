@@ -276,7 +276,7 @@
   function makeSource(cls, decompiler) {
     var name = cls || 'com.example.ServerInfoResource';
     var decId = decompiler === 'cfr' ? 'cfr' : 'vineflower';
-    var decName = decId === 'cfr' ? 'CFR 0.152' : 'Vineflower 1.11.1';
+    var decName = decId === 'cfr' ? 'CFR 0.152' : 'Vineflower 1.12.0';
     var source = RESOURCE_SOURCE;
     var refs = ['com.example.ServerInfoService'];
     if (name.indexOf('DefaultServerInfoService') >= 0) {

@@ -204,7 +204,7 @@ public class LlmsTxtServlet extends HttpServlet {
             String version = safe(appProps.getVersion());
             String ownVersion = LocalBeans.pluginVersion(pluginAccessor);
             CatalogSnapshot snap = catalog.peek();
-            md.append("> Live REST API catalog, OpenAPI 3.1 exporter, Java/OSGi inspector, on-demand decompiler (CFR 0.152 & Vineflower 1.11.1), and MCP server running on ");
+            md.append("> Live REST API catalog, OpenAPI 3.1 exporter, Java/OSGi inspector, on-demand decompiler (CFR 0.152 & Vineflower 1.12.0), and MCP server running on ");
             md.append(product.isEmpty() ? "this Atlassian Data Center instance" : (version.isEmpty() ? product : product + " " + version));
             if (!ownVersion.isEmpty()) {
                 md.append(" (plugin v").append(ownVersion).append(")");
