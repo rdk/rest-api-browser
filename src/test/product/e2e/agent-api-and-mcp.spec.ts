@@ -14,10 +14,18 @@ test.describe('Agent REST APIs, OpenAPI 3.1, and MCP protocol', () => {
     expect(llmsFull.status()).toBe(200);
     expect(await llmsFull.text()).toContain('Full Agent Reference');
 
-    const brief1 = await rabApi.get(product.url('/rest/restbrowser/1/catalog/brief?top=5'));
-    expect(brief1.status()).toBe(200);
-    expect(await brief1.text()).toContain('top modules');
-    const briefTag = brief1.headers()['etag'];
+    let briefTag = '';
+    await expect
+      .poll(
+        async () => {
+          const res = await rabApi.get(product.url('/rest/restbrowser/1/catalog/brief?top=5'));
+          if (res.status() !== 200) return '';
+          briefTag = res.headers()['etag'] || '';
+          return await res.text();
+        },
+        { timeout: 60_000, intervals: [500, 1000, 2000], message: 'waiting for catalog brief to finish indexing' },
+      )
+      .toContain('top modules');
     expect(briefTag).toBeTruthy();
     const brief304 = await rabApi.get(product.url('/rest/restbrowser/1/catalog/brief?top=5'), {
       headers: { 'If-None-Match': briefTag },

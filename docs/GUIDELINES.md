@@ -91,8 +91,9 @@ helper or a CSS token behind it; use those rather than solving the same problem 
 
 ## Before a commit
 
-`cd src/main/frontend && npm run lint:all && npx tsc --noEmit -p . && npx vitest run`,
-`python -B -m unittest discover -s client -v`, `mvn -B package`, and
-`cd src/test/product && npm run typecheck && npm run test:mock`. For changes affecting live Jira/Confluence behaviour,
-run `src/test/product/e2e/` (see [PLAYWRIGHT-GUIDELINES.md](PLAYWRIGHT-GUIDELINES.md)), `smoke.py`, and
-`mcp_pat_check.py` (see [src/test/product/README.md](../src/test/product/README.md)).
+- **Fast default (everyday commits)** — run only the suite covering the files you changed:
+  - Frontend / Playwright files: `cd src/main/frontend && npm run lint:all && npx tsc --noEmit -p . && npx vitest run` (plus `cd src/test/product && npm run typecheck` if touching E2E tests).
+  - Java files: `mvn -q -B test-compile -Dskip.npm -Dskip.installnodenpm && mvn -q -B surefire:test`.
+  - Python CLI: `python -B -m unittest discover -s client -v`.
+- **Before a release or cross-layer / dependency upgrade**:
+  Run `mvn -B package`, `cd src/test/product && npm run typecheck && npm run test:mock`, and real Jira/Confluence checks (`src/test/product/e2e/`, `smoke.py`, and `mcp_pat_check.py`, see [PLAYWRIGHT-GUIDELINES.md](PLAYWRIGHT-GUIDELINES.md) and [src/test/product/README.md](../src/test/product/README.md)). During feature iteration on a live product, prefer targeted `npx playwright test -g "<spec>"`.

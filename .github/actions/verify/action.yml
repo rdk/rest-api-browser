@@ -1,13 +1,36 @@
 name: Verify build, lint, tests and mock E2E
-description: Build Maven package (Java + Vitest unit tests), run oxlint/syntax/Python CLI checks, and run offline mock Playwright E2E.
+description: Fast push/PR check (unit tests, lint, Python CLI) or full release check (package, mock Playwright E2E).
+
+inputs:
+  mode:
+    description: 'fast (push/PR: unit tests + lint + Python CLI) or full (release/manual: package + mock Playwright E2E)'
+    required: false
+    default: 'fast'
 
 runs:
   using: composite
   steps:
+    - uses: actions/cache@v6
+      with:
+        path: target/node
+        key: ${{ runner.os }}-node-${{ hashFiles('pom.xml') }}
+
+    - uses: actions/cache@v6
+      with:
+        path: ~/.npm
+        key: ${{ runner.os }}-npm-${{ hashFiles('src/main/frontend/package-lock.json', 'src/test/product/package-lock.json') }}
+        restore-keys: ${{ runner.os }}-npm-
+
     # unit tests: the Java ones and the new UI's (npm test through frontend-maven-plugin)
-    - name: Maven package (Java + Vitest tests)
+    - name: Maven package (full)
+      if: ${{ inputs.mode == 'full' }}
       shell: bash
       run: mvn -B -ntp package
+
+    - name: Maven test (fast)
+      if: ${{ inputs.mode != 'full' }}
+      shell: bash
+      run: mvn -B -ntp test
 
     - name: JS/TS lint, syntax & Python client tests
       shell: bash
@@ -23,10 +46,11 @@ runs:
         python3 -B -m unittest discover -s client -v
 
     - name: Offline mock Playwright E2E
+      if: ${{ inputs.mode == 'full' }}
       shell: bash
       run: |
         if [ -d "$GITHUB_WORKSPACE/target/node" ]; then export PATH="$GITHUB_WORKSPACE/target/node:$PATH"; fi
         cd src/test/product
-        PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm ci
+        PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm ci --no-audit --no-fund
         npm run typecheck
         npm run test:mock

@@ -18,11 +18,11 @@ surfaces.
 
 ## 2. Testing Pyramid
 
-1. **Java unit tests (`src/test/java`)**: `mvn -q -B test-compile -Dskip.npm -Dskip.installnodenpm && mvn -q -B surefire:test`
-2. **Frontend lint, typecheck & Vitest (`src/main/frontend`)**: `npm run lint:all && npx tsc --noEmit -p . && npx vitest run`
-3. **Python CLI tests (`client/test_rab.py`)**: `python -B -m unittest discover -s client -v`
-4. **Offline browser mock E2E (`src/test/harness/` + `src/test/product/e2e-mock/`)**: loads built `target/classes/assets/next/next.js` against deterministic `mock.js` via `cd src/test/product && npm run typecheck && npm run test:mock` (runs in CI on every push)
-5. **Live Jira / Confluence verification (`src/test/product/`)**: `smoke.py`, `mcp_pat_check.py`, Playwright `e2e/*.spec.ts` (`npm test`), and frozen zero-dependency CDP fallbacks (`ui.js`, `ui_next.js`).
+1. **Java unit tests (`src/test/java`)**: `mvn -q -B test-compile -Dskip.npm -Dskip.installnodenpm && mvn -q -B surefire:test` (~7s; use `mvn -B package -Pfast` for quick deploy JARs)
+2. **Frontend lint, typecheck & Vitest (`src/main/frontend`)**: `npm run lint:all && npx tsc --noEmit -p . && npx vitest run` (~3s)
+3. **Python CLI tests (`client/test_rab.py`)**: `python -B -m unittest discover -s client -v` (~2s)
+4. **Offline browser mock E2E (`src/test/harness/` + `src/test/product/e2e-mock/`)**: loads built `target/classes/assets/next/next.js` against deterministic `mock.js` via `cd src/test/product && npm run typecheck && npm run test:mock` (runs in CI on release tags via `release.yml` and manual full dispatch via `build.yml`, while push/PR `build.yml` runs fast `mode: fast` unit + lint + CLI checks)
+5. **Live Jira / Confluence verification (`src/test/product/`)**: `smoke.py`, `mcp_pat_check.py`, Playwright `e2e/*.spec.ts` (`npm test` or `-g "<spec>"` during feature work), and frozen zero-dependency CDP fallbacks (`ui.js`, `ui_next.js`).
 
 > [!NOTE]
 > The original pre-implementation design spike is archived at [NEW-UI-PLAN.md](NEW-UI-PLAN.md).

@@ -27,6 +27,8 @@ jobs:
             exit 1
           fi
       - uses: ./.github/actions/verify
+        with:
+          mode: full
       - name: Create a draft release with the jar
         env:
           GH_TOKEN: ${{ github.token }}

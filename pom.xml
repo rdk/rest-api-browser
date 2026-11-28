@@ -60,6 +60,7 @@
     <properties>
         <!-- also skips the frontend tests; mvn -DskipTests sets it to true -->
         <skipTests>false</skipTests>
+        <skip.npm.ci>false</skip.npm.ci>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <maven.compiler.release>21</maven.compiler.release>
@@ -260,6 +261,7 @@
                         <phase>generate-resources</phase>
                         <configuration>
                             <arguments>ci --no-audit --no-fund</arguments>
+                            <skip>${skip.npm.ci}</skip>
                         </configuration>
                     </execution>
                     <execution>
@@ -329,4 +331,15 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- Fast local deploy JAR: skips npm ci and unit tests (assumes src/main/frontend/node_modules exists) -->
+        <profile>
+            <id>fast</id>
+            <properties>
+                <skipTests>true</skipTests>
+                <skip.npm.ci>true</skip.npm.ci>
+            </properties>
+        </profile>
+    </profiles>
 </project>

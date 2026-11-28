@@ -1,4 +1,4 @@
-import { expect, request as playwrightRequest, test as base, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, request as playwrightRequest, test as base, type APIRequestContext, type Cookie, type Page } from '@playwright/test';
 
 export type ProductId = 'jira' | 'confluence';
 
@@ -101,10 +101,42 @@ interface RabFixtures {
   rabPage: Page;
 }
 
-export const test = base.extend<RabFixtures>({
+interface RabWorkerFixtures {
+  workerCookies: Cookie[];
+}
+
+export const test = base.extend<RabFixtures, RabWorkerFixtures>({
   product: async ({}, use) => {
     await use(getProductConfig().product);
   },
+
+  workerCookies: [
+    async ({}, use) => {
+      const cfg = getProductConfig();
+      const ctx = await playwrightRequest.newContext({
+        ignoreHTTPSErrors: true,
+        extraHTTPHeaders: {
+          Authorization: cfg.authHeader,
+        },
+      });
+      let cookies: Cookie[] = [];
+      try {
+        const res = await ctx.get(cfg.product.url('/plugins/servlet/rest-api-browser'), { maxRedirects: 5 });
+        if (res.status() === 200) {
+          const state = await ctx.storageState();
+          if (state.cookies.some((c) => /JSESSIONID/i.test(c.name))) {
+            cookies = state.cookies;
+          }
+        }
+      } catch {
+        cookies = [];
+      } finally {
+        await ctx.dispose();
+      }
+      await use(cookies);
+    },
+    { scope: 'worker' },
+  ],
 
   rabApi: async ({}, use) => {
     const cfg = getProductConfig();
@@ -121,24 +153,28 @@ export const test = base.extend<RabFixtures>({
     }
   },
 
-  rabPage: async ({ context, page }, use) => {
+  rabPage: async ({ context, page, workerCookies }, use) => {
     const cfg = getProductConfig();
     const targetOrigin = new URL(cfg.product.baseUrl).origin;
     const exceptions: string[] = [];
     const failedRequests: string[] = [];
 
-    // Attach Basic auth only to same-origin document/XHR/Fetch calls; adding it to static
-    // web resources can make product decorators drop the session mid-load.
-    await context.route('**/*', async (route) => {
-      const req = route.request();
-      const url = req.url();
-      if (url.startsWith(targetOrigin) && ['document', 'xhr', 'fetch'].includes(req.resourceType())) {
-        const headers = { ...req.headers(), authorization: cfg.authHeader };
-        await route.continue({ headers });
-      } else {
-        await route.continue();
-      }
-    });
+    if (workerCookies.length > 0) {
+      // Reuse the worker-level JSESSIONID cookie across tests so concurrent fetch() calls don't race Seraph login invalidation.
+      await context.addCookies(workerCookies);
+    } else {
+      // Fallback when session cookies are unavailable: attach Basic auth only to same-origin document/XHR/Fetch calls.
+      await context.route('**/*', async (route) => {
+        const req = route.request();
+        const url = req.url();
+        if (url.startsWith(targetOrigin) && ['document', 'xhr', 'fetch'].includes(req.resourceType())) {
+          const headers = { ...req.headers(), authorization: cfg.authHeader };
+          await route.continue({ headers });
+        } else {
+          await route.continue();
+        }
+      });
+    }
 
     page.on('pageerror', (err) => {
       const text = `${err.message || err}\n${err.stack || ''}`;
