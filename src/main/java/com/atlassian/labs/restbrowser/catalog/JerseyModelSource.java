@@ -7,8 +7,6 @@ import com.atlassian.labs.restbrowser.catalog.Model.Param;
 import com.atlassian.labs.restbrowser.catalog.ModuleDiscovery.RestModule;
 import com.atlassian.labs.restbrowser.inspect.TypeProxyUnwrapper;
 import com.atlassian.labs.restbrowser.jaxrs.OpenApiAnnotationExtractor;
-import com.atlassian.labs.restbrowser.jaxrs.OpenApiAnnotationExtractor.OpDoc;
-import com.atlassian.labs.restbrowser.jaxrs.ReflectiveBridge;
 import com.atlassian.labs.restbrowser.jaxrs.TypeFormatter;
 import com.atlassian.plugin.servlet.ServletModuleManager;
 import com.atlassian.plugin.servlet.filter.FilterLocation;
@@ -18,7 +16,6 @@ import jakarta.servlet.ServletContext;
 import org.slf4j.Logger;
 
 import java.lang.annotation.Annotation;
-import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Method;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
@@ -34,13 +31,10 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Supplier;
 
-import static com.atlassian.labs.restbrowser.jaxrs.ReflectiveBridge.annString;
 import static com.atlassian.labs.restbrowser.jaxrs.ReflectiveBridge.call;
 import static com.atlassian.labs.restbrowser.jaxrs.ReflectiveBridge.field;
 import static com.atlassian.labs.restbrowser.jaxrs.ReflectiveBridge.findMethod;
 import static com.atlassian.labs.restbrowser.jaxrs.ReflectiveBridge.invoke;
-import static com.atlassian.labs.restbrowser.jaxrs.ReflectiveBridge.safeAnnotations;
-import static com.atlassian.labs.restbrowser.jaxrs.ReflectiveBridge.safeHasAnnotation;
 import static org.slf4j.LoggerFactory.getLogger;
 
 /**
@@ -56,12 +50,7 @@ public class JerseyModelSource implements SpecSource {
     static final int MAX_DESCRIPTION = OpenApiAnnotationExtractor.MAX_DESCRIPTION;
     static final int MAX_PARAM_DESCRIPTION = OpenApiAnnotationExtractor.MAX_PARAM_DESCRIPTION;
 
-    private static final String ATLASSIAN_MULTIPART_PARAM = "com.atlassian.plugins.rest.api.multipart.MultipartFormParam";
-    private static final String JERSEY_FORM_DATA_PARAM = "org.glassfish.jersey.media.multipart.FormDataParam";
-
-    public static final Set<String> ACCESS_ANNOTATIONS = Set.of(
-            "SystemAdminOnly", "AdminOnly", "LicensedOnly",
-            "UnlicensedSiteAccess", "AnonymousSiteAccess", "UnrestrictedAccess", "AnonymousAllowed");
+    public static final Set<String> ACCESS_ANNOTATIONS = JerseyAnnotationSupport.ACCESS_ANNOTATIONS;
 
     private final Supplier<ServletModuleManager> servletModuleManager;
     private final Supplier<ServletContext> servletContext;
@@ -308,7 +297,7 @@ public class JerseyModelSource implements SpecSource {
             for (Object p : (List<?>) call(invocable, "getParameters")) {
                 param(p, ownParams, ignoredBody, visitedBeans, 0);
             }
-            List<Param> params = mergeParams(inherited.params(), ownParams);
+            List<Param> params = JerseyAnnotationSupport.mergeParams(inherited.params(), ownParams);
             Method handling = (Method) call(invocable, "getHandlingMethod");
             Method def = definitionMethod(invocable, handling);
             Class<?> locatorCls = handlerClass(invocable);
@@ -316,7 +305,7 @@ public class JerseyModelSource implements SpecSource {
             boolean deprecated = inherited.deprecated();
             List<Method> locators = inherited.locators();
             if (handling != null || def != null) {
-                access = firstNonNull(access(def, handling, locatorCls), access);
+                access = JerseyAnnotationSupport.firstNonNull(access(def, handling, locatorCls), access);
                 deprecated |= isDeprecated(def, handling, locatorCls);
                 Method recorded = handling != null ? handling : def;
                 if (handlers != null && recorded != null) {
@@ -335,8 +324,8 @@ public class JerseyModelSource implements SpecSource {
     private OperationSpec operation(Object method, String path, Inherited inherited, Map<OperationSpec, Handler> handlers)
             throws ReflectiveOperationException {
         String httpMethod = (String) call(method, "getHttpMethod");
-        List<String> consumes = mediaTypes(call(method, "getConsumedTypes"));
-        List<String> produces = mediaTypes(call(method, "getProducedTypes"));
+        List<String> consumes = JerseyAnnotationSupport.mediaTypes(call(method, "getConsumedTypes"));
+        List<String> produces = JerseyAnnotationSupport.mediaTypes(call(method, "getProducedTypes"));
         Object invocable = call(method, "getInvocable");
         Method handling = (Method) call(invocable, "getHandlingMethod");
         Method def = definitionMethod(invocable, handling);
@@ -348,9 +337,9 @@ public class JerseyModelSource implements SpecSource {
         for (Object p : (List<?>) call(invocable, "getParameters")) {
             param(p, ownParams, bodyType, visitedBeans, 0);
         }
-        List<Param> params = mergeParams(inherited.params(), ownParams);
+        List<Param> params = JerseyAnnotationSupport.mergeParams(inherited.params(), ownParams);
 
-        String access = firstNonNull(access(def, handling, handlerCls), inherited.access());
+        String access = JerseyAnnotationSupport.firstNonNull(access(def, handling, handlerCls), inherited.access());
         boolean deprecated = inherited.deprecated() || isDeprecated(def, handling, handlerCls);
 
         String returnType = null;
@@ -359,7 +348,8 @@ public class JerseyModelSource implements SpecSource {
             Class<?> rawRet = handling.getReturnType();
             if (rawRet != void.class && rawRet != Void.class) {
                 Type genericRet = safeGenericReturnType(handling, rawRet);
-                String annotatedRet = isGenericResponseWrapper(rawRet) ? annotatedReturnJavaType(def, handling) : null;
+                String annotatedRet = JerseyAnnotationSupport.isGenericResponseWrapper(rawRet)
+                        ? annotatedReturnJavaType(def, handling) : null;
                 returnJavaType = annotatedRet != null ? annotatedRet : TypeFormatter.stableTypeName(genericRet, rawRet);
                 returnType = TypeFormatter.shortTypeName(returnJavaType);
             }
@@ -382,24 +372,6 @@ public class JerseyModelSource implements SpecSource {
         } catch (RuntimeException | LinkageError e) {
             return rawRet;
         }
-    }
-
-    /** Child method / locator parameters replace inherited parameters with the same (in, name). */
-    private static List<Param> mergeParams(List<Param> inherited, List<Param> own) {
-        if (inherited.isEmpty()) {
-            return own;
-        }
-        if (own.isEmpty()) {
-            return inherited;
-        }
-        Map<String, Param> merged = new LinkedHashMap<>();
-        for (Param p : inherited) {
-            merged.put(p.in() + ":" + p.name(), p);
-        }
-        for (Param p : own) {
-            merged.put(p.in() + ":" + p.name(), p);
-        }
-        return new ArrayList<>(merged.values());
     }
 
     private static Method definitionMethod(Object invocable, Method handling) {
@@ -437,7 +409,8 @@ public class JerseyModelSource implements SpecSource {
                 Class<?> element = repeating ? TypeFormatter.elementClass(type, raw) : raw;
                 String desc = OpenApiAnnotationExtractor.paramDoc(parameterAnnotations(p));
                 out.add(new Param(name, source.toLowerCase(Locale.ROOT), typeName(element), "PATH".equals(source),
-                        (String) call(p, "getDefaultValue"), options(element), repeating, desc, javaType));
+                        (String) call(p, "getDefaultValue"), JerseyAnnotationSupport.options(element),
+                        repeating, desc, javaType));
             }
             case "ENTITY" -> {
                 bodyType[0] = javaType != null ? shortTypeName(javaType) : (raw == null ? null : raw.getSimpleName());
@@ -476,10 +449,19 @@ public class JerseyModelSource implements SpecSource {
                     Class<?> element = repeating ? TypeFormatter.elementClass(type, raw) : raw;
                     String tName = isFileType(element) ? "File" : typeName(element);
                     out.add(new Param(mpName, "form", tName, false,
-                            (String) call(p, "getDefaultValue"), options(element), repeating,
-                            OpenApiAnnotationExtractor.paramDoc(anns), javaType));
+                            (String) call(p, "getDefaultValue"), JerseyAnnotationSupport.options(element),
+                            repeating, OpenApiAnnotationExtractor.paramDoc(anns), javaType));
                 }
             }
+        }
+    }
+
+    private static Annotation[] parameterAnnotations(Object p) {
+        try {
+            Object a = call(p, "getAnnotations");
+            return a instanceof Annotation[] array ? array : null;
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            return null;
         }
     }
 
@@ -501,136 +483,16 @@ public class JerseyModelSource implements SpecSource {
         return TypeFormatter.typeName(c);
     }
 
-    private static List<String> options(Class<?> c) {
-        if (c == null || !c.isEnum()) {
-            return List.of();
-        }
-        List<String> names = new ArrayList<>();
-        try {
-            Object[] constants = c.getEnumConstants();
-            if (constants != null) {
-                for (Object constant : constants) {
-                    names.add(((Enum<?>) constant).name());
-                }
-            }
-        } catch (LinkageError | RuntimeException ignored) {
-            return List.of();
-        }
-        return List.copyOf(names);
-    }
-
     static String access(Method handling) {
         return access(handling, handling, null);
     }
 
     static String access(Method def, Method handling, Class<?> handlerClass) {
-        String a = accessOf(def);
-        if (a == null && handling != null && !handling.equals(def)) {
-            a = accessOf(handling);
-        }
-        if (a == null && handlerClass != null) {
-            a = classHierarchyAccessOf(handlerClass);
-        }
-        if (a == null && handling != null) {
-            a = classHierarchyAccessOf(handling.getDeclaringClass());
-        }
-        if (a == null && def != null && (handling == null || def.getDeclaringClass() != handling.getDeclaringClass())) {
-            a = classHierarchyAccessOf(def.getDeclaringClass());
-        }
-        if (a == null && handlerClass != null) {
-            a = accessOf(TypeProxyUnwrapper.targetClass(handlerClass).getPackage());
-        }
-        if (a == null && handling != null) {
-            a = accessOf(handling.getDeclaringClass().getPackage());
-        }
-        if (a == null && def != null && (handling == null || def.getDeclaringClass() != handling.getDeclaringClass())) {
-            a = accessOf(def.getDeclaringClass().getPackage());
-        }
-        return a;
+        return JerseyAnnotationSupport.access(def, handling, handlerClass);
     }
 
     static boolean isDeprecated(Method def, Method handling, Class<?> handlerClass) {
-        return safeHasAnnotation(def, Deprecated.class)
-                || safeHasAnnotation(handling, Deprecated.class)
-                || isClassHierarchyDeprecated(handlerClass)
-                || isClassHierarchyDeprecated(handling == null ? null : handling.getDeclaringClass())
-                || isClassHierarchyDeprecated(def == null ? null : def.getDeclaringClass());
-    }
-
-    private static String classHierarchyAccessOf(Class<?> start) {
-        if (start == null) {
-            return null;
-        }
-        for (Class<?> c = TypeProxyUnwrapper.targetClass(start); c != null && c != Object.class; c = c.getSuperclass()) {
-            String a = accessOf(c);
-            if (a != null) {
-                return a;
-            }
-            String iface = interfaceAccessOf(c.getInterfaces());
-            if (iface != null) {
-                return iface;
-            }
-        }
-        return null;
-    }
-
-    private static String interfaceAccessOf(Class<?>[] interfaces) {
-        if (interfaces == null) {
-            return null;
-        }
-        for (Class<?> iface : interfaces) {
-            String a = accessOf(iface);
-            if (a != null) {
-                return a;
-            }
-            String parent = interfaceAccessOf(iface.getInterfaces());
-            if (parent != null) {
-                return parent;
-            }
-        }
-        return null;
-    }
-
-    private static boolean isClassHierarchyDeprecated(Class<?> start) {
-        if (start == null) {
-            return false;
-        }
-        for (Class<?> c = TypeProxyUnwrapper.targetClass(start); c != null && c != Object.class; c = c.getSuperclass()) {
-            if (safeHasAnnotation(c, Deprecated.class) || isInterfaceDeprecated(c.getInterfaces())) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean isInterfaceDeprecated(Class<?>[] interfaces) {
-        if (interfaces == null) {
-            return false;
-        }
-        for (Class<?> iface : interfaces) {
-            if (safeHasAnnotation(iface, Deprecated.class) || isInterfaceDeprecated(iface.getInterfaces())) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static String accessOf(AnnotatedElement element) {
-        for (Annotation a : safeAnnotations(element)) {
-            try {
-                Class<? extends Annotation> type = a.annotationType();
-                if (type.getName().startsWith("com.atlassian.") && ACCESS_ANNOTATIONS.contains(type.getSimpleName())) {
-                    return type.getSimpleName();
-                }
-            } catch (RuntimeException | LinkageError ignored) {
-                // skip unreadable annotation
-            }
-        }
-        return null;
-    }
-
-    private static String firstNonNull(String a, String b) {
-        return a != null ? a : b;
+        return JerseyAnnotationSupport.isDeprecated(def, handling, handlerClass);
     }
 
     record OpDoc(String summary, String description, boolean deprecated) {
@@ -647,34 +509,11 @@ public class JerseyModelSource implements SpecSource {
     }
 
     static String multipartParamName(Annotation[] annotations) {
-        if (annotations == null) {
-            return null;
-        }
-        for (Annotation a : annotations) {
-            try {
-                String name = a.annotationType().getName();
-                if (ATLASSIAN_MULTIPART_PARAM.equals(name) || JERSEY_FORM_DATA_PARAM.equals(name)) {
-                    String v = annString(a, "value");
-                    if (v != null && !v.isBlank()) {
-                        return v.trim();
-                    }
-                }
-            } catch (RuntimeException | LinkageError ignored) {
-                // ignore unreadable annotation
-            }
-        }
-        return null;
+        return JerseyAnnotationSupport.multipartParamName(annotations);
     }
 
     static boolean isFileType(Class<?> c) {
-        if (c == null) {
-            return false;
-        }
-        if (c == java.io.File.class || c == java.io.InputStream.class) {
-            return true;
-        }
-        String n = c.getName();
-        return n.endsWith(".FilePart") || n.endsWith(".FormDataBodyPart");
+        return JerseyAnnotationSupport.isFileType(c);
     }
 
     static Map<String, String> paramDocs(Method definition, Method handling) {
@@ -686,117 +525,22 @@ public class JerseyModelSource implements SpecSource {
     }
 
     static List<Param> applyParamDocs(List<Param> params, Map<String, String> docs) {
-        if (docs.isEmpty() || params.isEmpty()) {
-            return params;
-        }
-        List<Param> out = new ArrayList<>(params.size());
-        for (Param p : params) {
-            if (p.description() != null) {
-                out.add(p);
-            } else {
-                String d = docs.get(p.in() + ":" + p.name());
-                if (d == null) {
-                    d = docs.get(":" + p.name());
-                }
-                out.add(d == null ? p : p.withDescription(d));
-            }
-        }
-        return List.copyOf(out);
+        return JerseyAnnotationSupport.applyParamDocs(params, docs);
     }
 
     static String cleanDoc(String s, int max) {
         return OpenApiAnnotationExtractor.cleanDoc(s, max);
     }
 
-    private static Annotation[] parameterAnnotations(Object p) {
-        try {
-            Object a = call(p, "getAnnotations");
-            return a instanceof Annotation[] array ? array : null;
-        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
-            return null;
-        }
-    }
-
-    private static boolean isGenericResponseWrapper(Class<?> c) {
-        if (c == null || c == Object.class) {
-            return true;
-        }
-        String n = c.getName();
-        return "jakarta.ws.rs.core.Response".equals(n) || "javax.ws.rs.core.Response".equals(n);
-    }
-
     static List<Param> completePathParams(String path, List<Param> params) {
-        Map<String, Param> unique = new LinkedHashMap<>();
-        for (Param p : params) {
-            unique.putIfAbsent(p.in() + ":" + p.name(), p);
-        }
-        for (String name : templateNames(path)) {
-            unique.putIfAbsent("path:" + name, new Param(name, "path", "string", true, null, List.of(), false));
-        }
-        return List.copyOf(unique.values());
+        return JerseyAnnotationSupport.completePathParams(path, params);
     }
 
     static List<String> templateNames(String path) {
-        List<String> names = new ArrayList<>();
-        int depth = 0;
-        StringBuilder current = null;
-        for (int i = 0; i < path.length(); i++) {
-            char c = path.charAt(i);
-            if (c == '{') {
-                if (depth++ == 0) {
-                    current = new StringBuilder();
-                    continue;
-                }
-            } else if (c == '}') {
-                depth = Math.max(0, depth - 1);
-                if (depth == 0 && current != null) {
-                    String t = current.toString();
-                    int colon = t.indexOf(':');
-                    String name = (colon < 0 ? t : t.substring(0, colon)).trim();
-                    if (!name.isEmpty()) {
-                        names.add(name);
-                    }
-                    current = null;
-                    continue;
-                }
-            }
-            if (depth > 0 && current != null) {
-                current.append(c);
-            }
-        }
-        return names;
-    }
-
-    private static List<String> mediaTypes(Object list) {
-        List<String> out = new ArrayList<>();
-        if (list instanceof List<?> items) {
-            for (Object m : items) {
-                out.add(String.valueOf(m));
-            }
-        }
-        return List.copyOf(out);
+        return JerseyAnnotationSupport.templateNames(path);
     }
 
     static String join(String prefix, String path) {
-        StringBuilder sb = new StringBuilder();
-        for (String part : new String[]{prefix, path}) {
-            if (part == null) {
-                continue;
-            }
-            String p = part;
-            while (p.startsWith("/")) {
-                p = p.substring(1);
-            }
-            while (p.endsWith("/")) {
-                p = p.substring(0, p.length() - 1);
-            }
-            if (!p.isEmpty()) {
-                if (sb.length() > 0) {
-                    sb.append('/');
-                }
-                sb.append(p);
-            }
-        }
-        return sb.toString();
+        return JerseyAnnotationSupport.join(prefix, path);
     }
 }

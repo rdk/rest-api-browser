@@ -270,16 +270,16 @@ public final class ClassFileInspector {
                 return null;
             }
             int accessFlags = in.readUnsignedShort();
-            String name = internalToFqcn(cp.classInternalAt(in.readUnsignedShort()));
+            String name = ClassFileDescriptorParser.internalToFqcn(cp.classInternalAt(in.readUnsignedShort()));
             if (name == null) {
                 return null;
             }
             int superIdx = in.readUnsignedShort();
-            String superName = superIdx == 0 ? null : internalToFqcn(cp.classInternalAt(superIdx));
+            String superName = superIdx == 0 ? null : ClassFileDescriptorParser.internalToFqcn(cp.classInternalAt(superIdx));
             int ifaceCount = in.readUnsignedShort();
             List<String> ifaces = new ArrayList<>(Math.min(ifaceCount, 64));
             for (int i = 0; i < ifaceCount; i++) {
-                String iface = internalToFqcn(cp.classInternalAt(in.readUnsignedShort()));
+                String iface = ClassFileDescriptorParser.internalToFqcn(cp.classInternalAt(in.readUnsignedShort()));
                 if (iface != null) {
                     ifaces.add(iface);
                 }
@@ -319,7 +319,8 @@ public final class ClassFileInspector {
                     }
                     String s = cp.utf8()[i];
                     if (s == null || s.length() < 2 || s.isBlank() || s.indexOf('\u0000') >= 0
-                            || JVMS_ATTRIBUTES.contains(s) || looksLikeStrictJvmDescriptor(s)) {
+                            || JVMS_ATTRIBUTES.contains(s)
+                            || ClassFileDescriptorParser.looksLikeStrictJvmDescriptor(s)) {
                         continue;
                     }
                     found.putIfAbsent(s, "utf8");
@@ -331,19 +332,6 @@ public final class ClassFileInspector {
         } catch (IOException | RuntimeException e) {
             return List.of();
         }
-    }
-
-    private static boolean looksLikeStrictJvmDescriptor(String s) {
-        if (s.indexOf(' ') >= 0 || s.indexOf('\n') >= 0 || s.indexOf('\t') >= 0) {
-            return false;
-        }
-        if (s.startsWith("(") && s.indexOf(')') > 0) {
-            return true;
-        }
-        if (s.startsWith("[")) {
-            return s.endsWith(";") || (s.length() == 2 && "ZBCSIJFD".indexOf(s.charAt(1)) >= 0);
-        }
-        return s.startsWith("L") && s.endsWith(";") && s.contains("/");
     }
 
     /** Extracts deduplicated {@code Methodref} and {@code InterfaceMethodref} constant-pool entries. */
@@ -358,7 +346,7 @@ public final class ClassFileInspector {
             }
             Set<MethodRef> refs = new LinkedHashSet<>();
             for (RawMethodRef raw : cp.methodRefs()) {
-                String owner = internalToFqcn(cp.classInternalAt(raw.classIdx()));
+                String owner = ClassFileDescriptorParser.internalToFqcn(cp.classInternalAt(raw.classIdx()));
                 if (owner == null || raw.ntIdx() <= 0 || raw.ntIdx() >= cp.count()) {
                     continue;
                 }
@@ -437,17 +425,17 @@ public final class ClassFileInspector {
             }
             Map<String, Set<String>> typed = collectTyped ? new LinkedHashMap<>() : Map.of();
             in.readUnsignedShort(); // access_flags
-            String selfFqcn = internalToFqcn(cp.classInternalAt(in.readUnsignedShort()));
+            String selfFqcn = ClassFileDescriptorParser.internalToFqcn(cp.classInternalAt(in.readUnsignedShort()));
             int superIdx = in.readUnsignedShort();
             if (collectTyped && superIdx > 0) {
-                String sup = internalToFqcn(cp.classInternalAt(superIdx));
+                String sup = ClassFileDescriptorParser.internalToFqcn(cp.classInternalAt(superIdx));
                 if (sup != null && !"java.lang.Object".equals(sup)) {
                     typed.computeIfAbsent(sup, k -> new LinkedHashSet<>()).add("extends");
                 }
             }
             int ifaceCount = in.readUnsignedShort();
             for (int i = 0; i < ifaceCount; i++) {
-                String iface = internalToFqcn(cp.classInternalAt(in.readUnsignedShort()));
+                String iface = ClassFileDescriptorParser.internalToFqcn(cp.classInternalAt(in.readUnsignedShort()));
                 if (collectTyped && iface != null) {
                     typed.computeIfAbsent(iface, k -> new LinkedHashSet<>()).add("implements");
                 }
@@ -460,7 +448,7 @@ public final class ClassFileInspector {
                 in.readUnsignedShort(); // name_index
                 String fDesc = cp.utf8At(in.readUnsignedShort());
                 if (collectTyped && fDesc != null) {
-                    addTypedFromDescriptor(fDesc, "field", typed);
+                    ClassFileDescriptorParser.addTypedFromDescriptor(fDesc, "field", typed);
                 }
                 int fAttrCount = in.readUnsignedShort();
                 for (int a = 0; a < fAttrCount; a++) {
@@ -472,7 +460,7 @@ public final class ClassFileInspector {
                     if (collectTyped && "Signature".equals(attrName) && attrLen == 2) {
                         String sig = cp.utf8At(in.readUnsignedShort());
                         if (sig != null) {
-                            addTypedFromDescriptor(sig, "field", typed);
+                            ClassFileDescriptorParser.addTypedFromDescriptor(sig, "field", typed);
                         }
                     } else {
                         skipFully(in, attrLen);
@@ -488,7 +476,7 @@ public final class ClassFileInspector {
                 String mName = cp.utf8At(in.readUnsignedShort());
                 String mDesc = cp.utf8At(in.readUnsignedShort());
                 if (collectTyped && mDesc != null) {
-                    addTypedFromDescriptor(mDesc, "signature", typed);
+                    ClassFileDescriptorParser.addTypedFromDescriptor(mDesc, "signature", typed);
                 }
                 int minLine = Integer.MAX_VALUE;
                 int maxLine = 0;
@@ -533,12 +521,12 @@ public final class ClassFileInspector {
                     } else if (collectTyped && "Signature".equals(attrName) && attrLen == 2) {
                         String sig = cp.utf8At(in.readUnsignedShort());
                         if (sig != null) {
-                            addTypedFromDescriptor(sig, "signature", typed);
+                            ClassFileDescriptorParser.addTypedFromDescriptor(sig, "signature", typed);
                         }
                     } else if (collectTyped && "Exceptions".equals(attrName) && attrLen >= 2) {
                         int exCount = in.readUnsignedShort();
                         for (int e = 0; e < exCount; e++) {
-                            String ex = internalToFqcn(cp.classInternalAt(in.readUnsignedShort()));
+                            String ex = ClassFileDescriptorParser.internalToFqcn(cp.classInternalAt(in.readUnsignedShort()));
                             if (ex != null) {
                                 typed.computeIfAbsent(ex, k -> new LinkedHashSet<>()).add("signature");
                             }
@@ -560,77 +548,6 @@ public final class ClassFileInspector {
         }
     }
 
-    private static void addTypedFromDescriptor(String descriptor, String kind, Map<String, Set<String>> out) {
-        Set<String> classes = new LinkedHashSet<>();
-        extractSignatureOrDescriptorClasses(descriptor, classes);
-        for (String cls : classes) {
-            out.computeIfAbsent(cls, k -> new LinkedHashSet<>()).add(kind);
-        }
-    }
-
-    static String formatMethodSignature(String name, String descriptor, String ownerFqcn) {
-        int open = descriptor.indexOf('(');
-        int close = descriptor.indexOf(')');
-        if (open < 0 || close < open) {
-            return name + descriptor;
-        }
-        String display = "<init>".equals(name) && ownerFqcn != null
-                ? ownerFqcn.substring(ownerFqcn.lastIndexOf('.') + 1)
-                : name;
-        StringBuilder sb = new StringBuilder(display).append('(');
-        int[] idx = {open + 1};
-        boolean first = true;
-        while (idx[0] < close) {
-            if (!first) {
-                sb.append(", ");
-            }
-            first = false;
-            sb.append(parseDescriptorType(descriptor, idx));
-        }
-        sb.append(')');
-        if (!"<init>".equals(name)) {
-            int[] rIdx = {close + 1};
-            sb.append(": ").append(parseDescriptorType(descriptor, rIdx));
-        }
-        return sb.toString();
-    }
-
-    private static String parseDescriptorType(String desc, int[] idx) {
-        int dims = 0;
-        while (idx[0] < desc.length() && desc.charAt(idx[0]) == '[') {
-            dims++;
-            idx[0]++;
-        }
-        if (idx[0] >= desc.length()) {
-            return "?";
-        }
-        char c = desc.charAt(idx[0]++);
-        String base = switch (c) {
-            case 'V' -> "void";
-            case 'Z' -> "boolean";
-            case 'B' -> "byte";
-            case 'S' -> "short";
-            case 'C' -> "char";
-            case 'I' -> "int";
-            case 'J' -> "long";
-            case 'F' -> "float";
-            case 'D' -> "double";
-            case 'L' -> {
-                int semi = desc.indexOf(';', idx[0]);
-                if (semi < 0) {
-                    idx[0] = desc.length();
-                    yield "?";
-                }
-                String internal = desc.substring(idx[0], semi);
-                idx[0] = semi + 1;
-                int slash = internal.lastIndexOf('/');
-                yield (slash >= 0 ? internal.substring(slash + 1) : internal).replace('$', '.');
-            }
-            default -> String.valueOf(c);
-        };
-        return dims == 0 ? base : base + "[]".repeat(dims);
-    }
-
     /**
      * Parses a class file's constant pool and extracts class names referenced by {@code CONSTANT_Class},
      * {@code CONSTANT_NameAndType} descriptors, {@code CONSTANT_MethodType} descriptors, and {@code Signature}
@@ -649,7 +566,7 @@ public final class ClassFileInspector {
             for (int idx : cp.classNameIndices()) {
                 String internal = cp.utf8At(idx);
                 if (internal != null) {
-                    addInternalClassName(internal, out);
+                    ClassFileDescriptorParser.addInternalClassName(internal, out);
                 }
             }
             for (int idx : cp.descriptorOrSigIndices()) {
@@ -666,7 +583,7 @@ public final class ClassFileInspector {
                 }
                 String s = cp.utf8()[i];
                 if (s != null && s.indexOf('L') >= 0 && s.indexOf(';') >= 0 && s.indexOf('/') >= 0
-                        && looksLikeJvmTypeOrSignature(s)) {
+                        && ClassFileDescriptorParser.looksLikeJvmTypeOrSignature(s)) {
                     extractSignatureOrDescriptorClasses(s, out);
                 }
             }
@@ -676,114 +593,12 @@ public final class ClassFileInspector {
         return out;
     }
 
-    private static String internalToFqcn(String internal) {
-        if (internal == null || internal.isEmpty() || internal.startsWith("[")) {
-            return null;
-        }
-        String fqcn = internal.replace('/', '.');
-        return SAFE_CLASS_NAME.matcher(fqcn).matches() ? fqcn : null;
+    static String formatMethodSignature(String name, String descriptor, String ownerFqcn) {
+        return ClassFileDescriptorParser.formatMethodSignature(name, descriptor, ownerFqcn);
     }
 
-    /** Rejects arbitrary prose / SQL / JSON Utf8 strings that happen to contain L.../...; fragments. */
-    private static boolean looksLikeJvmTypeOrSignature(String s) {
-        if (s.indexOf(' ') >= 0 || s.indexOf('\n') >= 0 || s.indexOf('\t') >= 0) {
-            return false;
-        }
-        return s.startsWith("L") || s.startsWith("(") || s.startsWith("[") || s.startsWith("<");
-    }
-
-    private static void addInternalClassName(String internal, Set<String> out) {
-        String s = internal;
-        while (s.startsWith("[")) {
-            s = s.substring(1);
-        }
-        if (s.startsWith("L") && s.endsWith(";")) {
-            s = s.substring(1, s.length() - 1);
-        }
-        if (s.contains("/")) {
-            String fqcn = s.replace('/', '.');
-            if (SAFE_CLASS_NAME.matcher(fqcn).matches()) {
-                out.add(fqcn);
-            }
-        }
-    }
-
-    /**
-     * Parses JVM field/method descriptors AND generic {@code Signature} strings, including parameterized types
-     * ({@code Ljava/util/List<Lcom/example/Foo;>;}) and parameterized member types ({@code LOuter<TT;>.Inner;}).
-     */
     static void extractSignatureOrDescriptorClasses(String descriptor, Set<String> out) {
-        int len = descriptor.length();
-        for (int i = 0; i < len; i++) {
-            if (descriptor.charAt(i) != 'L') {
-                continue;
-            }
-            int cur = i + 1;
-            StringBuilder binary = new StringBuilder();
-            boolean hasSlash = false;
-            boolean valid = true;
-            while (cur < len) {
-                char c = descriptor.charAt(cur);
-                if (c == ';') {
-                    break;
-                }
-                if (c == '<') {
-                    // Emit enclosing parameterized class (e.g. java.util.List) cleanly before inner type args
-                    if (hasSlash && binary.length() > 0) {
-                        addBinaryIfSafe(binary.toString(), out);
-                    }
-                    // Skip balanced <...> type arguments cleanly; nested L...; inside args will be visited by outer loop?
-                    // Note: we recurse on the inner slice so L...; args AND subsequent .Inner suffixes are both captured!
-                    int depth = 1;
-                    int argStart = cur + 1;
-                    cur++;
-                    while (cur < len && depth > 0) {
-                        char ac = descriptor.charAt(cur);
-                        if (ac == '<') {
-                            depth++;
-                        } else if (ac == '>') {
-                            depth--;
-                        }
-                        cur++;
-                    }
-                    if (depth != 0) {
-                        valid = false;
-                        break;
-                    }
-                    if (cur - 1 > argStart) {
-                        extractSignatureOrDescriptorClasses(descriptor.substring(argStart, cur - 1), out);
-                    }
-                    // Continue after '>'; next char may be ';' or '.MemberClass'
-                    if (cur < len && descriptor.charAt(cur) == '.') {
-                        binary.append('$');
-                        cur++;
-                    }
-                    continue;
-                }
-                if (c == '/') {
-                    hasSlash = true;
-                    binary.append('.');
-                } else if (c == '.') {
-                    binary.append('$');
-                } else if (Character.isJavaIdentifierPart(c) || c == '$') {
-                    binary.append(c);
-                } else {
-                    valid = false;
-                    break;
-                }
-                cur++;
-            }
-            if (valid && hasSlash && cur < len && descriptor.charAt(cur) == ';' && binary.length() > 0) {
-                addBinaryIfSafe(binary.toString(), out);
-                i = cur;
-            }
-        }
-    }
-
-    private static void addBinaryIfSafe(String fqcn, Set<String> out) {
-        if (SAFE_CLASS_NAME.matcher(fqcn).matches()) {
-            out.add(fqcn);
-        }
+        ClassFileDescriptorParser.extractSignatureOrDescriptorClasses(descriptor, out);
     }
 
     private static void skipFully(DataInputStream in, int n) throws IOException {

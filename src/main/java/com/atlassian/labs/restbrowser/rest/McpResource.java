@@ -2,7 +2,6 @@ package com.atlassian.labs.restbrowser.rest;
 
 import com.atlassian.annotations.security.LicensedOnly;
 import com.atlassian.annotations.security.XsrfProtectionExcluded;
-import com.atlassian.labs.restbrowser.catalog.AgentMarkdown;
 import com.atlassian.labs.restbrowser.catalog.CatalogQuery;
 import com.atlassian.labs.restbrowser.catalog.CatalogQuery.OperationFilter;
 import com.atlassian.labs.restbrowser.catalog.CatalogService;
@@ -13,7 +12,6 @@ import com.atlassian.labs.restbrowser.catalog.OperationDetails.Result;
 import com.atlassian.labs.restbrowser.catalog.OperationSource;
 import com.atlassian.labs.restbrowser.json.Json;
 import com.atlassian.labs.restbrowser.json.JsonParser;
-import com.atlassian.labs.restbrowser.servlet.AdminIntroServlet;
 import com.atlassian.labs.restbrowser.servlet.LlmsTxtServlet;
 import com.atlassian.labs.restbrowser.spring.LocalBeans;
 import com.atlassian.plugin.PluginAccessor;
@@ -35,11 +33,23 @@ import jakarta.ws.rs.core.Response;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
-import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
+
+import static com.atlassian.labs.restbrowser.rest.McpProtocolCatalog.boolArg;
+import static com.atlassian.labs.restbrowser.rest.McpProtocolCatalog.boolObjArg;
+import static com.atlassian.labs.restbrowser.rest.McpProtocolCatalog.decodeSegment;
+import static com.atlassian.labs.restbrowser.rest.McpProtocolCatalog.intArg;
+import static com.atlassian.labs.restbrowser.rest.McpProtocolCatalog.intObjArg;
+import static com.atlassian.labs.restbrowser.rest.McpProtocolCatalog.isKnownSysadminTool;
+import static com.atlassian.labs.restbrowser.rest.McpProtocolCatalog.longArg;
+import static com.atlassian.labs.restbrowser.rest.McpProtocolCatalog.longObjArg;
+import static com.atlassian.labs.restbrowser.rest.McpProtocolCatalog.nonBlank;
+import static com.atlassian.labs.restbrowser.rest.McpProtocolCatalog.rpcErrorResponse;
+import static com.atlassian.labs.restbrowser.rest.McpProtocolCatalog.rpcResourceText;
+import static com.atlassian.labs.restbrowser.rest.McpProtocolCatalog.rpcResultResponse;
+import static com.atlassian.labs.restbrowser.rest.McpProtocolCatalog.rpcToolResult;
+import static com.atlassian.labs.restbrowser.rest.McpProtocolCatalog.rpcToolText;
+import static com.atlassian.labs.restbrowser.rest.McpProtocolCatalog.strArg;
 
 /**
  * Built-in strictly read-only Model Context Protocol (MCP) Streamable HTTP JSON-RPC 2.0 endpoint at
@@ -50,8 +60,8 @@ import java.util.Map;
 @LicensedOnly
 public class McpResource {
 
-    static final String PROTOCOL_VERSION = "2025-03-26";
-    static final int MAX_RPC_BODY_BYTES = 65_536;
+    static final String PROTOCOL_VERSION = McpProtocolCatalog.PROTOCOL_VERSION;
+    static final int MAX_RPC_BODY_BYTES = McpProtocolCatalog.MAX_RPC_BODY_BYTES;
 
     private final CatalogService catalog;
     private final UserManager userManager;
@@ -136,16 +146,18 @@ public class McpResource {
         boolean sysadmin = RestAuth.isSystemAdmin(userManager, user);
 
         return switch (method) {
-            case "initialize" -> rpcResultResponse(id, buildInitializeResult(sysadmin));
+            case "initialize" -> rpcResultResponse(id,
+                    McpProtocolCatalog.buildInitializeResult(sysadmin, LocalBeans.pluginVersion(pluginAccessor)));
             case "ping" -> rpcResultResponse(id, "{}");
-            case "tools/list" -> rpcResultResponse(id, buildToolsList(sysadmin));
+            case "tools/list" -> rpcResultResponse(id, McpProtocolCatalog.buildToolsList(sysadmin));
             case "tools/call" -> handleToolCall(id, req.get("params"), sysadmin, request);
-            case "resources/list" -> rpcResultResponse(id, buildResourcesList());
-            case "resources/templates/list" -> rpcResultResponse(id, buildResourceTemplatesList(sysadmin));
+            case "resources/list" -> rpcResultResponse(id, McpProtocolCatalog.buildResourcesList());
+            case "resources/templates/list" -> rpcResultResponse(id,
+                    McpProtocolCatalog.buildResourceTemplatesList(sysadmin));
             case "resources/read" -> handleResourceRead(id, req.get("params"), sysadmin, request);
             case "prompts/list" -> rpcResultResponse(id,
-                    buildPromptsList(sysadmin, sysadmin && LocalBeans.isLiveScalpelEnabled(pluginAccessor)));
-            case "prompts/get" -> handlePromptGet(id, req.get("params"), sysadmin);
+                    McpProtocolCatalog.buildPromptsList(sysadmin, sysadmin && LocalBeans.isLiveScalpelEnabled(pluginAccessor)));
+            case "prompts/get" -> McpProtocolCatalog.renderPromptGet(id, req.get("params"), sysadmin, canonicalOrRelativeBase());
             default -> rpcErrorResponse(id, -32601, "Method not found: " + method);
         };
     }
@@ -315,25 +327,6 @@ public class McpResource {
         }
     }
 
-    private String buildInitializeResult(boolean sysadmin) {
-        String ver = LocalBeans.pluginVersion(pluginAccessor);
-        return new Json().beginObject()
-                .field("protocolVersion", PROTOCOL_VERSION)
-                .name("capabilities").beginObject()
-                .name("tools").beginObject().field("listChanged", false).endObject()
-                .name("resources").beginObject().field("subscribe", false).field("listChanged", false).endObject()
-                .name("prompts").beginObject().field("listChanged", false).endObject()
-                .endObject()
-                .name("serverInfo").beginObject()
-                .field("name", "rest-api-browser")
-                .field("version", ver.isEmpty() ? "unknown" : ver)
-                .endObject()
-                .field("instructions", sysadmin
-                        ? "Read-only Atlassian REST & JVM inspection tools, resources, and prompts enabled. Start with search_operations, resolve_url, or investigate_operation_context."
-                        : "Read-only Atlassian REST catalog tools, resources, and prompts enabled (system administrator role unlocks Java bytecode and source tools).")
-                .endObject().toString();
-    }
-
     private String buildCatalogSummary(boolean sysadmin, HttpServletRequest request) {
         CatalogSnapshot snap = catalog.current(request.getServletContext());
         boolean admin = sysadmin || RestAuth.isAdmin(userManager, RestAuth.remoteUser(userManager, request));
@@ -381,54 +374,6 @@ public class McpResource {
             end--;
         }
         return base.substring(0, end);
-    }
-
-    private static String buildResourcesList() {
-        Json j = new Json().beginObject().name("resources").beginArray();
-        resourceEntry(j, "rab://llms.txt", "llms-txt",
-                "Compact llmstxt.org Markdown discovery guide for all REST API Browser endpoints.", "text/markdown");
-        resourceEntry(j, "rab://llms-full.txt", "llms-full-txt",
-                "Complete Markdown agent reference with curl examples, MCP client config, and error recovery hints.", "text/markdown");
-        resourceEntry(j, "rab://catalog/summary", "catalog-summary",
-                "Current REST catalog hash, product metadata, completeness progress, and modules.", "application/json");
-        resourceEntry(j, "rab://catalog/brief", "catalog-brief",
-                "Compact ~200-token plain-text overview of node, catalog hash, top modules, and failures.", "text/plain");
-        resourceEntry(j, "rab://openapi/self", "openapi-self",
-                "OpenAPI 3.1.0 specification of REST API Browser's own agent and catalog endpoints.", "application/json");
-        return j.endArray().endObject().toString();
-    }
-
-    private static void resourceEntry(Json j, String uri, String name, String description, String mimeType) {
-        j.beginObject()
-                .field("uri", uri)
-                .field("name", name)
-                .field("description", description)
-                .field("mimeType", mimeType)
-                .endObject();
-    }
-
-    private static String buildResourceTemplatesList(boolean sysadmin) {
-        Json j = new Json().beginObject().name("resourceTemplates").beginArray();
-        templateEntry(j, "rab://catalog/openapi/{module}", "module-openapi",
-                "OpenAPI 3.1.0 specification for an indexed REST module (URL-encoded module ID).", "application/json");
-        if (sysadmin) {
-            templateEntry(j, "rab://code/class/{fqcn}", "class-metadata",
-                    "Class reflection metadata, fields, enums, bytecode outline, and OSGi bundle/plugin ownership.", "application/json");
-            templateEntry(j, "rab://code/source/{fqcn}", "class-source",
-                    "Decompiled Java class source (Vineflower default with CFR fallback diagnostics).", "application/json");
-            templateEntry(j, "rab://code/plugin/{pluginKey}", "plugin-metadata",
-                    "Atlassian plugin metadata, dependencies, modules, and backing OSGi bundle.", "application/json");
-        }
-        return j.endArray().endObject().toString();
-    }
-
-    private static void templateEntry(Json j, String uriTemplate, String name, String description, String mimeType) {
-        j.beginObject()
-                .field("uriTemplate", uriTemplate)
-                .field("name", name)
-                .field("description", description)
-                .field("mimeType", mimeType)
-                .endObject();
     }
 
     private Response handleResourceRead(Object id, Object rawParams, boolean sysadmin, HttpServletRequest request) {
@@ -503,254 +448,6 @@ public class McpResource {
         return rpcErrorResponse(id, -32002, "Resource not found: " + uri);
     }
 
-    private static String decodeSegment(String raw) {
-        if (raw == null || raw.isBlank()) {
-            return null;
-        }
-        try {
-            String decoded = URLDecoder.decode(raw, StandardCharsets.UTF_8);
-            return decoded.isBlank() ? null : decoded;
-        } catch (IllegalArgumentException e) {
-            return null;
-        }
-    }
-
-    private static Response rpcResourceText(Object id, String uri, String mimeType, String text) {
-        String out = new Json().beginObject()
-                .name("contents").beginArray()
-                .beginObject()
-                .field("uri", uri)
-                .field("mimeType", mimeType)
-                .field("text", text == null ? "" : text)
-                .endObject()
-                .endArray()
-                .endObject().toString();
-        return rpcResultResponse(id, out);
-    }
-
-    private static String buildPromptsList(boolean sysadmin, boolean liveScalpel) {
-        Json j = new Json().beginObject().name("prompts").beginArray();
-        promptEntry(j, "explore-endpoint-payload",
-                "Document a REST endpoint's permissions, parameters, and request/response DTO payload.",
-                "query", "Search keyword or /rest/... path (optional)");
-        if (sysadmin) {
-            promptEntry(j, "debug-stuck-endpoint",
-                    "Investigate why a REST endpoint is slow or stuck (read-only).",
-                    "target", "Endpoint URL, operation key, or thread-dump symptom (optional)");
-            promptEntry(j, "trace-rest-error",
-                    "Trace an unexpected REST error message or status code back to bytecode and handlers.",
-                    "error", "Error text, message fragment, or HTTP status symptom (optional)");
-            if (liveScalpel) {
-                promptEntry(j, "dual-profile-and-decompile",
-                        "Diagnose a slow or failing REST endpoint across Live Scalpel runtime traces and REST API Browser bytecode.",
-                        "target", "Target /rest/... URL or symptom (optional)");
-            }
-        }
-        return j.endArray().endObject().toString();
-    }
-
-    private static void promptEntry(Json j, String name, String description, String argName, String argDescription) {
-        j.beginObject()
-                .field("name", name)
-                .field("description", description)
-                .name("arguments").beginArray()
-                .beginObject()
-                .field("name", argName)
-                .field("description", argDescription)
-                .field("required", false)
-                .endObject()
-                .endArray()
-                .endObject();
-    }
-
-    private Response handlePromptGet(Object id, Object rawParams, boolean sysadmin) {
-        if (!(rawParams instanceof Map<?, ?> params)) {
-            return rpcErrorResponse(id, -32602, "Invalid params: expected object");
-        }
-        Object rawName = params.get("name");
-        if (!(rawName instanceof String name) || name.isBlank()) {
-            return rpcErrorResponse(id, -32602, "Invalid params: missing prompt name");
-        }
-        @SuppressWarnings("unchecked")
-        Map<String, Object> args = params.get("arguments") instanceof Map<?, ?> m
-                ? (Map<String, Object>) m : Map.of();
-        String base = canonicalOrRelativeBase();
-        String apiBase = base + "/rest/restbrowser/1";
-        String uiBase = base + "/plugins/servlet/rest-api-browser";
-
-        String description;
-        String promptText;
-        switch (name) {
-            case "explore-endpoint-payload" -> {
-                description = "Document a REST endpoint's permissions, parameters, and DTO payload.";
-                promptText = substitutePlaceholder(
-                        AdminIntroServlet.buildPromptExplorePayload(apiBase),
-                        "<PASTE KEYWORD OR /rest/... URL HERE>",
-                        strArg(args, "query"));
-            }
-            case "debug-stuck-endpoint" -> {
-                if (!sysadmin) {
-                    return rpcErrorResponse(id, -32003, "Forbidden: system administrator privileges required for " + name);
-                }
-                description = "Investigate why a REST endpoint is slow or stuck (read-only).";
-                promptText = substitutePlaceholder(
-                        AdminIntroServlet.buildPromptDebugStuck(apiBase, uiBase),
-                        "<PASTE REQUEST URL / THREAD DUMP SYMPTOM HERE>",
-                        strArg(args, "target"));
-            }
-            case "trace-rest-error" -> {
-                if (!sysadmin) {
-                    return rpcErrorResponse(id, -32003, "Forbidden: system administrator privileges required for " + name);
-                }
-                description = "Trace an unexpected REST error message or status code back to bytecode and handlers.";
-                promptText = substitutePlaceholder(
-                        AdminIntroServlet.buildPromptTraceError(apiBase),
-                        "<PASTE ERROR STRING / LOG FRAGMENT HERE>",
-                        strArg(args, "error"));
-            }
-            case "dual-profile-and-decompile" -> {
-                if (!sysadmin) {
-                    return rpcErrorResponse(id, -32003, "Forbidden: system administrator privileges required for " + name);
-                }
-                description = "Diagnose a slow or failing REST endpoint across Live Scalpel runtime traces and REST API Browser bytecode.";
-                promptText = substitutePlaceholder(
-                        AdminIntroServlet.buildPromptDualWorkflow(apiBase, base + "/rest/scalpel/1"),
-                        "<PASTE /rest/... URL HERE>",
-                        strArg(args, "target"));
-            }
-            default -> {
-                return rpcErrorResponse(id, -32602, "Unknown prompt: " + name);
-            }
-        }
-        String out = new Json().beginObject()
-                .field("description", description)
-                .name("messages").beginArray()
-                .beginObject()
-                .field("role", "user")
-                .name("content").beginObject()
-                .field("type", "text")
-                .field("text", promptText)
-                .endObject()
-                .endObject()
-                .endArray()
-                .endObject().toString();
-        return rpcResultResponse(id, out);
-    }
-
-    private static String substitutePlaceholder(String template, String placeholder, String value) {
-        if (value == null || value.isBlank()) {
-            return template;
-        }
-        return template.replace(placeholder, value.trim());
-    }
-
-    private static String buildToolsList(boolean sysadmin) {
-        Json j = new Json().beginObject().name("tools").beginArray();
-        tool(j, "search_operations", "Search indexed REST operations by query tokens, HTTP method, path, module, plugin, access, or DTO class.",
-                Map.ofEntries(
-                        Map.entry("q", "string"), Map.entry("method", "string"), Map.entry("path", "string"),
-                        Map.entry("module", "string"), Map.entry("plugin", "string"), Map.entry("access", "string"),
-                        Map.entry("deprecated", "boolean"), Map.entry("usesClass", "string"),
-                        Map.entry("limit", "integer"), Map.entry("offset", "integer"), Map.entry("format", "string")),
-                List.of());
-        tool(j, "resolve_url", "Resolve a concrete endpoint URL (full or /rest/...) to matching JAX-RS operation key(s) and extracted pathParams.",
-                Map.of("url", "string", "method", "string", "limit", "integer", "format", "string"),
-                List.of("url"));
-        tool(j, "get_catalog_summary", "Fetch current catalog hash, completeness progress, and REST modules (supports format='brief').",
-                Map.of("format", "string", "top", "integer"), List.of());
-        tool(j, "export_module_openapi", "Generate an OpenAPI 3.1.0 specification for a single catalog REST module.",
-                Map.of("module", "string", "includeSchemas", "boolean", "schemaDepth", "integer"),
-                List.of("module"));
-
-        if (sysadmin) {
-            tool(j, "investigate_operation_context", "One-shot context bundle: operation metadata, DTO schemas, decompiled handler source, and OSGi implementations for injected fields.",
-                    Map.of("op", "string", "url", "string", "method", "string", "maxLines", "integer",
-                            "schemaDepth", "integer", "includeSchemas", "boolean", "includeImplementations", "boolean",
-                            "includeSource", "boolean", "lineNumbers", "boolean", "decompiler", "string"),
-                    List.of());
-            tool(j, "inspect_operation", "Fetch operation reflection details, OSGi provenance, and decompiled handler source.",
-                    Map.of("op", "string", "scope", "string", "decompiler", "string", "view", "string",
-                            "startLine", "integer", "maxLines", "integer", "lineNumbers", "boolean"),
-                    List.of("op"));
-            tool(j, "get_dto_schema", "Generate Draft 2020-12 JSON Schema + example payload for a DTO class or operation request/response.",
-                    Map.of("class", "string", "op", "string", "fromBundle", "integer", "depth", "integer", "includeExample", "boolean"),
-                    List.of());
-            tool(j, "inspect_class", "Inspect Java class fields, enum constants, bytecode line-number outlines, and OSGi/plugin provenance without decompiling.",
-                    Map.of("class", "string", "op", "string", "fromBundle", "integer", "view", "string",
-                            "outline", "boolean", "includeImplementations", "boolean"),
-                    List.of());
-            tool(j, "find_implementations", "Find live OSGi registered service providers and concrete bytecode subtypes of an interface/abstract class.",
-                    Map.of("class", "string", "op", "string", "fromBundle", "integer", "bundleId", "integer",
-                            "plugin", "string", "includeAbstract", "boolean", "limit", "integer"),
-                    List.of());
-            tool(j, "find_callers", "Find classes in wired OSGi bundles whose bytecode constant pools invoke methods on the target class.",
-                    Map.of("class", "string", "method", "string", "op", "string", "fromBundle", "integer",
-                            "bundleId", "integer", "plugin", "string", "packagePrefix", "string", "limit", "integer"),
-                    List.of());
-            tool(j, "grep_bytecode", "Grep string and UTF-8 constants across active OSGi bundles (fast, no decompilation).",
-                    Map.of("q", "string", "bundleId", "integer", "plugin", "string", "packagePrefix", "string",
-                            "caseSensitive", "boolean", "includeUtf8", "boolean", "limit", "integer"),
-                    List.of("q"));
-            tool(j, "decompile_source", "Decompile a Java class or method via Vineflower or CFR with optional 1-based line slicing and numbering.",
-                    Map.of("class", "string", "op", "string", "method", "string", "scope", "string", "decompiler", "string",
-                            "fromBundle", "integer", "startLine", "integer", "maxLines", "integer",
-                            "includeMeta", "boolean", "lineNumbers", "boolean"),
-                    List.of());
-            tool(j, "traverse_graph", "Typed BFS traversal of class references across OSGi bundle wires (supports preset='domain' and edgeKinds).",
-                    Map.ofEntries(
-                            Map.entry("class", "string"), Map.entry("op", "string"), Map.entry("fromBundle", "integer"),
-                            Map.entry("depth", "integer"), Map.entry("maxNodes", "integer"), Map.entry("includeJdk", "boolean"),
-                            Map.entry("excludeLibraries", "boolean"), Map.entry("preset", "string"), Map.entry("edgeKinds", "string"),
-                            Map.entry("packagePrefix", "string"), Map.entry("includeSources", "boolean"), Map.entry("decompiler", "string")),
-                    List.of());
-            tool(j, "search_classes", "Search Java class names across active OSGi bundles.",
-                    Map.of("q", "string", "limit", "integer", "bundleId", "integer"),
-                    List.of("q"));
-            tool(j, "inspect_plugin", "Inspect an Atlassian plugin, its dependencies, modules, and OSGi bundle.",
-                    Map.of("key", "string", "view", "string"),
-                    List.of("key"));
-            tool(j, "read_bundle_resource", "List or read non-binary text resources (atlassian-plugin.xml, Spring XML, .vm, .properties) inside an OSGi bundle.",
-                    Map.of("bundleId", "integer", "plugin", "string", "path", "string", "prefix", "string",
-                            "startLine", "integer", "maxLines", "integer", "lineNumbers", "boolean", "limit", "integer"),
-                    List.of());
-        }
-        return j.endArray().endObject().toString();
-    }
-
-    private static void tool(Json j, String name, String description, Map<String, String> props, List<String> required) {
-        j.beginObject()
-                .field("name", name)
-                .field("description", description)
-                .name("annotations").beginObject()
-                .field("readOnlyHint", true)
-                .field("destructiveHint", false)
-                .field("idempotentHint", true)
-                .field("openWorldHint", false)
-                .endObject()
-                .name("inputSchema").beginObject()
-                .field("type", "object")
-                .name("properties").beginObject();
-        for (Map.Entry<String, String> e : props.entrySet()) {
-            j.name(e.getKey()).beginObject().field("type", e.getValue()).endObject();
-        }
-        if (!props.containsKey("maxChars")) {
-            j.name("maxChars").beginObject().field("type", "integer").endObject();
-        }
-        j.endObject();
-        if (!required.isEmpty()) {
-            j.strings("required", required);
-        }
-        j.endObject().endObject();
-    }
-
-    private static boolean isKnownSysadminTool(String name) {
-        return List.of(
-                "investigate_operation_context", "inspect_operation", "get_dto_schema", "inspect_class",
-                "find_implementations", "find_callers", "grep_bytecode", "decompile_source",
-                "traverse_graph", "search_classes", "inspect_plugin", "read_bundle_resource"
-        ).contains(name);
-    }
-
     private static boolean isCrossOriginCookiePost(HttpServletRequest request) {
         if (request == null || RestAuth.xsrfHeader(request)) {
             return false;
@@ -786,87 +483,5 @@ public class McpResource {
         if ("https".equalsIgnoreCase(scheme)) return 443;
         if ("http".equalsIgnoreCase(scheme)) return 80;
         return -1;
-    }
-
-    private static Response rpcToolResult(Object id, Result res, Integer maxChars) {
-        return rpcToolText(id, res.json(), res.status() >= 400, maxChars);
-    }
-
-    private static Response rpcToolText(Object id, String text, boolean isError, Integer maxChars) {
-        String capped = AgentMarkdown.truncateToChars(text == null ? "" : text, maxChars);
-        Json result = new Json().beginObject()
-                .name("content").beginArray()
-                .beginObject().field("type", "text").field("text", capped).endObject()
-                .endArray()
-                .field("isError", isError)
-                .endObject();
-        return rpcResultResponse(id, result.toString());
-    }
-
-    private static Response rpcResultResponse(Object id, String rawResultJson) {
-        Json j = new Json().beginObject().field("jsonrpc", "2.0");
-        writeId(j, id);
-        j.name("result").raw(rawResultJson).endObject();
-        return Response.ok(j.toString(), RestAuth.JSON_MEDIA_TYPE).header("Cache-Control", "no-store").build();
-    }
-
-    private static Response rpcErrorResponse(Object id, int code, String message) {
-        Json j = new Json().beginObject().field("jsonrpc", "2.0");
-        writeId(j, id);
-        j.name("error").beginObject()
-                .field("code", code)
-                .field("message", message)
-                .endObject().endObject();
-        return Response.ok(j.toString(), RestAuth.JSON_MEDIA_TYPE).header("Cache-Control", "no-store").build();
-    }
-
-    private static void writeId(Json j, Object id) {
-        j.name("id");
-        if (id == null) {
-            j.value((String) null);
-        } else if (id instanceof Number n) {
-            j.value(n.longValue());
-        } else {
-            j.value(String.valueOf(id));
-        }
-    }
-
-    private static String strArg(Map<String, Object> args, String key) {
-        Object v = args.get(key);
-        return v instanceof String s ? s : (v == null ? null : String.valueOf(v));
-    }
-
-    private static String nonBlank(String s, String fallback) {
-        return s == null || s.isBlank() ? fallback : s;
-    }
-
-    private static int intArg(Map<String, Object> args, String key, int fallback) {
-        Object v = args.get(key);
-        return v instanceof Number n ? n.intValue() : fallback;
-    }
-
-    private static Integer intObjArg(Map<String, Object> args, String key) {
-        Object v = args.get(key);
-        return v instanceof Number n ? n.intValue() : null;
-    }
-
-    private static long longArg(Map<String, Object> args, String key, long fallback) {
-        Object v = args.get(key);
-        return v instanceof Number n ? n.longValue() : fallback;
-    }
-
-    private static Long longObjArg(Map<String, Object> args, String key) {
-        Object v = args.get(key);
-        return v instanceof Number n ? n.longValue() : null;
-    }
-
-    private static boolean boolArg(Map<String, Object> args, String key, boolean fallback) {
-        Object v = args.get(key);
-        return v instanceof Boolean b ? b : fallback;
-    }
-
-    private static Boolean boolObjArg(Map<String, Object> args, String key) {
-        Object v = args.get(key);
-        return v instanceof Boolean b ? b : null;
     }
 }
