@@ -113,16 +113,28 @@ export const test = base.extend<RabFixtures, RabWorkerFixtures>({
   workerCookies: [
     async ({}, use) => {
       const cfg = getProductConfig();
-      const ctx = await playwrightRequest.newContext({
-        ignoreHTTPSErrors: true,
-        extraHTTPHeaders: {
-          Authorization: cfg.authHeader,
-        },
-      });
+      const ctx = await playwrightRequest.newContext({ ignoreHTTPSErrors: true });
       let cookies: Cookie[] = [];
       try {
-        const res = await ctx.get(cfg.product.url('/plugins/servlet/rest-api-browser'), { maxRedirects: 5 });
-        if (res.status() === 200) {
+        if (cfg.product.id === 'jira') {
+          await ctx.post(cfg.product.url('/rest/auth/1/session'), {
+            headers: { 'Content-Type': 'application/json', 'X-Atlassian-Token': 'no-check' },
+            data: { username: cfg.user, password: cfg.password },
+          });
+        } else {
+          await ctx.post(cfg.product.url('/dologin.action'), {
+            headers: { 'X-Atlassian-Token': 'no-check' },
+            form: {
+              os_username: cfg.user,
+              os_password: cfg.password,
+              login: 'Log in',
+              os_destination: '/plugins/servlet/rest-api-browser',
+            },
+            maxRedirects: 0,
+          });
+        }
+        const check = await ctx.get(cfg.product.url('/plugins/servlet/rest-api-browser'), { maxRedirects: 0 });
+        if (check.status() === 200) {
           const state = await ctx.storageState();
           if (state.cookies.some((c) => /JSESSIONID/i.test(c.name))) {
             cookies = state.cookies;
